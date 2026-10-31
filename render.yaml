@@ -1,0 +1,25 @@
+# One-click deploy on Render (https://render.com) → New → Blueprint → pick this repo.
+services:
+  - type: web
+    name: paypilot
+    runtime: node
+    plan: free
+    buildCommand: echo "no dependencies to install"
+    startCommand: node server.js
+    envVars:
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: BUSINESS_NAME
+        value: Arpit Designs
+      - key: DEFAULT_CURRENCY
+        value: USD
+      - key: CRON_SECRET
+        generateValue: true

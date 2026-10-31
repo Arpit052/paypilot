@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Follow-ups</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main>
+  <div class="dash-top">
+    <div>
+      <h1>Follow-ups</h1>
+      <p class="lede" style="margin:0">PayPilot checks PayPal for overdue invoices and drafts a reminder for each one. The tone gets firmer with each reminder. You approve every message before it goes out.</p>
+    </div>
+    <button class="btn" id="scanBtn">Find overdue invoices</button>
+  </div>
+  <div class="fu-grid" id="pending"></div>
+  <h2 style="margin-top:36px">Sent and discarded</h2>
+  <div class="panel table-wrap" id="history"></div>
+</main>
+<script type="module" src="/followups.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payment simulator · PayPilot</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main style="max-width:520px">
+  <p class="muted">Mock mode: this page stands in for the client's PayPal payment page. With sandbox keys configured, clients get PayPal's real payment page instead.</p>
+  <article class="slip" id="slip"><div class="muted">Loading…</div></article>
+</main>
+<script type="module">
+  import { api, esc, money, fmtDate } from '/common.js';
+  const id = new URLSearchParams(location.search).get('id');
+  const slip = document.getElementById('slip');
+  async function render() {
+    try {
+      const { invoice: i, businessName } = await api(`/api/mock/invoice/${encodeURIComponent(id)}`);
+      const paid = ['PAID', 'MARKED_AS_PAID'].includes(i.status);
+      slip.innerHTML = `
+        <div class="slip-head"><div><div class="slip-kind">Invoice #${esc(i.number)}</div><div class="slip-from">from ${esc(businessName)} to ${esc(i.client)}</div></div><span class="pill ${i.displayStatus}">${esc(i.displayStatus)}</span></div>
+        <table class="items"><thead><tr><th>Work</th><th class="q">Qty</th><th class="amt">Amount</th></tr></thead><tbody>
+        ${i.items.map((x) => `<tr><td>${esc(x.name)}</td><td class="q num">${x.quantity}</td><td class="amt num">${money(x.quantity * x.unitPrice, i.currency)}</td></tr>`).join('')}
+        </tbody></table>
+        <div class="total"><span>Due ${fmtDate(i.dueDate)}</span><b class="num">${money(i.total, i.currency)}</b></div>
+        <div class="slip-actions">${paid ? '' : '<button class="btn" id="pay">Pay now (simulated)</button>'}</div>
+        ${paid ? '<div class="stamp">PAID</div>' : ''}`;
+      document.getElementById('pay')?.addEventListener('click', async (e) => {
+        e.target.disabled = true;
+        await api(`/api/mock/pay/${encodeURIComponent(id)}`, { body: {} });
+        render();
+      });
+    } catch (e) {
+      slip.textContent = e.message;
+    }
+  }
+  render();
+</script>
+</body>
+</html>

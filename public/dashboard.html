@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Dashboard</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main>
+  <div class="dash-top">
+    <div>
+      <h1>Your money, at a glance</h1>
+      <p class="lede" id="asof" style="margin:0"></p>
+    </div>
+    <button class="btn ghost" id="syncBtn">Check PayPal for payments</button>
+  </div>
+
+  <section class="figures" id="figures" aria-label="Key figures"></section>
+
+  <div class="grid2">
+    <section class="panel chart">
+      <h2>Earned, and what's coming</h2>
+      <div id="chart"></div>
+      <div class="legend"><span><i style="background:#18213d"></i>Paid (last 6 months)</span><span><i style="background:#9fb1f0"></i>Expected (next 4 weeks)</span></div>
+    </section>
+    <section class="panel">
+      <h2>Recent activity</h2>
+      <ul class="feed" id="feed"></ul>
+    </section>
+  </div>
+
+  <section class="panel">
+    <h2>Invoices</h2>
+    <div class="table-wrap" id="invoices"></div>
+  </section>
+</main>
+<script type="module" src="/dashboard.js"></script>
+</body>
+</html>

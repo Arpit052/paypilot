@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Clients</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main>
+  <h1>Clients</h1>
+  <p class="lede">Payment risk is based on each client's PayPal history: how late they usually pay, and what they owe right now. Riskiest clients are listed first.</p>
+  <section class="panel table-wrap" id="clients"></section>
+</main>
+<script type="module">
+  import { api, header, esc, money } from '/common.js';
+  await header('clients');
+  const { clients } = await api('/api/clients');
+  const el = document.getElementById('clients');
+  el.innerHTML = clients.length
+    ? `<table class="data"><thead><tr><th>Client</th><th>Risk</th><th class="r">Usually pays</th><th class="r">Invoices</th><th class="r">Total billed</th><th class="r">Outstanding</th><th class="r">Overdue</th></tr></thead><tbody>${clients
+        .map(
+          (c) => `<tr>
+            <td><b>${esc(c.name)}</b><br><span class="muted">${esc(c.email)}</span></td>
+            <td><span class="pill ${c.riskLabel}">${c.riskLabel} · ${c.riskScore}</span></td>
+            <td class="r num">${c.avgDaysLate === null ? '<span class="muted">no history</span>' : c.avgDaysLate <= 1 ? 'on time' : `${c.avgDaysLate} days late`}</td>
+            <td class="r num">${c.invoiceCount}</td>
+            <td class="r num">${money(c.totalBilled, c.currency)}</td>
+            <td class="r num">${money(c.outstanding, c.currency)}</td>
+            <td class="r num">${c.overdueCount ? `<span style="color:var(--late)">${money(c.overdueAmount, c.currency)}</span>` : '—'}</td>
+          </tr>`
+        )
+        .join('')}</tbody></table>`
+    : '<div class="empty">No clients yet. They appear here after your first invoice.</div>';
+</script>
+</body>
+</html>

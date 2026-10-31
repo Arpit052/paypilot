@@ -1,0 +1,17 @@
+{
+  "name": "paypilot",
+  "version": "1.0.0",
+  "description": "PayPilot - an AI payment agent for freelancers, built on PayPal Invoicing + LLM tool-calling.",
+  "type": "module",
+  "main": "server.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "seed": "node scripts/seed.js",
+    "test": "node --test test/*.test.js"
+  }
+}

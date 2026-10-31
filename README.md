@@ -1,0 +1,160 @@
+# PayPilot: an AI payments agent for freelancers, built on PayPal
+
+**Tell PayPilot what work you did, in plain words or as a screenshot. It drafts a PayPal invoice, sends it once you approve, chases late payers with reminders whose tone escalates, and tells you what cash is coming.**
+
+Built for the *Build What's Next with PayPal and AI* hackathon.
+
+![Assistant drafting a PayPal invoice](docs/screenshots/assistant.png)
+
+---
+
+## The problem
+
+Freelancers lose time and money on getting paid:
+
+- Invoicing gets put off because it's tedious.
+- Chasing late clients is awkward, so people don't do it.
+- Payment status is scattered across email, WhatsApp and spreadsheets.
+- There's no clear view of what cash is coming next month.
+
+## What PayPilot does
+
+| Feature | How it works |
+|---|---|
+| **Text → invoice** | *"Bill Rahul (rahul@abc.com) for 3 logo concepts at $150 and an urgent revision for $60, due in 10 days."* The AI extracts the client, line items, rates and due date, and puts an editable **invoice slip** in the approval tray. |
+| **Screenshot → invoice** | Attach or paste a screenshot of a client email or chat. A vision model reads it and drafts the invoice. |
+| **Human-in-the-loop** | The AI can only *propose*. Nothing reaches PayPal or the client until you click **Approve & send via PayPal**. You can edit any field first. |
+| **Real PayPal invoices** | Approved drafts are created and sent with the **PayPal Invoicing v2 API**. The client gets PayPal's email and payment page. |
+| **Live payment status** | **PayPal webhooks** (`INVOICING.INVOICE.PAID`, with signature verification) and on-demand polling update the dashboard as soon as a client pays. |
+| **Client risk scoring** | Each client gets a risk score from their payment history (average days late, late ratio, current overdue). The agent warns you before you invoice a risky client and suggests a shorter due date or an advance. |
+| **Escalating follow-ups** | PayPilot scans for overdue invoices, and the AI drafts a reminder for each whose tone moves from *friendly* to *firm* to *final*, based on reminders already sent and days overdue. Approve, and it goes out through PayPal's **remind** endpoint. This can run on a schedule. |
+| **Cash-flow forecast** | Expected incoming money over the next 30 days, weighted by each client's real payment behaviour. |
+| **Ask anything** | *"Who owes me money?"*, *"Is mahine kitna kamaya?"*, *"Cancel Neha's invoice."* The agent answers from PayPal data and replies in your language (English, Hindi or Hinglish). |
+
+| Dashboard | Follow-ups | Clients |
+|---|---|---|
+| ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/followups.png) | ![](docs/screenshots/clients.png) |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  U[Freelancer<br/>text / screenshot] --> UI[Web UI<br/>chat + approval tray]
+  UI -->|/api/chat| AG[AI agent<br/>tool-calling loop]
+  AG <-->|tools| T{{list_invoices<br/>get_client_insights<br/>get_earnings_summary<br/>forecast_cashflow<br/>propose_invoice<br/>propose_reminder<br/>propose_cancel}}
+  AG <--> LLM[(Claude / OpenAI-compatible LLM)]
+  T -->|propose_*| Q[Pending actions]
+  Q -->|user approves| EX[Executor]
+  EX -->|Invoicing v2: create, send, remind, cancel| PP[(PayPal REST API)]
+  PP -->|Webhook: INVOICE.PAID| WH[/api/webhooks/paypal/]
+  WH --> DB[(Invoice store)]
+  EX --> DB
+  CRON[Scheduler] -->|/api/cron/followups| FU[Follow-up scanner] -->|AI drafts reminder| Q
+```
+
+**Agent design.** The model gets **read tools** (invoices, client insights, earnings, forecast) and **proposal tools**. Proposal tools validate the draft (email format, positive amounts, due date not in the past) and create a *pending action*. They never call PayPal. Only the `/api/actions/:id/approve` endpoint, triggered by a human click, runs the PayPal calls. So even if the model gets confused or receives a prompt injection through a screenshot, it can't move money or message a client.
+
+### PayPal APIs used
+
+| API | Endpoint | Used for |
+|---|---|---|
+| OAuth 2.0 | `POST /v1/oauth2/token` | Client-credentials token (cached) |
+| Invoicing v2 | `POST /v2/invoicing/generate-next-invoice-number` | Invoice numbering |
+| Invoicing v2 | `POST /v2/invoicing/invoices` | Create draft invoice |
+| Invoicing v2 | `POST /v2/invoicing/invoices/{id}/send` | Send to client (PayPal email and payment page) |
+| Invoicing v2 | `GET /v2/invoicing/invoices/{id}` | Poll status and payments |
+| Invoicing v2 | `POST /v2/invoicing/invoices/{id}/remind` | AI-drafted payment reminders |
+| Invoicing v2 | `POST /v2/invoicing/invoices/{id}/cancel` | Cancel an invoice |
+| Webhooks | `POST /v1/notifications/verify-webhook-signature` | Verify `INVOICING.INVOICE.*` events |
+
+### AI tools used
+
+- **LLM with tool calling.** Claude by default (`ANTHROPIC_API_KEY`), or any **OpenAI-compatible** API (OpenAI, Google Gemini, Groq, OpenRouter, local models) through `OPENAI_API_KEY` and `OPENAI_BASE_URL`.
+  - **Agent loop** (`src/llm.js`, `src/agent.js`): multi-step tool calling over PayPal data, intent and entity extraction from free text, and multilingual replies.
+  - **Vision** (`src/agent.js`): reads client emails and chat screenshots to draft invoices.
+  - **Generation** (`src/followups.js`): writes reminder emails using the client's payment history and the escalation tone.
+- **Deterministic analytics** (`src/analytics.js`): risk scoring and the probability-weighted forecast, so the numbers the AI reports come from data, not guesses.
+
+---
+
+## Run it locally (about 5 minutes)
+
+**You need:** Node.js 20.12 or newer. There is **nothing to install**, because PayPilot has zero npm dependencies.
+
+```bash
+git clone <this-repo> paypilot && cd paypilot
+cp .env.example .env        # then fill in the keys below
+npm start                   # → http://localhost:3000
+```
+
+### 1. PayPal sandbox keys
+1. Sign in at [developer.paypal.com](https://developer.paypal.com) and open **Apps & Credentials** with **Sandbox** selected.
+2. Create an app (type *Merchant*) and copy the **Client ID** and **Secret** into `.env`.
+3. Under **Testing tools → Sandbox accounts** you'll find a *Business* account (that's you, the invoicer) and a *Personal* account (use it as the client and to pay invoices).
+
+### 2. AI key
+Set `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` (plus `OPENAI_BASE_URL` and `OPENAI_MODEL` for Gemini or another OpenAI-compatible provider).
+
+### 3. (Optional) Demo history
+```bash
+npm run seed      # adds a few months of paid invoices so risk scores and charts have data
+```
+Seeded history is labelled **demo** in the UI. It is local only and never sent to PayPal.
+
+### 4. (Optional) Webhooks for instant "Paid" updates
+Expose your local server (e.g. `cloudflared tunnel --url http://localhost:3000` or `ngrok http 3000`). In your sandbox app, add a webhook to `https://<your-url>/api/webhooks/paypal` for **Invoicing** events, then put the **Webhook ID** in `PAYPAL_WEBHOOK_ID`. Without webhooks, the dashboard's **Check PayPal for payments** button polls PayPal instead.
+
+### No keys? Try mock mode
+With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-process and adds a **Simulate payment** button. Use this to explore the UI offline. An AI key is still needed for the assistant. Without one, follow-ups use template reminders.
+
+---
+
+## Try this flow (what the demo video shows)
+
+1. **Assistant:** *"Bill Rahul Sharma (your-sandbox-personal-email) for 3 logo concepts at $150 each and an urgent revision for $60, due in 10 days."* An invoice slip appears with a risk warning if Rahul pays late.
+2. Edit a rate and click **Approve & send via PayPal**. The slip is stamped **SENT**. Open the sandbox personal account to see the invoice.
+3. Pay it from the sandbox personal account. The dashboard flips to **Paid** through the webhook.
+4. **Follow-ups → Find overdue invoices.** The AI drafts tone-matched reminders. Approve one, and PayPal sends the reminder.
+5. Ask *"How much cash should I expect in the next 30 days?"* or *"Is mahine kitna kamaya?"*
+
+> **Tip for demos:** set `DEMO_TIME_OFFSET_DAYS=15` and restart to fast-forward the app's clock, so invoices you just sent become overdue and the follow-up flow runs against real sandbox invoices.
+
+---
+
+## Deploy (hosted demo)
+
+**Render:** New → Blueprint → select this repo (`render.yaml` is included). Add your keys in the dashboard. Scheduled follow-ups: create a Render Cron Job (or any cron service) that calls `GET https://<app>/api/cron/followups?key=<CRON_SECRET>` daily.
+
+Data is stored in `data/db.json`. On free hosting the disk is temporary, which is fine for a demo; set `DATA_DIR` to a persistent disk for real use.
+
+## Tests
+
+```bash
+npm test
+```
+These are end-to-end tests with mock PayPal and a scripted model. They cover the propose → approve → PayPal flow, user edits, validation, webhook payment, follow-up escalation and de-duplication, the dashboard maths, request mapping for both LLM providers, and the PayPal invoice payload.
+
+## Project layout
+
+```
+server.js            HTTP server + API routes (no framework)
+src/agent.js         System prompt, tool schemas + handlers, chat sessions
+src/llm.js           Anthropic + OpenAI-compatible adapters, tool-calling loop
+src/paypal.js        PayPal Invoicing v2 client (sandbox/live) + mock
+src/actions.js       Pending actions, approval, execution against PayPal
+src/followups.js     Overdue scanner + AI reminder drafting
+src/analytics.js     Risk score, earnings, cash-flow forecast
+src/sync.js          Polling + webhook status updates
+public/              UI (vanilla JS): assistant, dashboard, follow-ups, clients
+test/                End-to-end tests
+```
+
+## Security notes
+- The AI cannot execute payments, reminders or cancellations. A human approves every action.
+- Webhook signatures are verified with PayPal before any state changes (sandbox/live).
+- Keys live only in `.env` (git-ignored). Uploaded screenshots are sent to the model for that turn only and are not kept in chat history.
+
+## License
+[MIT](LICENSE)
