@@ -63,12 +63,12 @@ if (!key) {
   log('       GEMINI_API_KEY=AIza...');
   bye(1);
 }
-if (!key.startsWith('AIza')) {
-  log(`  API key:    found, but it starts with "${key.slice(0, 4)}" - Gemini keys start with "AIza"\n`);
-  log('  Fix: aistudio.google.com se nayi key copy karke .env mein daalo:  GEMINI_API_KEY=AIza...');
+if (key.startsWith('sk-')) {
+  log('  API key:    found, but it is an OpenAI key (starts with "sk-"), not a Google key\n');
+  log('  Fix: aistudio.google.com se key copy karke .env mein daalo:  GEMINI_API_KEY=...');
   bye(1);
 }
-log(`  API key:    found (AIza...${key.slice(-4)})`);
+log(`  API key:    found (${key.slice(0, 4)}...${key.slice(-4)})`);
 
 // 2. list models (also validates the key + network)
 log('\n  Google se baat kar raha hoon...');

@@ -39,15 +39,18 @@ const env = process.env;
 // Convenience: a Gemini key (starts with "AIza") pasted into OPENAI_API_KEY or
 // GEMINI_API_KEY works even if the base URL / model lines were left out.
 if (!env.OPENAI_API_KEY && env.GEMINI_API_KEY) env.OPENAI_API_KEY = env.GEMINI_API_KEY;
-if (env.OPENAI_API_KEY?.startsWith('AIza')) {
+if (/^(AIza|AQ\.)/.test(env.OPENAI_API_KEY || '')) {
   env.OPENAI_BASE_URL ||= 'https://generativelanguage.googleapis.com/v1beta/openai';
-  env.OPENAI_MODEL ||= 'gemini-flash-latest';
+  env.OPENAI_MODEL ||= 'gemini-3.8-flash';
 }
+
+// Google AI Studio keys: classic "AIza..." and the newer "AQ." format
+export const isGoogleKey = (k) => /^(AIza|AQ\.)/.test(k || '');
 
 function detectLlmProvider() {
   if (env.LLM_PROVIDER) return env.LLM_PROVIDER.toLowerCase();
   if (env.ANTHROPIC_API_KEY) return 'anthropic';
-  if (env.GEMINI_API_KEY || env.OPENAI_API_KEY?.startsWith('AIza')) return 'gemini';
+  if (env.GEMINI_API_KEY || isGoogleKey(env.OPENAI_API_KEY) || (env.OPENAI_BASE_URL || '').includes('generativelanguage.googleapis.com')) return 'gemini';
   if (env.OPENAI_API_KEY) return 'openai';
   return 'none';
 }
