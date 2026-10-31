@@ -33,6 +33,14 @@ export function moneyMap(map, primary) {
   return entries.map(([c, v]) => money(v, c)).join(' + ');
 }
 
+export const RISK_TEXT = { none: 'No risk', low: 'Low', medium: 'Medium', high: 'High' };
+
+export function daysLateText(d) {
+  if (d === null || d === undefined) return 'No history yet';
+  if (d <= 0) return 'On time';
+  return `${d} day${d === 1 ? '' : 's'} late`;
+}
+
 export function fmtDate(d) {
   if (!d) return '';
   return new Date(d.length === 10 ? d + 'T00:00:00Z' : d).toLocaleDateString('en', { day: 'numeric', month: 'short', timeZone: 'UTC' });
@@ -86,20 +94,52 @@ export async function header(active) {
       ${link('/', 'Assistant', 'chat')}
       ${link('/dashboard', 'Dashboard', 'dashboard')}
       ${link('/followups', 'Follow-ups', 'followups', pending ? `<span class="badge" title="${pending} waiting for approval">${pending}</span>` : '')}
+      ${link('/time', 'Time', 'time')}
       ${link('/clients', 'Clients', 'clients')}
     </nav>
     <div class="modes">
+      <span id="timerPill"></span>
       <span class="mode ${CONFIG.paypalMode === 'mock' ? 'warn' : ''}" title="PayPal environment">PayPal: <b>${pp}</b></span>
       <span class="mode ${ai === 'not set' ? 'warn' : ''}" title="AI provider">AI: <b>${esc(ai)}</b></span>
       ${CONFIG.demoTimeOffsetDays ? `<span class="mode warn" title="DEMO_TIME_OFFSET_DAYS">Clock +${CONFIG.demoTimeOffsetDays}d</span>` : ''}
       ${CONFIG.loginEnabled ? '<button class="mode" id="logoutBtn" style="background:none;cursor:pointer">Sign out</button>' : ''}
     </div>`;
   document.body.prepend(el);
+  refreshTimerPill();
   el.querySelector('#logoutBtn')?.addEventListener('click', async () => {
     await api('/api/logout', { body: {} }).catch(() => {});
     location.href = '/login.html';
   });
   return CONFIG;
+}
+
+// ------------------------------------------------------------------
+// Live timer badge (shown in the top bar on every page while a timer runs)
+// ------------------------------------------------------------------
+let pillTick = null;
+export function clockText(ms) {
+  const t = Math.max(0, Math.floor(ms / 1000));
+  const h = String(Math.floor(t / 3600)).padStart(2, '0');
+  const m = String(Math.floor((t % 3600) / 60)).padStart(2, '0');
+  const s = String(t % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
+}
+
+export async function refreshTimerPill(running) {
+  const host = document.getElementById('timerPill');
+  if (!host) return;
+  if (running === undefined) running = (await api('/api/time/running').catch(() => ({}))).running;
+  clearInterval(pillTick);
+  if (!running) {
+    host.innerHTML = '';
+    return;
+  }
+  const start = new Date(running.startedAt).getTime();
+  host.innerHTML = `<a class="mode timer" href="/time" title="Timer running for ${esc(running.client)}: ${esc(running.task)}"><span class="dot"></span><b class="num" id="pillClock">${clockText(Date.now() - start)}</b> ${esc(running.client)}</a>`;
+  pillTick = setInterval(() => {
+    const c = document.getElementById('pillClock');
+    if (c) c.textContent = clockText(Date.now() - start);
+  }, 1000);
 }
 
 // ------------------------------------------------------------------
@@ -146,7 +186,7 @@ export function renderSlip(action, { onDone } = {}) {
       </div>
       <div class="total"><span>Total due</span><b class="num" data-total></b></div>
       <div class="deposit-line num" data-deprow></div>
-      ${p.risk && p.risk.label !== 'low' ? `<div class="risk ${p.risk.label}">This client has ${p.risk.label} payment risk${p.risk.avgDaysLate ? ` and usually pays ${p.risk.avgDaysLate} days late` : ''}.${p.depositSuggested ? ' A 50% deposit was added so you get paid part upfront. Set it to 0 to remove it.' : ' Consider a shorter due date or a deposit.'}</div>` : ''}
+      ${p.risk && ['medium', 'high'].includes(p.risk.label) ? `<div class="risk ${p.risk.label}">This client has ${p.risk.label} payment risk${p.risk.avgDaysLate ? ` and usually pays ${p.risk.avgDaysLate} days late` : ''}.${p.depositSuggested ? ' A 50% deposit was added so you get paid part upfront. Set it to 0 to remove it.' : ' Consider a shorter due date or a deposit.'}</div>` : ''}
       <div class="slip-actions">
         <button class="btn" data-approve>Approve &amp; send via PayPal</button>
         <button class="btn ghost" data-reject>Discard</button>

@@ -30,8 +30,8 @@ setLlmOverride(async ({ messages, tools }) => {
   calls.push({ messages, tools });
   const last = messages.at(-1);
   const userText = last.role === 'user' ? last.content.find((c) => c.type === 'text')?.text || '' : '';
-  if (/money brief/i.test(userText)) {
-    return { content: [{ type: 'text', text: '**Where you stand**\n- You earned money.\n**Do next**\n- Chase invoice #1001.' }] };
+  if (/HEADLINE:/.test(userText)) {
+    return { content: [{ type: 'text', text: 'HEADLINE: Jake Miller owes $850 and is 12 days late.\n- Send Jake a firm reminder for #1001.\n- Nudge Acme Labs on #1002.' }] };
   }
   if (last.role === 'user' && /bill/i.test(userText)) {
     return {
@@ -82,7 +82,8 @@ test('seed demo history', async () => {
   const jake = data.clients.find((c) => c.name === 'Jake Miller');
   assert.equal(jake.riskLabel, 'high', 'late payer should be high risk');
   const emily = data.clients.find((c) => c.name === 'Emily Carter');
-  assert.equal(emily.riskLabel, 'low');
+  assert.equal(emily.riskLabel, 'none', 'reliable payer = no risk');
+  assert.ok(data.clients.every((c) => c.avgDaysLate === null || Number.isInteger(c.avgDaysLate)), 'whole days only');
 });
 
 let actionId;
@@ -219,29 +220,85 @@ test('recurring invoices: schedule → due draft → next month', async () => {
   assert.equal(a.type, 'create_schedule');
   const ok = await call(`/api/actions/${a.id}/approve`, {});
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  // starts today -> first draft is created immediately
+  const draftId = ok.data.action.result.firstDraftId;
+  assert.ok(draftId, 'first draft created on approval');
+  const pend = (await call('/api/actions?status=pending&origin=schedule')).data.actions.find((x) => x.id === draftId);
+  assert.equal(pend.payload.total, 600);
   let sch = (await call('/api/schedules')).data.schedules;
   assert.equal(sch.length, 1);
-  const first = sch[0].nextRun;
-  const run = await call('/api/schedules/run', {});
-  assert.equal(run.data.created.length, 1);
-  assert.equal(run.data.created[0].origin, 'schedule');
-  assert.equal(run.data.created[0].payload.total, 600);
-  sch = (await call('/api/schedules')).data.schedules;
-  assert.ok(sch[0].nextRun > first, 'next run advanced');
+  assert.ok(sch[0].nextRun > ok.data.action.payload.startDate, 'next run advanced to next month');
   assert.equal((await call('/api/schedules/run', {})).data.created.length, 0, 'not due again yet');
+  // manual form path (no AI)
+  const form = await call('/api/schedules', { clientName: 'Acme Labs', clientEmail: 'billing@acmelabs.example', description: 'Weekly support', amount: 150, frequency: 'weekly' });
+  assert.equal(form.status, 200, JSON.stringify(form.data));
+  assert.ok(form.data.action.result.firstDraftId);
+  const bad = await call('/api/schedules', { clientName: 'X', clientEmail: 'nope', description: 'x', amount: 5, frequency: 'weekly' });
+  assert.equal(bad.status, 400);
+  sch = (await call('/api/schedules')).data.schedules;
+  assert.equal(sch.length, 2);
   await call(`/api/schedules/${sch[0].id}/pause`, {});
-  assert.equal((await call('/api/schedules')).data.schedules[0].active, false);
+  assert.equal((await call('/api/schedules')).data.schedules.find((x) => x.id === sch[0].id).active, false);
 });
 
 test('AI money brief uses computed facts', async () => {
   const { briefFacts } = await import('../src/brief.js');
   const f = briefFacts();
-  assert.ok(f.overdue.length >= 1);
-  assert.ok('expected' in f.next30Days);
+  assert.ok(f.overdue.byCustomer.length >= 1);
+  assert.ok(f.overdue.byCustomer[0].amount >= f.overdue.byCustomer.at(-1).amount, 'sorted by amount');
+  assert.ok(f.topCustomers[0].rank === 1 && f.topCustomers[0].totalPaid >= (f.topCustomers[1]?.totalPaid || 0));
+  assert.ok(f.lifetime.paidInvoices > 0);
+  assert.ok('changePct' in f.thisMonth);
   const { status, data } = await call('/api/brief', { refresh: true });
   assert.equal(status, 200, JSON.stringify(data));
-  assert.match(data.text, /Where you stand/);
+  assert.ok(data.facts.lifetime);
+  assert.ok(data.ai.headline, JSON.stringify(data.ai));
+  assert.ok(data.ai.actions.length >= 1);
   assert.equal((await call('/api/brief', {})).data.cached, true);
+});
+
+test('top customers, monthly payments and CSV export', async () => {
+  const top = (await call('/api/insights/top-customers?limit=3')).data.customers;
+  assert.equal(top[0].rank, 1);
+  assert.ok(top[0].totalPaid >= top[1].totalPaid);
+  const month = new Date().toISOString().slice(0, 7);
+  const p = (await call(`/api/payments?month=${month}`)).data;
+  assert.equal(p.month, month);
+  assert.ok(p.payments.every((x) => x.paidDate.startsWith(month)));
+  assert.equal((await call('/api/payments?month=bad')).status, 400);
+  const csv = await fetch(base + '/api/invoices.csv');
+  assert.match(csv.headers.get('content-type'), /text\/csv/);
+  const text = await csv.text();
+  assert.match(text.split('\r\n')[0], /^Invoice,Client,Work/);
+});
+
+test('time tracking: timer, manual entry, invoice from hours, no double billing', async () => {
+  const clients = (await call('/api/clients')).data.clients;
+  const jake = clients.find((c) => c.name === 'Jake Miller');
+  const st = await call('/api/time/start', { clientId: jake.id, task: 'Homepage build', hourlyRate: 80 });
+  assert.equal(st.status, 200, JSON.stringify(st.data));
+  assert.ok((await call('/api/time/running')).data.running);
+  const stop = await call('/api/time/stop', {});
+  assert.equal(stop.data.stopped.minutes, 1, 'minimum one minute');
+  assert.equal((await call('/api/time/stop', {})).status, 409);
+  await call('/api/time/entries', { clientId: jake.id, task: 'Homepage build', hours: 2.5, hourlyRate: 80 });
+  assert.equal((await call('/api/time/entries', { clientId: jake.id, hours: 30 })).status, 400);
+  const un = (await call('/api/time')).data.unbilled.find((u) => u.clientId === jake.id);
+  assert.ok(un.hours > 2.5 && un.hours < 2.6);
+  const inv = await call('/api/time/invoice', { clientId: jake.id });
+  assert.equal(inv.status, 200, JSON.stringify(inv.data));
+  const draft = inv.data.action;
+  assert.equal(draft.payload.total, un.value, 'unbilled value matches the invoice total');
+  assert.equal(draft.payload.items.length, 1, 'grouped by task + rate');
+  assert.equal(draft.payload.items[0].unitPrice, 80);
+  assert.equal(draft.payload.timeEntryIds.length, 2);
+  const second = (await call('/api/time/invoice', { clientId: jake.id })).data.action;
+  const ok = await call(`/api/actions/${draft.id}/approve`, { edits: { depositAmount: 0 } });
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.equal((await call('/api/time')).data.unbilled.find((u) => u.clientId === jake.id), undefined, 'hours are billed');
+  const dup = await call(`/api/actions/${second.id}/approve`, { edits: { depositAmount: 0 } });
+  assert.equal(dup.status, 400, 'same hours cannot be billed twice');
+  assert.equal((await call('/api/time/invoice', { clientId: jake.id })).status, 400, 'nothing left to bill');
 });
 
 test('health endpoint + security headers', async () => {

@@ -26,18 +26,25 @@ Freelancers lose time and money on getting paid:
 | **Human-in-the-loop** | The AI can only *propose*. Nothing reaches PayPal or the client until you click **Approve & send via PayPal**. You can edit any field first. |
 | **Real PayPal invoices** | Approved drafts are created and sent with the **PayPal Invoicing v2 API**. The client gets PayPal's email and payment page. |
 | **Live payment status** | **PayPal webhooks** (`INVOICING.INVOICE.PAID`, with signature verification) and on-demand polling update the dashboard as soon as a client pays. |
-| **Client risk scoring** | Each client gets a risk score from their payment history (average days late, late ratio, current overdue). The agent warns you before you invoice a risky client and suggests a shorter due date or an advance. |
+| **Client risk** | Each client is rated **No risk / Low / Medium / High** from their payment history (average days late, share of late payments, current overdue). The agent warns you before you invoice a risky client. |
 | **Escalating follow-ups** | PayPilot scans for overdue invoices, and the AI drafts a reminder for each whose tone moves from *friendly* to *firm* to *final*, based on reminders already sent and days overdue. Approve, and it goes out through PayPal's **remind** endpoint. This can run on a schedule. |
 | **Deposits for risky clients** | When a client usually pays late, the agent automatically adds a **50% upfront deposit** using PayPal's **partial-payment** option, and tells you why. You can change or remove it on the slip. |
 | **Sales tax** | Add a sales-tax % to any invoice ("plus 8% sales tax"). It's sent to PayPal as per-line tax, so the client sees a proper breakdown. |
-| **Recurring invoices** | *"Bill Emily $600 every month."* Creates a weekly or monthly schedule. Each period a new draft lands in your approval tray, so nothing auto-sends. Pause, resume or delete schedules on the Clients page. |
-| **AI money brief** | One click on the dashboard gives a 100-word summary of where your money stands and the 2–3 most urgent actions, written only from computed numbers. |
+| **Recurring invoices** | Set up from a simple form on the Clients page or by asking *"Bill Emily $600 every month"*. On each due date a ready-made draft lands in your approval tray (the first one immediately if it starts today), so nothing auto-sends. Pause, resume or delete any time. |
+| **Money brief** | One click gives a step-by-step report: total earned so far, this month vs last month, top customers, overdue amount by customer, what's still to collect, clients to watch, and unbilled time. It ends with AI-written recommendations. The numbers are computed in code; the AI only writes the headline and actions. |
+| **Live time tracking** | Start and stop a timer per client and task; a live clock shows in the top bar on every page. Unbilled hours become an invoice draft in one click (or ask the agent: *"Invoice my tracked hours for Olivia"*). Billed hours are locked so they can't be invoiced twice. |
+| **Interactive dashboard** | Click a summary card to filter invoices, click a month in the chart to see every payment received that month, sort any column, search, and export everything to CSV for your accountant. |
+| **Top customers** | Clients ranked by money actually received, with their share of revenue, on the dashboard and Clients page. Ask the agent *"Who is my best customer?"* |
 | **Cash-flow forecast** | Expected incoming money over the next 30 days, weighted by each client's real payment behaviour. |
 | **Ask anything** | *"Who owes me money?"*, *"How much did I earn this month?"*, *"Cancel Olivia's invoice."* The agent answers from your real PayPal data, never from guesses. |
 
-| Dashboard | Follow-ups | Clients |
+| Dashboard + money brief | Time tracking | Clients and recurring invoices |
 |---|---|---|
-| ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/followups.png) | ![](docs/screenshots/clients.png) |
+| ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/time.png) | ![](docs/screenshots/clients.png) |
+
+| Follow-ups |
+|---|
+| ![](docs/screenshots/followups.png) |
 
 ---
 
@@ -168,7 +175,8 @@ src/analytics.js     Risk score, earnings, cash-flow forecast
 src/sync.js          Polling + webhook status updates
 src/recurring.js     Recurring schedules → invoice drafts
 src/scheduler.js     Background jobs (PayPal sync, overdue scan, recurring)
-src/brief.js         AI money brief from computed facts
+src/brief.js         Money brief: computed sections + AI recommendations
+src/timetracking.js  Live timer, manual entries, invoice drafts from tracked hours
 public/              UI (vanilla JS): assistant, dashboard, follow-ups, clients
 test/                End-to-end tests
 ```
@@ -182,6 +190,7 @@ test/                End-to-end tests
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite` | Models to try when the main one is busy |
 | `SCHEDULER_INTERVAL_MIN` | `360` | Background job interval in minutes (`0` = off) |
 | `CHAT_RATE_LIMIT_PER_MIN` | `15` | Assistant messages per minute per IP |
+| `DEFAULT_HOURLY_RATE` | `50` | Starting hourly rate for the time tracker (remembered per client) |
 
 ## Security notes
 - The AI cannot execute payments, reminders or cancellations. A human approves every action, including each recurring invoice.

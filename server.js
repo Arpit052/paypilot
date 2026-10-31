@@ -15,7 +15,9 @@ import { seedDemo } from './src/seed.js';
 import { runRecurring } from './src/recurring.js';
 import { moneyBrief } from './src/brief.js';
 import { startScheduler, runJobs, lastRun } from './src/scheduler.js';
-import { invoiceTotals } from './src/analytics.js';
+import { invoiceTotals, topCustomers, paymentsInMonth, invoicesCsv } from './src/analytics.js';
+import { runningTimer, startTimer, stopTimer, addManualEntry, listEntries, removeEntry, unbilledTime, proposeInvoiceFromTime, rateFor } from './src/timetracking.js';
+import { createAction } from './src/actions.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 const startedAt = Date.now();
@@ -187,6 +189,28 @@ export function createApp() {
     });
   });
 
+  // ---- insights ----
+  api.get('/insights/top-customers', (req, res) => res.json({ customers: topCustomers({ limit: Math.min(Number(req.query.limit) || 5, 50) }) }));
+  api.get('/payments', (req, res) => res.json(paymentsInMonth(String(req.query.month || isoDate().slice(0, 7)))));
+  api.get('/invoices.csv', (req, res) => {
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="paypilot-invoices-${isoDate()}.csv"`);
+    res.send(invoicesCsv());
+  });
+
+  // ---- time tracking ----
+  api.get('/time', (req, res) => res.json({ running: runningTimer(), entries: listEntries(50), unbilled: unbilledTime() }));
+  api.get('/time/running', (req, res) => res.json({ running: runningTimer() }));
+  api.get('/time/rate/:clientId', (req, res) => res.json({ hourlyRate: rateFor(req.params.clientId) }));
+  api.post('/time/start', (req, res) => res.json(startTimer(req.body || {})));
+  api.post('/time/stop', (req, res) => res.json({ stopped: stopTimer() }));
+  api.post('/time/entries', (req, res) => res.json({ entry: addManualEntry(req.body || {}) }));
+  api.post('/time/entries/:id/delete', (req, res) => res.json(removeEntry(req.params.id)));
+  api.post('/time/invoice', (req, res) => {
+    const r = proposeInvoiceFromTime({ clientId: req.body?.clientId, origin: 'chat' });
+    res.json({ action: r.action, hours: r.hours, total: r.total });
+  });
+
   // ---- AI money brief ----
   api.post('/brief', rateLimit({ perMinute: 4, message: 'Please wait a minute before refreshing the brief.' }), async (req, res) =>
     res.json(await moneyBrief({ refresh: Boolean(req.body?.refresh) }))
@@ -203,6 +227,29 @@ export function createApp() {
     })
   );
   api.post('/schedules/run', (req, res) => res.json({ created: runRecurring() }));
+  // manual form: the user filled it in themselves, so it's approved on submit
+  api.post('/schedules', async (req, res) => {
+    const b = req.body || {};
+    const a = createAction(
+      'create_schedule',
+      {
+        clientName: b.clientName,
+        clientEmail: b.clientEmail,
+        items: [{ name: b.description, quantity: 1, unitPrice: Number(b.amount) }],
+        frequency: b.frequency,
+        startDate: b.startDate,
+        dueInDays: b.dueInDays,
+        taxPercent: b.taxPercent,
+      },
+      { origin: 'form', summary: 'Recurring invoice (form)' }
+    );
+    try {
+      res.json({ action: await approveAction(a.id) });
+    } catch (e) {
+      rejectAction(a.id);
+      throw e;
+    }
+  });
   api.post('/schedules/:id/:op', (req, res) => {
     const sc = getSchedule(req.params.id);
     if (!sc) throw httpError(404, 'Schedule not found');

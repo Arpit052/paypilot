@@ -30,7 +30,10 @@ export function clientStats(clientId, today = isoDate()) {
   const invs = listInvoices({ clientId });
   const paid = invs.filter((i) => isPaid(i) && i.paidDate);
   const delays = paid.map((i) => Math.max(0, daysBetween(i.dueDate, i.paidDate)));
-  const avgDaysLate = delays.length ? Math.round((delays.reduce((a, b) => a + b, 0) / delays.length) * 10) / 10 : null;
+  // whole days, rounded up (3.2 days late -> 4 days late)
+  // whole days, rounded up (3.2 -> 4); under one day on average counts as on time
+  const avgRaw = delays.length ? delays.reduce((a, b) => a + b, 0) / delays.length : null;
+  const avgDaysLate = avgRaw === null ? null : avgRaw < 1 ? 0 : Math.ceil(avgRaw - 1e-9);
   const latePayments = delays.filter((d) => d > 2).length;
   const open = invs.filter(isOpen);
   const overdue = open.filter((i) => isOverdue(i, today));
@@ -42,7 +45,8 @@ export function clientStats(clientId, today = isoDate()) {
   risk += Math.min(40, overdue.length * 15 + maxOverdueDays);
   if (!paid.length && !overdue.length) risk = 20; // new client: unknown
   risk = Math.round(Math.min(100, risk));
-  const riskLabel = risk >= 60 ? 'high' : risk >= 30 ? 'medium' : 'low';
+  // none = proven reliable payer; low = small/unknown risk (incl. brand-new clients)
+  const riskLabel = risk >= 60 ? 'high' : risk >= 30 ? 'medium' : paid.length && !overdue.length && risk < 10 ? 'none' : 'low';
 
   const sumBy = (arr) => arr.reduce((s, i) => s + i.total, 0);
   return {
@@ -104,7 +108,7 @@ export function forecastCashflow(days = 30, today = isoDate()) {
   for (const inv of listInvoices().filter(isOpen)) {
     const st = clientStats(inv.clientId, today);
     let expected = addDays(inv.dueDate, Math.round(st.avgDaysLate ?? 3));
-    let probability = { low: 0.95, medium: 0.8, high: 0.6 }[st.riskLabel];
+    let probability = { none: 0.98, low: 0.95, medium: 0.8, high: 0.6 }[st.riskLabel];
     if (expected < today) {
       const overdueDays = daysBetween(inv.dueDate, today);
       expected = addDays(today, 7);
@@ -148,7 +152,7 @@ export function chartSeries(today = isoDate()) {
     const value = allInvoices
       .filter((i) => isPaid(i) && i.currency === cur && i.paidDate?.startsWith(key))
       .reduce((s, i) => s + i.total, 0);
-    months.push({ label, value: round(value), kind: 'actual' });
+    months.push({ key, label, value: round(value), kind: 'actual' });
   }
   const fc = forecastCashflow(28, today);
   const weeks = [0, 1, 2, 3].map((w) => {
@@ -160,4 +164,73 @@ export function chartSeries(today = isoDate()) {
     return { label: `Wk ${w + 1}`, value: round(value), kind: 'forecast' };
   });
   return { currency: cur, months, weeks };
+}
+
+/** Clients ranked by money actually received (paid invoices), primary currency first. */
+export function topCustomers({ limit = 5, from, to } = {}) {
+  const rows = new Map();
+  for (const i of listInvoices()) {
+    if (!isPaid(i) || !i.paidDate) continue;
+    if (from && i.paidDate < from) continue;
+    if (to && i.paidDate > to) continue;
+    const r = rows.get(i.clientId) || { clientId: i.clientId, client: clientName(i.clientId), totalPaid: 0, invoices: 0, lastPaid: null, currency: i.currency };
+    r.totalPaid = round(r.totalPaid + i.total);
+    r.invoices += 1;
+    if (!r.lastPaid || i.paidDate > r.lastPaid) r.lastPaid = i.paidDate;
+    rows.set(i.clientId, r);
+  }
+  const all = [...rows.values()].sort((a, b) => b.totalPaid - a.totalPaid);
+  const grand = all.reduce((s, r) => s + r.totalPaid, 0) || 1;
+  return all.slice(0, limit).map((r, idx) => ({ rank: idx + 1, ...r, share: Math.round((r.totalPaid / grand) * 100) }));
+}
+
+/** Every payment received in a calendar month (YYYY-MM). */
+export function paymentsInMonth(month) {
+  if (!/^\d{4}-\d{2}$/.test(String(month))) throw Object.assign(new Error('month must be YYYY-MM'), { status: 400 });
+  const payments = listInvoices()
+    .filter((i) => isPaid(i) && i.paidDate?.startsWith(month))
+    .map((i) => ({
+      invoiceId: i.id,
+      number: i.number,
+      client: clientName(i.clientId),
+      work: i.items.map((x) => x.name).join(', '),
+      paidDate: i.paidDate,
+      dueDate: i.dueDate,
+      daysLate: Math.max(0, daysBetween(i.dueDate, i.paidDate)),
+      amount: i.total,
+      currency: i.currency,
+    }))
+    .sort((a, b) => b.paidDate.localeCompare(a.paidDate));
+  return { month, count: payments.length, total: byCurrency(payments, (p) => p.amount), payments };
+}
+
+/** Lifetime figures used by the money brief. */
+export function lifetimeStats(today = isoDate()) {
+  const all = listInvoices();
+  const paid = all.filter((i) => isPaid(i) && i.paidDate);
+  const delays = paid.map((i) => daysBetween(i.issueDate, i.paidDate)).filter((d) => d >= 0);
+  const firstPaid = paid.map((i) => i.paidDate).sort()[0] || null;
+  return {
+    totalEarned: byCurrency(paid),
+    paidInvoices: paid.length,
+    since: firstPaid,
+    avgDaysToGetPaid: delays.length ? Math.ceil(delays.reduce((a, b) => a + b, 0) / delays.length) : null,
+    onTimeRate: paid.length ? Math.round((paid.filter((i) => i.paidDate <= i.dueDate).length / paid.length) * 100) : null,
+  };
+}
+
+function csvCell(v) {
+  const s = String(v ?? '');
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** All invoices as CSV (for accountants / tax time). */
+export function invoicesCsv(today = isoDate()) {
+  const head = ['Invoice', 'Client', 'Work', 'Issued', 'Due', 'Paid', 'Status', 'Currency', 'Subtotal', 'Tax %', 'Total', 'Deposit', 'PayPal ID'];
+  const rows = listInvoices().map((i) => {
+    const t = invoiceTotals(i.items, i.taxPercent);
+    return [i.number, clientName(i.clientId), i.items.map((x) => `${x.quantity} x ${x.name}`).join('; '), i.issueDate, i.dueDate, i.paidDate || '',
+      isOverdue(i, today) ? 'OVERDUE' : i.status, i.currency, t.subtotal, i.taxPercent || 0, i.total, i.depositAmount || 0, i.paypalId || ''];
+  });
+  return [head, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }

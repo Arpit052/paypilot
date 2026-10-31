@@ -34,7 +34,7 @@ body {
 a { color: var(--cobalt); }
 button, input, textarea, select { font: inherit; color: inherit; }
 :focus-visible { outline: 3px solid color-mix(in srgb, var(--cobalt) 55%, transparent); outline-offset: 2px; }
-.num { font-variant-numeric: tabular-nums; }
+.num { font-variant-numeric: lining-nums; }
 .muted { color: var(--ink-3); }
 .hidden { display: none !important; }
 
@@ -198,7 +198,7 @@ h2 { font-size: 18px; letter-spacing: -0.01em; margin: 0 0 12px; font-weight: 70
 
 /* ---------- status pills ---------- */
 .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
-.pill.PAID, .pill.MARKED_AS_PAID, .pill.low { background: var(--paid-bg); color: var(--paid); }
+.pill.PAID, .pill.MARKED_AS_PAID, .pill.none, .pill.low { background: var(--paid-bg); color: var(--paid); }
 .pill.SENT, .pill.UNPAID, .pill.SCHEDULED, .pill.medium, .pill.friendly { background: var(--due-bg); color: var(--due); }
 .pill.OVERDUE, .pill.high, .pill.final { background: var(--late-bg); color: var(--late); }
 .pill.firm { background: #f7e1cf; color: #9a4a12; }
@@ -256,3 +256,68 @@ table.data td.r, table.data th.r { text-align: right; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- interactive dashboard ---------- */
+button.fig { border: 0; text-align: left; font: inherit; color: inherit; cursor: pointer; position: relative; }
+button.fig:hover { background: #f6f8fc; }
+button.fig.active { box-shadow: inset 0 -3px 0 var(--cobalt); background: #f3f6ff; }
+.chart .bar { cursor: pointer; }
+.chart .bar:hover rect:nth-child(2) { fill: var(--cobalt); }
+.chart .bar:focus-visible { outline: none; }
+.chart .bar:focus-visible rect:nth-child(2) { stroke: var(--cobalt); stroke-width: 2; }
+.month-detail { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.md-head { display: flex; align-items: center; gap: 10px; }
+.md-head h3 { margin: 0; font-size: 16px; }
+.md-head .btn { margin-left: auto; }
+
+ol.leader { list-style: none; margin: 0; padding: 0; }
+ol.leader li { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--desk); }
+ol.leader li:last-child { border-bottom: 0; }
+.rank { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--desk); color: var(--ink-2); flex: none; }
+.rank.first { background: #fdf0c8; color: #8a5a00; }
+.who { flex: 1; display: flex; flex-direction: column; font-size: 14px; min-width: 0; }
+.who .muted { font-size: 12.5px; }
+.share { height: 4px; background: var(--desk); border-radius: 2px; margin-top: 5px; overflow: hidden; }
+.share i { display: block; height: 100%; background: var(--cobalt); border-radius: 2px; }
+.amt { font-weight: 700; }
+
+.table-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.table-tools input[type=search] { margin-left: auto; border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; min-width: 200px; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--paper); padding: 6px 12px; cursor: pointer; font-size: 13.5px; color: var(--ink-2); }
+.seg button + button { border-left: 1px solid var(--rule); }
+.seg button[aria-pressed=true] { background: var(--ink); color: #fff; }
+button.sort { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+button.sort .arrow { font-size: 10px; opacity: .5; }
+th[aria-sort=ascending] button.sort, th[aria-sort=descending] button.sort { color: var(--ink); font-weight: 600; }
+th[aria-sort=ascending] .arrow, th[aria-sort=descending] .arrow { opacity: 1; }
+.linkbtn { border: 0; background: none; color: var(--cobalt); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+
+/* ---------- money brief ---------- */
+ol.bsteps { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 0; }
+.bstep { display: grid; grid-template-columns: 34px 1fr; gap: 12px; padding: 14px 0; border-top: 1px solid var(--desk); }
+.bstep:first-child { border-top: 0; }
+.bstep h3 { margin: 2px 0 4px; font-size: 15px; }
+.bstep p { margin: 2px 0; }
+.bnum { width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+.big { font-size: 22px; letter-spacing: -0.02em; }
+.headline { font-size: 17px; font-weight: 600; margin: 2px 0 8px; }
+.mini { margin: 4px 0 0; padding-left: 20px; }
+.mini li { margin: 4px 0; }
+
+/* ---------- time tracker ---------- */
+.mode.timer { border-color: #7ee2b0; color: #c9f7df; text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
+.mode.timer .dot { width: 8px; height: 8px; border-radius: 50%; background: #2fd47f; animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+.timer-card { display: grid; grid-template-columns: 1.2fr 1fr; gap: 26px; align-items: center; }
+.clock { font-size: 56px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1; }
+.clock.idle { color: var(--ink-3); }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.form-grid label { font-size: 12px; color: var(--ink-3); display: block; margin-bottom: 3px; }
+.form-grid input, .form-grid select { width: 100%; border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; background: var(--paper); }
+.form-grid .full { grid-column: 1 / -1; }
+.btn.go { background: var(--paid); } .btn.go:hover { background: #0e6340; }
+.btn.stop { background: var(--late); }
+@media (max-width: 980px) { .timer-card, .form-grid { grid-template-columns: 1fr; } .table-tools input[type=search] { margin-left: 0; } }
+.pill.top { background: #fdf0c8; color: #8a5a00; margin-left: 4px; }
+table.data td.num, table.data td.r { white-space: nowrap; }

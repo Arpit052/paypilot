@@ -2,7 +2,7 @@
 // Historical (paid) invoices are marked source:"seed". In mock mode we also seed
 // open/overdue invoices so the follow-up flow can be shown immediately.
 import { config, isoDate, addDays } from './config.js';
-import { upsertClient, logActivity, insertInvoice, findClient, transaction } from './db.js';
+import { upsertClient, logActivity, insertInvoice, findClient, transaction, insertTimeEntry, kvSet } from './db.js';
 import { isMock, mockNextNumber, mockPut } from './paypal.js';
 import { invoiceTotal } from './analytics.js';
 
@@ -87,6 +87,14 @@ function seedInner() {
       reminders: [],
       source: 'seed',
     });
+  }
+
+  // Some unbilled hours so the Time page has something to invoice.
+  const olivia = findClient('olivia.brooks@example.com');
+  kvSet(`rate:${olivia.id}`, 65);
+  for (const [daysAgo, task, minutes] of [[3, 'Content calendar', 150], [1, 'Content calendar', 95], [1, 'Caption writing', 60]]) {
+    const start = new Date(`${addDays(today, -daysAgo)}T10:00:00Z`);
+    insertTimeEntry({ clientId: olivia.id, task, startedAt: start.toISOString(), endedAt: new Date(start.getTime() + minutes * 60000).toISOString(), minutes, hourlyRate: 65 });
   }
 
   if (isMock) {

@@ -76,6 +76,18 @@ CREATE TABLE IF NOT EXISTS schedules (
   last_run TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS time_entries (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  task TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  minutes INTEGER,
+  hourly_rate REAL NOT NULL,
+  billed_invoice_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_time_client ON time_entries(client_id);
 CREATE TABLE IF NOT EXISTS kv (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -127,7 +139,7 @@ export function transaction(fn) {
 }
 
 export function resetDb() {
-  sql().exec('DELETE FROM actions; DELETE FROM schedules; DELETE FROM invoices; DELETE FROM clients; DELETE FROM activity; DELETE FROM kv;');
+  sql().exec('DELETE FROM actions; DELETE FROM schedules; DELETE FROM time_entries; DELETE FROM invoices; DELETE FROM clients; DELETE FROM activity; DELETE FROM kv;');
 }
 
 // ---------------- clients ----------------
@@ -365,4 +377,61 @@ export function updateSchedule(id, patch) {
 
 export function deleteSchedule(id) {
   return sql().prepare('DELETE FROM schedules WHERE id = ?').run(id).changes === 1;
+}
+
+// ---------------- time tracking ----------------
+const rowTime = (r) =>
+  r && {
+    id: r.id,
+    clientId: r.client_id,
+    task: r.task,
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+    minutes: r.minutes,
+    hourlyRate: r.hourly_rate,
+    billedInvoiceId: r.billed_invoice_id,
+    createdAt: r.created_at,
+  };
+
+export function insertTimeEntry(e) {
+  const id = newId('tim');
+  sql()
+    .prepare('INSERT INTO time_entries (id, client_id, task, started_at, ended_at, minutes, hourly_rate, created_at) VALUES (?,?,?,?,?,?,?,?)')
+    .run(id, e.clientId, e.task, e.startedAt, e.endedAt ?? null, e.minutes ?? null, e.hourlyRate, nowIso());
+  return getTimeEntry(id);
+}
+
+export function getTimeEntry(id) {
+  return rowTime(sql().prepare('SELECT * FROM time_entries WHERE id = ?').get(id));
+}
+
+export function getRunningTimer() {
+  return rowTime(sql().prepare('SELECT * FROM time_entries WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1').get());
+}
+
+export function listTimeEntries({ limit = 50, unbilledOnly = false, clientId } = {}) {
+  const where = ['ended_at IS NOT NULL'];
+  const vals = [];
+  if (unbilledOnly) where.push('billed_invoice_id IS NULL');
+  if (clientId) where.push('client_id = ?') && vals.push(clientId);
+  return sql()
+    .prepare(`SELECT * FROM time_entries WHERE ${where.join(' AND ')} ORDER BY started_at DESC LIMIT ?`)
+    .all(...vals, limit)
+    .map(rowTime);
+}
+
+export function finishTimeEntry(id, endedAt, minutes) {
+  sql().prepare('UPDATE time_entries SET ended_at = ?, minutes = ? WHERE id = ?').run(endedAt, minutes, id);
+  return getTimeEntry(id);
+}
+
+export function markTimeBilled(ids, invoiceId) {
+  const st = sql().prepare('UPDATE time_entries SET billed_invoice_id = ? WHERE id = ? AND billed_invoice_id IS NULL');
+  let n = 0;
+  for (const id of ids) n += st.run(invoiceId, id).changes;
+  return n;
+}
+
+export function deleteTimeEntry(id) {
+  return sql().prepare('DELETE FROM time_entries WHERE id = ? AND billed_invoice_id IS NULL').run(id).changes === 1;
 }

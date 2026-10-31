@@ -1,9 +1,51 @@
-import { api, header, esc, money, moneyMap, fmtDate, toast, md } from './common.js';
+import { api, header, esc, money, moneyMap, fmtDate, toast, RISK_TEXT, daysLateText } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const cfg = await header('dashboard');
 const cur = cfg.currency;
 
+const state = { filter: 'all', sort: { key: 'issueDate', dir: 'desc' }, q: '', month: null };
+let data = { invoices: [], dash: null };
+
+const OPEN = ['SENT', 'UNPAID', 'PARTIALLY_PAID', 'PAYMENT_PENDING', 'SCHEDULED'];
+const isPaid = (i) => ['PAID', 'MARKED_AS_PAID'].includes(i.status);
+const FILTERS = {
+  all: { label: 'All invoices', fn: () => true },
+  open: { label: 'Waiting to be paid', fn: (i) => OPEN.includes(i.status) },
+  overdue: { label: 'Overdue', fn: (i) => i.displayStatus === 'OVERDUE' },
+  paid: { label: 'Paid', fn: isPaid },
+  paidThisMonth: { label: 'Paid this month', fn: (i) => isPaid(i) && i.paidDate?.startsWith(data.dash.today.slice(0, 7)) },
+  expected30: { label: 'Expected in the next 30 days', fn: (i) => data.dash.forecast.invoices.some((f) => f.invoice === i.number) },
+};
+
+// ---------------- figures (clickable) ----------------
+function renderFigures() {
+  const s = data.dash.summary;
+  const card = (filter, k, v, sub, extra = '') =>
+    `<button class="fig ${extra} ${state.filter === filter ? 'active' : ''}" data-filter="${filter}" aria-pressed="${state.filter === filter}">
+      <div class="k">${k}</div><div class="v num">${v}</div><div class="s">${sub}</div></button>`;
+  $('figures').innerHTML =
+    card('paidThisMonth', 'Earned this month', moneyMap(s.earned, cur), `${s.paidInvoices} paid invoice${s.paidInvoices === 1 ? '' : 's'}`) +
+    card('open', 'Waiting to be paid', moneyMap(s.outstanding, cur), `${s.openInvoices} open`) +
+    card('overdue', 'Overdue', moneyMap(s.overdue, cur), s.overdueInvoices ? `${s.overdueInvoices} invoice${s.overdueInvoices > 1 ? 's' : ''} late` : 'Nothing late', s.overdueInvoices ? 'late' : '') +
+    card('expected30', 'Expected in 30 days', moneyMap(data.dash.forecast.expected, cur), "Weighted by each client's habits");
+}
+
+$('figures').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-filter]');
+  if (!b) return;
+  setFilter(state.filter === b.dataset.filter ? 'all' : b.dataset.filter);
+  $('invoices').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+
+function setFilter(f) {
+  state.filter = f;
+  document.querySelectorAll('#seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.f === f)));
+  renderFigures();
+  renderTable();
+}
+
+// ---------------- chart (months clickable) ----------------
 function chartSvg({ months, weeks }) {
   const bars = [...months, ...weeks];
   const W = 640, H = 240, padL = 8, padB = 28, padT = 22, gap = 14, sepGap = 26;
@@ -19,50 +61,121 @@ function chartSvg({ months, weeks }) {
     }
     const h = ((H - padB - padT) * b.value) / max;
     const y = H - padB - h;
-    const fill = b.kind === 'actual' ? '#18213d' : '#9fb1f0';
+    const actual = b.kind === 'actual';
+    const sel = actual && state.month === b.key;
+    const fill = actual ? (sel ? '#2346d8' : '#18213d') : '#9fb1f0';
+    const g = actual
+      ? `<g class="bar" role="button" tabindex="0" data-month="${b.key}" aria-label="${b.label}: ${money(b.value, cur)}. Show payments">`
+      : '<g>';
+    out += `${g}<rect x="${x - 4}" y="${padT - 10}" width="${bw + 8}" height="${H - padT + 10}" fill="transparent"/>`;
     out += `<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(h, 1)}" rx="3" fill="${fill}"><title>${b.label}: ${money(b.value, cur)}</title></rect>`;
     if (b.value) out += `<text x="${x + bw / 2}" y="${y - 6}" text-anchor="middle" font-size="11" fill="#4a5575">${money(b.value, cur)}</text>`;
-    out += `<text x="${x + bw / 2}" y="${H - 9}" text-anchor="middle" font-size="12" fill="#7c86a2">${b.label}</text>`;
+    out += `<text x="${x + bw / 2}" y="${H - 9}" text-anchor="middle" font-size="12" fill="${sel ? '#2346d8' : '#7c86a2'}" font-weight="${sel ? 700 : 400}">${b.label}</text></g>`;
     x += bw + gap;
   });
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly earnings and forecast">${out}</svg>`;
 }
 
-function timeAgo(iso) {
-  const s = (Date.now() - new Date(iso)) / 1000;
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return fmtDate(iso.slice(0, 10));
+async function showMonth(key) {
+  state.month = key;
+  $('chart').innerHTML = chartSvg(data.dash.chart);
+  const p = await api(`/api/payments?month=${key}`);
+  const label = new Date(key + '-01T00:00:00Z').toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  $('monthDetail').innerHTML = `
+    <div class="month-detail">
+      <div class="md-head"><h3>Payments received in ${label}</h3><button class="btn ghost small" id="mdClose">Close</button></div>
+      <p class="muted" style="margin:0 0 8px">${p.count ? `${moneyMap(p.total, cur)} from ${p.count} payment${p.count > 1 ? 's' : ''}` : 'No payments received this month.'}</p>
+      ${p.count ? `<table class="data"><thead><tr><th>Paid on</th><th>Client</th><th>Invoice</th><th>Work</th><th>Timing</th><th class="r">Amount</th></tr></thead><tbody>${p.payments
+        .map((x) => `<tr><td>${fmtDate(x.paidDate)}</td><td>${esc(x.client)}</td><td class="num">#${esc(x.number)}</td><td class="muted">${esc(x.work).slice(0, 48)}</td><td>${x.daysLate ? `<span style="color:var(--due)">${daysLateText(x.daysLate)}</span>` : 'On time'}</td><td class="r num">${money(x.amount, x.currency)}</td></tr>`)
+        .join('')}</tbody></table>` : ''}
+    </div>`;
+  $('mdClose').onclick = () => {
+    state.month = null;
+    $('monthDetail').innerHTML = '';
+    $('chart').innerHTML = chartSvg(data.dash.chart);
+  };
 }
 
-async function load() {
-  const [d, { invoices }] = await Promise.all([api('/api/dashboard'), api('/api/invoices')]);
-  const s = d.summary;
-  $('asof').textContent = `As of ${fmtDate(d.today)}${d.pendingApprovals ? ` · ${d.pendingApprovals} draft${d.pendingApprovals > 1 ? 's' : ''} waiting for your approval` : ''}`;
+$('chart').addEventListener('click', (e) => {
+  const g = e.target.closest('[data-month]');
+  if (g) showMonth(g.dataset.month);
+});
+$('chart').addEventListener('keydown', (e) => {
+  const g = e.target.closest('[data-month]');
+  if (g && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    showMonth(g.dataset.month);
+  }
+});
 
-  $('figures').innerHTML = `
-    <div class="fig"><div class="k">Earned this month</div><div class="v num">${moneyMap(s.earned, cur)}</div><div class="s">${s.paidInvoices} paid invoice${s.paidInvoices === 1 ? '' : 's'}</div></div>
-    <div class="fig"><div class="k">Waiting to be paid</div><div class="v num">${moneyMap(s.outstanding, cur)}</div><div class="s">${s.openInvoices} open</div></div>
-    <div class="fig ${s.overdueInvoices ? 'late' : ''}"><div class="k">Overdue</div><div class="v num">${moneyMap(s.overdue, cur)}</div><div class="s">${s.overdueInvoices ? `${s.overdueInvoices} invoice${s.overdueInvoices > 1 ? 's' : ''} · <a href="/followups">chase them</a>` : 'Nothing late'}</div></div>
-    <div class="fig"><div class="k">Expected in 30 days</div><div class="v num">${moneyMap(d.forecast.expected, cur)}</div><div class="s">Weighted by each client's habits</div></div>`;
+// ---------------- top customers ----------------
+async function renderLeaders() {
+  const { customers } = await api('/api/insights/top-customers?limit=5');
+  $('leaders').innerHTML = customers.length
+    ? customers
+        .map(
+          (c) => `<li>
+            <span class="rank ${c.rank === 1 ? 'first' : ''}">${c.rank}</span>
+            <div class="who"><b>${esc(c.client)}</b><span class="muted">${c.invoices} paid invoice${c.invoices > 1 ? 's' : ''} · ${c.share}% of revenue</span>
+              <span class="share"><i style="width:${Math.max(c.share, 3)}%"></i></span></div>
+            <span class="num amt">${money(c.totalPaid, c.currency)}</span>
+          </li>`
+        )
+        .join('')
+    : '<li class="muted">No payments yet.</li>';
+}
 
-  $('chart').innerHTML = chartSvg(d.chart);
+// ---------------- invoice table (filter, search, sort) ----------------
+const COLS = [
+  ['number', '#'],
+  ['client', 'Client'],
+  ['work', 'Work'],
+  ['issueDate', 'Issued'],
+  ['dueDate', 'Due'],
+  ['displayStatus', 'Status'],
+  ['total', 'Amount', 'r'],
+];
 
-  $('feed').innerHTML = d.activity.length
-    ? d.activity.map((a) => `<li><time datetime="${a.at}">${timeAgo(a.at)}</time><span>${esc(a.text)}</span></li>`).join('')
-    : '<li class="muted">Nothing yet. Send your first invoice from the Assistant.</li>';
+function sortVal(i, key) {
+  if (key === 'work') return i.items.map((x) => x.name).join(', ').toLowerCase();
+  if (key === 'total') return i.total;
+  if (key === 'number') return Number(String(i.number).replace(/\D/g, '')) || 0;
+  return String(i[key] ?? '').toLowerCase();
+}
 
-  if (!invoices.length) {
+function renderTable() {
+  const { key, dir } = state.sort;
+  const q = state.q.trim().toLowerCase();
+  const rows = data.invoices
+    .filter(FILTERS[state.filter].fn)
+    .filter((i) => !q || `${i.client} ${i.items.map((x) => x.name).join(' ')} ${i.number}`.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const x = sortVal(a, key), y = sortVal(b, key);
+      return (x > y ? 1 : x < y ? -1 : 0) * (dir === 'asc' ? 1 : -1);
+    });
+  const total = rows.reduce((s, i) => s + (i.currency === cur ? i.total : 0), 0);
+  $('filterNote').innerHTML =
+    state.filter !== 'all' || q
+      ? `Showing <b>${rows.length}</b> invoice${rows.length === 1 ? '' : 's'} (${FILTERS[state.filter].label.toLowerCase()}${q ? `, matching "${esc(state.q)}"` : ''}), totalling <b>${money(total, cur)}</b>. <button class="linkbtn" id="clearF">Show all</button>`
+      : '';
+  $('clearF')?.addEventListener('click', () => {
+    state.q = '';
+    $('search').value = '';
+    setFilter('all');
+  });
+
+  if (!data.invoices.length) {
     $('invoices').innerHTML = `<div class="empty">No invoices yet.<br><a class="btn" href="/">Create one with the Assistant</a> <button class="btn ghost" id="seedBtn">Load demo history</button></div>`;
     $('seedBtn').onclick = async () => { await api('/api/demo/seed', { body: {} }); load(); };
     return;
   }
   const mock = cfg.paypalMode === 'mock';
-  $('invoices').innerHTML = `
-    <table class="data">
-      <thead><tr><th>#</th><th>Client</th><th>Work</th><th>Issued</th><th>Due</th><th>Status</th><th class="r">Amount</th><th></th></tr></thead>
-      <tbody>${invoices
+  const th = ([k, label, cls]) => {
+    const active = key === k;
+    return `<th class="${cls || ''}" aria-sort="${active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}"><button class="sort" data-sort="${k}">${label}<span class="arrow">${active ? (dir === 'asc' ? '▲' : '▼') : '↕'}</span></button></th>`;
+  };
+  $('invoices').innerHTML = rows.length
+    ? `<table class="data"><thead><tr>${COLS.map(th).join('')}<th></th></tr></thead><tbody>${rows
         .map(
           (i) => `<tr>
             <td class="num">${esc(i.number)}</td>
@@ -73,7 +186,7 @@ async function load() {
             <td><span class="pill ${i.displayStatus}">${i.displayStatus === 'OVERDUE' ? 'Overdue' : i.displayStatus.charAt(0) + i.displayStatus.slice(1).toLowerCase().replace(/_/g, ' ')}</span>${i.source === 'seed' ? ' <span class="muted" title="Demo history, not on PayPal">demo</span>' : ''}${i.depositAmount ? ` <span class="muted" title="Deposit due upfront">deposit ${money(i.depositAmount, i.currency)}</span>` : ''}</td>
             <td class="r num">${money(i.total, i.currency)}</td>
             <td class="r">${
-              i.payerUrl && ['SENT', 'UNPAID', 'PARTIALLY_PAID'].includes(i.status)
+              i.payerUrl && OPEN.includes(i.status)
                 ? mock
                   ? `<button class="btn ghost small" data-pay="${esc(i.paypalId)}" title="Simulate the client paying">Simulate payment</button>`
                   : `<a href="${esc(i.payerUrl)}" target="_blank" rel="noopener">Payment page</a>`
@@ -81,11 +194,17 @@ async function load() {
             }</td>
           </tr>`
         )
-        .join('')}</tbody>
-    </table>`;
+        .join('')}</tbody></table>`
+    : '<div class="empty">No invoices match this filter.</div>';
 }
 
 $('invoices').addEventListener('click', async (e) => {
+  const s = e.target.closest('[data-sort]');
+  if (s) {
+    const k = s.dataset.sort;
+    state.sort = { key: k, dir: state.sort.key === k && state.sort.dir === 'desc' ? 'asc' : 'desc' };
+    return renderTable();
+  }
   const id = e.target.dataset?.pay;
   if (!id) return;
   e.target.disabled = true;
@@ -93,6 +212,44 @@ $('invoices').addEventListener('click', async (e) => {
   toast('Payment received');
   load();
 });
+$('seg').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-f]');
+  if (b) setFilter(b.dataset.f);
+});
+$('search').addEventListener('input', (e) => {
+  state.q = e.target.value;
+  renderTable();
+});
+
+// ---------------- money brief ----------------
+function pct(n) {
+  if (n === null || n === undefined) return '';
+  if (n === 0) return 'the same';
+  return n > 0 ? `<span style="color:var(--paid)">up ${n}%</span>` : `<span style="color:var(--late)">down ${Math.abs(n)}%</span>`;
+}
+
+function renderBrief(b) {
+  const f = b.facts;
+  const L = f.lifetime;
+  const step = (n, title, body) => `<li class="bstep"><span class="bnum">${n}</span><div><h3>${title}</h3>${body}</div></li>`;
+  let n = 0;
+  const steps = [];
+  steps.push(step(++n, 'Total earned so far', `<p><b class="big num">${moneyMap(L.totalEarned, cur)}</b> from ${L.paidInvoices} paid invoices${L.since ? ` since ${fmtDate(L.since)}` : ''}.</p>
+    <p class="muted">${L.onTimeRate !== null ? `${L.onTimeRate}% paid on time · ` : ''}${L.avgDaysToGetPaid !== null ? `clients take ${L.avgDaysToGetPaid} days on average to pay` : ''}</p>`));
+  const tm = f.thisMonth;
+  steps.push(step(++n, `This month (${tm.label})`, `<p><b class="big num">${money(tm.earned, cur)}</b> from ${tm.paidInvoices} payment${tm.paidInvoices === 1 ? '' : 's'}.</p>
+    <p class="muted">${tm.lastMonthLabel}: ${money(tm.lastMonthEarned, cur)}${tm.changePct !== null ? (tm.changePct === 0 ? ' · same as last month' : ` · ${pct(tm.changePct)} vs last month`) : ''}</p>`));
+  steps.push(step(++n, 'Top customers', f.topCustomers.length ? `<ol class="mini">${f.topCustomers.map((c) => `<li><b>${esc(c.client)}</b>: ${money(c.totalPaid, c.currency)} <span class="muted">(${c.invoices} invoices, ${c.share}% of revenue)</span></li>`).join('')}</ol>` : '<p class="muted">No payments yet.</p>'));
+  steps.push(step(++n, 'Overdue, by customer', f.overdue.byCustomer.length ? `<p><b class="num">${money(f.overdue.total, cur)}</b> is late across ${f.overdue.invoices} invoice${f.overdue.invoices > 1 ? 's' : ''}:</p><ul class="mini">${f.overdue.byCustomer.map((o) => `<li><b>${esc(o.client)}</b>: <span style="color:var(--late)">${money(o.amount, o.currency)}</span> <span class="muted">(invoice ${o.invoices.map((x) => '#' + esc(x)).join(', ')} · up to ${o.maxDaysOverdue} days late · ${o.remindersSent} reminder${o.remindersSent === 1 ? '' : 's'} sent)</span></li>`).join('')}</ul>` : '<p>Nothing is overdue.</p>'));
+  steps.push(step(++n, 'Still to collect', `<p><b class="num">${money(f.outstanding.total, cur)}</b> open across ${f.outstanding.invoices} invoice${f.outstanding.invoices === 1 ? '' : 's'}. Expected in the next 30 days: <b class="num">${money(f.next30Days.expected, cur)}</b> <span class="muted">(best case ${money(f.next30Days.bestCase, cur)})</span>.</p>`));
+  if (f.watchList.length) steps.push(step(++n, 'Clients to watch', `<ul class="mini">${f.watchList.map((w) => `<li><b>${esc(w.client)}</b>: ${RISK_TEXT[w.risk]} risk, usually ${daysLateText(w.avgDaysLate).toLowerCase()}${w.outstanding ? `, owes ${money(w.outstanding, cur)}` : ''}</li>`).join('')}</ul>`));
+  if (f.unbilledTime.length) steps.push(step(++n, 'Unbilled time', `<ul class="mini">${f.unbilledTime.map((u) => `<li><b>${esc(u.client)}</b>: ${u.hours} h worth ${money(u.value, cur)}. <a href="/time">Invoice it</a></li>`).join('')}</ul>`));
+  const ai = b.ai
+    ? `${b.ai.headline ? `<p class="headline">${esc(b.ai.headline)}</p>` : ''}${b.ai.actions.length ? `<ol class="mini">${b.ai.actions.map((a) => `<li>${esc(a).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</li>`).join('')}</ol>` : ''}`
+    : `<p class="muted">AI recommendations are unavailable right now (${esc(b.aiError || 'unknown error')}). The numbers above are always up to date.</p>`;
+  steps.push(step(++n, 'Recommended next steps', ai));
+  $('briefBody').innerHTML = `<ol class="bsteps">${steps.join('')}</ol>`;
+}
 
 $('briefBtn').onclick = async (e) => {
   const btn = e.currentTarget;
@@ -101,8 +258,8 @@ $('briefBtn').onclick = async (e) => {
   btn.textContent = 'Thinking…';
   try {
     const b = await api('/api/brief', { body: { refresh } });
-    $('briefBody').innerHTML = md(b.text);
-    $('briefMeta').textContent = `Generated ${new Date(b.generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${b.cached ? ' (cached)' : ''}`;
+    renderBrief(b);
+    $('briefMeta').textContent = `Generated ${new Date(b.generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${b.cached ? ' · AI notes cached' : ''}`;
     btn.textContent = 'Refresh';
   } catch (err) {
     $('briefBody').innerHTML = `<p style="color:var(--late)">${esc(err.message)}</p>`;
@@ -111,6 +268,28 @@ $('briefBtn').onclick = async (e) => {
     btn.disabled = false;
   }
 };
+
+// ---------------- activity + load ----------------
+function timeAgo(iso) {
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return fmtDate(iso.slice(0, 10));
+}
+
+async function load() {
+  const [dash, inv] = await Promise.all([api('/api/dashboard'), api('/api/invoices')]);
+  data = { dash, invoices: inv.invoices };
+  $('asof').textContent = `As of ${fmtDate(dash.today)}${dash.pendingApprovals ? ` · ${dash.pendingApprovals} draft${dash.pendingApprovals > 1 ? 's' : ''} waiting for your approval` : ''}`;
+  renderFigures();
+  $('chart').innerHTML = chartSvg(dash.chart);
+  $('feed').innerHTML = dash.activity.length
+    ? dash.activity.map((a) => `<li><time datetime="${a.at}">${timeAgo(a.at)}</time><span>${esc(a.text)}</span></li>`).join('')
+    : '<li class="muted">Nothing yet. Send your first invoice from the Assistant.</li>';
+  renderTable();
+  renderLeaders();
+}
 
 $('syncBtn').onclick = async (e) => {
   e.target.disabled = true;
@@ -126,5 +305,4 @@ $('syncBtn').onclick = async (e) => {
 };
 
 await load();
-// keep the board live while it's open (webhooks update the server; this picks them up)
 setInterval(() => document.visibilityState === 'visible' && load().catch(() => {}), 15000);

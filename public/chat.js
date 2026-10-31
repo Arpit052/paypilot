@@ -21,6 +21,9 @@ const TOOL_LABEL = {
   propose_reminder: 'drafted reminder',
   propose_cancel: 'drafted cancellation',
   propose_recurring: 'drafted recurring schedule',
+  get_top_customers: 'ranked customers',
+  get_unbilled_time: 'checked tracked time',
+  propose_invoice_from_time: 'drafted invoice from tracked hours',
 };
 
 function addMsg(kind, html) {

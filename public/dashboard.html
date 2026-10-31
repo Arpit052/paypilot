@@ -16,12 +16,12 @@
     <button class="btn ghost" id="syncBtn">Check PayPal for payments</button>
   </div>
 
-  <section class="figures" id="figures" aria-label="Key figures"></section>
+  <section class="figures" id="figures" aria-label="Key figures. Select one to filter the invoice list."></section>
 
   <section class="panel brief" style="margin-bottom:26px" aria-live="polite">
     <div class="brief-head">
-      <h2 style="margin:0">AI money brief</h2>
-      <span class="muted" id="briefMeta">Where you stand and what to do next, written from your PayPal data.</span>
+      <h2 style="margin:0">Money brief</h2>
+      <span class="muted" id="briefMeta">A step-by-step report on your earnings, best customers and overdue money, with AI recommendations.</span>
       <button class="btn" id="briefBtn">Generate brief</button>
     </div>
     <div id="briefBody"></div>
@@ -30,17 +30,36 @@
   <div class="grid2">
     <section class="panel chart">
       <h2>Earned, and what's coming</h2>
+      <p class="muted" style="margin:-6px 0 8px;font-size:13px">Select a month to see every payment received in it.</p>
       <div id="chart"></div>
       <div class="legend"><span><i style="background:#18213d"></i>Paid (last 6 months)</span><span><i style="background:#9fb1f0"></i>Expected (next 4 weeks)</span></div>
+      <div id="monthDetail"></div>
     </section>
-    <section class="panel">
-      <h2>Recent activity</h2>
-      <ul class="feed" id="feed"></ul>
-    </section>
+    <div class="stack" style="gap:26px">
+      <section class="panel">
+        <h2>Top customers</h2>
+        <ol class="leader" id="leaders"></ol>
+      </section>
+      <section class="panel">
+        <h2>Recent activity</h2>
+        <ul class="feed" id="feed"></ul>
+      </section>
+    </div>
   </div>
 
   <section class="panel">
-    <h2>Invoices</h2>
+    <div class="table-tools">
+      <h2 style="margin:0">Invoices</h2>
+      <div class="seg" role="group" aria-label="Filter invoices" id="seg">
+        <button data-f="all" aria-pressed="true">All</button>
+        <button data-f="open">Open</button>
+        <button data-f="overdue">Overdue</button>
+        <button data-f="paid">Paid</button>
+      </div>
+      <input id="search" type="search" placeholder="Search client or work" aria-label="Search invoices">
+      <a class="btn ghost small" href="/api/invoices.csv" download>Export CSV</a>
+    </div>
+    <div class="muted" id="filterNote" style="font-size:13px;margin:8px 0 0"></div>
     <div class="table-wrap" id="invoices"></div>
   </section>
 </main>

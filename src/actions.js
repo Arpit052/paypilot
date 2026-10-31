@@ -1,7 +1,7 @@
 // Human-in-the-loop: the AI only *proposes* actions that move money or contact
 // clients. Nothing reaches PayPal until the user approves the action card.
 import { config, isoDate, addDays } from './config.js';
-import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
+import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getTimeEntry, markTimeBilled, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
 import { paypal, PayPalError } from './paypal.js';
 import { invoiceTotals, isOpen } from './analytics.js';
 
@@ -88,6 +88,11 @@ export function normaliseScheduleDraft(d) {
 const executors = {
   async create_invoice(payload, requestId) {
     const draft = normaliseInvoiceDraft(payload);
+    // invoices built from tracked time: make sure those hours weren't billed meanwhile
+    const timeIds = Array.isArray(payload.timeEntryIds) ? payload.timeEntryIds : [];
+    if (timeIds.some((id) => getTimeEntry(id)?.billedInvoiceId)) {
+      throw new Error('Some of these hours are already on another invoice. Create a fresh draft from the Time page.');
+    }
     const client = upsertClient({ name: draft.clientName, email: draft.clientEmail });
     const pp = await paypal.createAndSendInvoice({
       client,
@@ -117,6 +122,7 @@ const executors = {
       taxPercent: draft.taxPercent,
       depositAmount: draft.depositAmount,
     });
+    if (timeIds.length) markTimeBilled(timeIds, inv.id);
     logActivity(
       'invoice_sent',
       `Invoice #${inv.number} for ${draft.currency} ${inv.total} sent to ${client.name}${draft.depositAmount ? ` (deposit ${draft.currency} ${draft.depositAmount} due upfront)` : ''}`
@@ -167,8 +173,14 @@ const executors = {
       dueInDays: d.dueInDays,
       note: d.note,
     });
-    logActivity('schedule_created', `Recurring ${d.frequency} invoice set up for ${client.name} (${d.currency} ${d.total}), first draft on ${d.startDate}`);
-    return { scheduleId: sc.id, nextRun: sc.nextRun, frequency: sc.frequency };
+    logActivity('schedule_created', `Recurring ${d.frequency} invoice set up for ${client.name} (${d.currency} ${d.total}), first invoice ${d.startDate}`);
+    // starts today -> create the first draft right away so the user sees it in the tray
+    let firstDraft = null;
+    if (d.startDate <= isoDate()) {
+      const { runRecurring } = await import('./recurring.js');
+      firstDraft = runRecurring().find((x) => x.payload.scheduleId === sc.id) || null;
+    }
+    return { scheduleId: sc.id, nextRun: firstDraft ? null : sc.nextRun, frequency: sc.frequency, firstDraftId: firstDraft?.id || null };
   },
 };
 
