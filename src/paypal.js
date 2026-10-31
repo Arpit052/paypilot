@@ -23,7 +23,7 @@ function money(currency, value) {
 }
 
 /** Build a PayPal v2 invoice body from our internal shape. Exported for tests. */
-export function buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note, taxPercent = 0, depositAmount = 0 }) {
+export function buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note, taxPercent = 0, depositAmount = 0, reference = '' }) {
   const body = {
     detail: {
       currency_code: currency,
@@ -31,7 +31,13 @@ export function buildInvoiceBody({ number, client, items, currency, issueDate, d
     },
     invoicer: { business_name: config.businessName },
     primary_recipients: [
-      { billing_info: { name: splitName(client.name), email_address: client.email } },
+      {
+        billing_info: {
+          name: splitName(client.name),
+          email_address: client.email,
+          ...(client.company ? { business_name: String(client.company).slice(0, 300) } : {}),
+        },
+      },
     ],
     items: items.map((it) => ({
       name: String(it.name).slice(0, 200),
@@ -55,6 +61,7 @@ export function buildInvoiceBody({ number, client, items, currency, issueDate, d
   if (issueDate) body.detail.invoice_date = issueDate;
   if (number) body.detail.invoice_number = number;
   if (note) body.detail.note = String(note).slice(0, 4000);
+  if (reference) body.detail.reference = String(reference).slice(0, 120);
   return body;
 }
 
@@ -119,7 +126,7 @@ const real = {
    * - progress is checkpointed locally, so a retry after a partial failure resumes
    *   (reuses the same number / invoice id) instead of creating a duplicate.
    */
-  async createAndSendInvoice({ client, items, currency, dueDate, note, taxPercent, depositAmount, requestId }) {
+  async createAndSendInvoice({ client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, requestId }) {
     const ck = requestId ? `idem:${requestId}` : null;
     const state = (ck && kvGet(ck)) || {};
     const save = () => ck && kvSet(ck, state);
@@ -133,7 +140,7 @@ const real = {
       const created = await api(
         'POST',
         '/v2/invoicing/invoices',
-        buildInvoiceBody({ number: state.number, client, items, currency, dueDate, note, taxPercent, depositAmount }),
+        buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference }),
         { Prefer: 'return=representation', ...hdr('create') }
       );
       state.id = created.id || String(created.href || '').split('/').pop();
@@ -205,13 +212,13 @@ export function mockNextNumber() {
 export { mockPut };
 
 const mock = {
-  async createAndSendInvoice({ client, items, currency, dueDate, note, taxPercent, depositAmount, requestId }) {
+  async createAndSendInvoice({ client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, requestId }) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(client.email)) throw new PayPalError('Invalid recipient email', 422);
     const done = requestId && kvGet(`idem:${requestId}`);
     if (done) return done; // idempotent retry
     const number = mockNextNumber();
     const paypalId = `INV2-MOCK-${number}`;
-    mockPut(paypalId, { status: 'SENT', reminders: 0, body: buildInvoiceBody({ number, client, items, currency, dueDate, note, taxPercent, depositAmount }) });
+    mockPut(paypalId, { status: 'SENT', reminders: 0, body: buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference }) });
     const result = { paypalId, number, status: 'SENT', payerUrl: `/mock-pay.html?id=${paypalId}`, issueDate: isoDate() };
     if (requestId) kvSet(`idem:${requestId}`, result);
     return result;

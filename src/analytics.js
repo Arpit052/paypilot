@@ -139,7 +139,7 @@ export function clientName(id) {
   return getClient(id)?.name || 'Unknown';
 }
 
-/** Data for the dashboard chart: last 6 months earned + next 4 weeks forecast (primary currency). */
+/** Data for the dashboard chart: money received in each of the last 6 months (primary currency). */
 export function chartSeries(today = isoDate()) {
   const cur = config.currency;
   const months = [];
@@ -154,16 +154,7 @@ export function chartSeries(today = isoDate()) {
       .reduce((s, i) => s + i.total, 0);
     months.push({ key, label, value: round(value), kind: 'actual' });
   }
-  const fc = forecastCashflow(28, today);
-  const weeks = [0, 1, 2, 3].map((w) => {
-    const start = addDays(today, w * 7);
-    const end = addDays(today, w * 7 + 6);
-    const value = fc.invoices
-      .filter((r) => r.currency === cur && r.expectedDate >= start && r.expectedDate <= end)
-      .reduce((s, r) => s + r.expectedValue, 0);
-    return { label: `Wk ${w + 1}`, value: round(value), kind: 'forecast' };
-  });
-  return { currency: cur, months, weeks };
+  return { currency: cur, months };
 }
 
 /** Clients ranked by money actually received (paid invoices), primary currency first. */
@@ -226,10 +217,10 @@ function csvCell(v) {
 
 /** All invoices as CSV (for accountants / tax time). */
 export function invoicesCsv(today = isoDate()) {
-  const head = ['Invoice', 'Client', 'Work', 'Issued', 'Due', 'Paid', 'Status', 'Currency', 'Subtotal', 'Tax %', 'Total', 'Deposit', 'PayPal ID'];
+  const head = ['Invoice', 'Client', 'Reference', 'Work', 'Issued', 'Due', 'Paid', 'Status', 'Currency', 'Subtotal', 'Tax %', 'Total', 'Deposit', 'PayPal ID'];
   const rows = listInvoices().map((i) => {
     const t = invoiceTotals(i.items, i.taxPercent);
-    return [i.number, clientName(i.clientId), i.items.map((x) => `${x.quantity} x ${x.name}`).join('; '), i.issueDate, i.dueDate, i.paidDate || '',
+    return [i.number, clientName(i.clientId), i.reference || '', i.items.map((x) => `${x.quantity} x ${x.name}`).join('; '), i.issueDate, i.dueDate, i.paidDate || '',
       isOverdue(i, today) ? 'OVERDUE' : i.status, i.currency, t.subtotal, i.taxPercent || 0, i.total, i.depositAmount || 0, i.paypalId || ''];
   });
   return [head, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';

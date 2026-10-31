@@ -31,16 +31,17 @@ Freelancers lose time and money on getting paid:
 | **Deposits for risky clients** | When a client usually pays late, the agent automatically adds a **50% upfront deposit** using PayPal's **partial-payment** option, and tells you why. You can change or remove it on the slip. |
 | **Sales tax** | Add a sales-tax % to any invoice ("plus 8% sales tax"). It's sent to PayPal as per-line tax, so the client sees a proper breakdown. |
 | **Recurring invoices** | Set up from a simple form on the Clients page or by asking *"Bill Emily $600 every month"*. On each due date a ready-made draft lands in your approval tray (the first one immediately if it starts today), so nothing auto-sends. Pause, resume or delete any time. |
-| **Money brief** | One click gives a step-by-step report: total earned so far, this month vs last month, top customers, overdue amount by customer, what's still to collect, clients to watch, and unbilled time. It ends with AI-written recommendations. The numbers are computed in code; the AI only writes the headline and actions. |
-| **Live time tracking** | Start and stop a timer per client and task; a live clock shows in the top bar on every page. Unbilled hours become an invoice draft in one click (or ask the agent: *"Invoice my tracked hours for Olivia"*). Billed hours are locked so they can't be invoiced twice. |
-| **Interactive dashboard** | Click a summary card to filter invoices, click a month in the chart to see every payment received that month, sort any column, search, and export everything to CSV for your accountant. |
+| **Money brief** | One click gives a step-by-step report: total earned so far, this month vs last month, top customers, overdue amount by customer, what's still to collect, and clients to watch. It ends with AI-written recommendations. The numbers are computed in code; the AI only writes the headline and actions. |
+| **New invoice form** | Bill a new or existing customer without the chat: name, email, company, multiple services (qty × rate), issue date, payment terms or due date, currency, sales tax, deposit, reference/PO number and a note. A live paper-invoice preview updates as you type. Send through PayPal right away, or save as a draft. The customer is stored and payment status is tracked. |
+| **Live payment notifications** | When a client pays (PayPal webhook, or the automatic PayPal check every 2 minutes), the invoice flips to **Paid** in the database, a 🔔 notification is stored, and every open tab gets a pop-up instantly over **Server-Sent Events**. The dashboard refreshes itself. |
+| **Live clock** | The current date and time in your business time zone, ticking in the top bar. || **Interactive dashboard** | Click a summary card to filter invoices, click a month in the chart to see every payment received that month, sort any column (including invoice status), search, and export everything to CSV for your accountant. |
 | **Top customers** | Clients ranked by money actually received, with their share of revenue, on the dashboard and Clients page. Ask the agent *"Who is my best customer?"* |
 | **Cash-flow forecast** | Expected incoming money over the next 30 days, weighted by each client's real payment behaviour. |
 | **Ask anything** | *"Who owes me money?"*, *"How much did I earn this month?"*, *"Cancel Olivia's invoice."* The agent answers from your real PayPal data, never from guesses. |
 
-| Dashboard + money brief | Time tracking | Clients and recurring invoices |
+| Dashboard + live payment notification | New invoice form | Clients and recurring invoices |
 |---|---|---|
-| ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/time.png) | ![](docs/screenshots/clients.png) |
+| ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/new-invoice.png) | ![](docs/screenshots/clients.png) |
 
 | Follow-ups |
 |---|
@@ -176,7 +177,7 @@ src/sync.js          Polling + webhook status updates
 src/recurring.js     Recurring schedules → invoice drafts
 src/scheduler.js     Background jobs (PayPal sync, overdue scan, recurring)
 src/brief.js         Money brief: computed sections + AI recommendations
-src/timetracking.js  Live timer, manual entries, invoice drafts from tracked hours
+src/notify.js        Notifications: stored + pushed live over Server-Sent Events
 public/              UI (vanilla JS): assistant, dashboard, follow-ups, clients
 test/                End-to-end tests
 ```
@@ -190,7 +191,7 @@ test/                End-to-end tests
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite` | Models to try when the main one is busy |
 | `SCHEDULER_INTERVAL_MIN` | `360` | Background job interval in minutes (`0` = off) |
 | `CHAT_RATE_LIMIT_PER_MIN` | `15` | Assistant messages per minute per IP |
-| `DEFAULT_HOURLY_RATE` | `50` | Starting hourly rate for the time tracker (remembered per client) |
+| `PAYPAL_SYNC_SECONDS` | `120` | How often to check PayPal for new payments (real mode; webhooks are instant) |
 
 ## Security notes
 - The AI cannot execute payments, reminders or cancellations. A human approves every action, including each recurring invoice.

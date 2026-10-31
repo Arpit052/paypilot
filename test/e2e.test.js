@@ -141,6 +141,25 @@ test('approve rejects invalid edits and keeps action pending', async () => {
   assert.equal((await call(`/api/actions/${id}/reject`, {})).data.action.status, 'rejected');
 });
 
+test('payment pushes a live notification over SSE and is stored', async () => {
+  const ctrl = new AbortController();
+  const res = await fetch(base + '/api/events', { signal: ctrl.signal });
+  assert.match(res.headers.get('content-type'), /text\/event-stream/);
+  const reader = res.body.getReader();
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Acme Labs');
+  await call(`/api/mock/pay/${inv.paypalId}`, {});
+  let text = '';
+  const until = Date.now() + 3000;
+  while (!text.includes('event: notification') && Date.now() < until) text += new TextDecoder().decode((await reader.read()).value);
+  ctrl.abort();
+  assert.match(text, /event: notification/);
+  assert.match(text, /Payment received: \$320/);
+  const n = (await call('/api/notifications')).data;
+  assert.ok(n.unread >= 1);
+  assert.equal(n.notifications[0].kind, 'payment');
+  assert.equal((await call('/api/notifications/read', {})).data.unread, 0);
+});
+
 test('payment via webhook path flips status to PAID', async () => {
   const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Olivia Brooks');
   const r = await call(`/api/mock/pay/${inv.paypalId}`, {});
@@ -153,7 +172,7 @@ test('payment via webhook path flips status to PAID', async () => {
 test('follow-up scan drafts reminders for overdue invoices only, then sends', async () => {
   const { data } = await call('/api/followups/scan', {});
   const nums = data.created.map((a) => a.payload.client).sort();
-  assert.deepEqual(nums, ['Acme Labs', 'Jake Miller']);
+  assert.deepEqual(nums, ['Jake Miller']);
   const jake = data.created.find((a) => a.payload.client === 'Jake Miller');
   assert.equal(jake.payload.tone, 'firm', 'second reminder escalates');
   assert.equal(jake.payload.subject, 'Quick reminder', 'AI drafted');
@@ -166,9 +185,8 @@ test('follow-up scan drafts reminders for overdue invoices only, then sends', as
 
 test('dashboard figures', async () => {
   const { data } = await call('/api/dashboard');
-  assert.ok(data.summary.overdueInvoices >= 2);
+  assert.ok(data.summary.overdueInvoices >= 1);
   assert.equal(data.chart.months.length, 6);
-  assert.equal(data.chart.weeks.length, 4);
   assert.ok(data.forecast.invoices.length >= 1);
   assert.ok(data.activity.length > 0);
 });
@@ -269,36 +287,37 @@ test('top customers, monthly payments and CSV export', async () => {
   const csv = await fetch(base + '/api/invoices.csv');
   assert.match(csv.headers.get('content-type'), /text\/csv/);
   const text = await csv.text();
-  assert.match(text.split('\r\n')[0], /^Invoice,Client,Work/);
+  assert.match(text.split("\r\n")[0], /^Invoice,Client,Reference,Work/);
 });
 
-test('time tracking: timer, manual entry, invoice from hours, no double billing', async () => {
-  const clients = (await call('/api/clients')).data.clients;
-  const jake = clients.find((c) => c.name === 'Jake Miller');
-  const st = await call('/api/time/start', { clientId: jake.id, task: 'Homepage build', hourlyRate: 80 });
-  assert.equal(st.status, 200, JSON.stringify(st.data));
-  assert.ok((await call('/api/time/running')).data.running);
-  const stop = await call('/api/time/stop', {});
-  assert.equal(stop.data.stopped.minutes, 1, 'minimum one minute');
-  assert.equal((await call('/api/time/stop', {})).status, 409);
-  await call('/api/time/entries', { clientId: jake.id, task: 'Homepage build', hours: 2.5, hourlyRate: 80 });
-  assert.equal((await call('/api/time/entries', { clientId: jake.id, hours: 30 })).status, 400);
-  const un = (await call('/api/time')).data.unbilled.find((u) => u.clientId === jake.id);
-  assert.ok(un.hours > 2.5 && un.hours < 2.6);
-  const inv = await call('/api/time/invoice', { clientId: jake.id });
-  assert.equal(inv.status, 200, JSON.stringify(inv.data));
-  const draft = inv.data.action;
-  assert.equal(draft.payload.total, un.value, 'unbilled value matches the invoice total');
-  assert.equal(draft.payload.items.length, 1, 'grouped by task + rate');
-  assert.equal(draft.payload.items[0].unitPrice, 80);
-  assert.equal(draft.payload.timeEntryIds.length, 2);
-  const second = (await call('/api/time/invoice', { clientId: jake.id })).data.action;
-  const ok = await call(`/api/actions/${draft.id}/approve`, { edits: { depositAmount: 0 } });
-  assert.equal(ok.status, 200, JSON.stringify(ok.data));
-  assert.equal((await call('/api/time')).data.unbilled.find((u) => u.clientId === jake.id), undefined, 'hours are billed');
-  const dup = await call(`/api/actions/${second.id}/approve`, { edits: { depositAmount: 0 } });
-  assert.equal(dup.status, 400, 'same hours cannot be billed twice');
-  assert.equal((await call('/api/time/invoice', { clientId: jake.id })).status, 400, 'nothing left to bill');
+test('new invoice form: send now, save as draft, validation', async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const body = {
+    clientName: 'Sarah Johnson', clientEmail: 'sarah@johnsonbakery.example', company: 'Johnson Bakery LLC',
+    items: [{ name: 'Menu design', quantity: 1, unitPrice: 400 }, { name: 'Print-ready files', quantity: 2, unitPrice: 50 }],
+    currency: 'USD', issueDate: today, dueDate: today, taxPercent: 5, depositAmount: 100, reference: 'PO-2291', note: 'Thanks!', sendNow: true,
+  };
+  const sent = await call('/api/invoices', body);
+  assert.equal(sent.status, 200, JSON.stringify(sent.data));
+  assert.equal(sent.data.sent, true);
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId === sent.data.action.result.paypalId);
+  assert.equal(inv.total, 525);
+  assert.equal(inv.reference, 'PO-2291');
+  assert.equal(inv.status, 'SENT');
+  const c = (await call('/api/clients')).data.clients.find((x) => x.email === 'sarah@johnsonbakery.example');
+  assert.equal(c.company, 'Johnson Bakery LLC');
+  const { kvGet } = await import('../src/db.js');
+  const pb = kvGet(`mock:inv:${inv.paypalId}`).body;
+  assert.equal(pb.detail.reference, 'PO-2291');
+  assert.equal(pb.primary_recipients[0].billing_info.business_name, 'Johnson Bakery LLC');
+  const draft = await call('/api/invoices', { ...body, sendNow: false });
+  assert.equal(draft.data.sent, false);
+  assert.equal(draft.data.action.status, 'pending');
+  assert.equal(draft.data.action.origin, 'form');
+  const future = await call('/api/invoices', { ...body, issueDate: '2999-01-01' });
+  assert.equal(future.status, 400);
+  const badEmail = await call('/api/invoices', { ...body, clientEmail: 'nope' });
+  assert.equal(badEmail.status, 400);
 });
 
 test('health endpoint + security headers', async () => {

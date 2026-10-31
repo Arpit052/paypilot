@@ -46,34 +46,23 @@ function setFilter(f) {
 }
 
 // ---------------- chart (months clickable) ----------------
-function chartSvg({ months, weeks }) {
-  const bars = [...months, ...weeks];
-  const W = 640, H = 240, padL = 8, padB = 28, padT = 22, gap = 14, sepGap = 26;
-  const max = Math.max(1, ...bars.map((b) => b.value));
-  const bw = (W - padL * 2 - gap * (bars.length - 1) - sepGap) / bars.length;
-  let x = padL;
+function chartSvg({ months }) {
+  const W = 640, H = 240, padL = 8, padB = 28, padT = 22, gap = 22;
+  const max = Math.max(1, ...months.map((b) => b.value));
+  const bw = (W - padL * 2 - gap * (months.length - 1)) / months.length;
   let out = '';
-  bars.forEach((b, i) => {
-    if (i === months.length) {
-      out += `<line x1="${x + sepGap / 2 - gap / 2}" x2="${x + sepGap / 2 - gap / 2}" y1="${padT - 10}" y2="${H - padB}" stroke="#cfd6e4" stroke-dasharray="3 4"/>`;
-      out += `<text x="${x + sepGap / 2 - gap / 2 + 6}" y="${padT - 2}" font-size="11" fill="#7c86a2">today</text>`;
-      x += sepGap;
-    }
+  months.forEach((b, i) => {
+    const x = padL + i * (bw + gap);
     const h = ((H - padB - padT) * b.value) / max;
     const y = H - padB - h;
-    const actual = b.kind === 'actual';
-    const sel = actual && state.month === b.key;
-    const fill = actual ? (sel ? '#2346d8' : '#18213d') : '#9fb1f0';
-    const g = actual
-      ? `<g class="bar" role="button" tabindex="0" data-month="${b.key}" aria-label="${b.label}: ${money(b.value, cur)}. Show payments">`
-      : '<g>';
-    out += `${g}<rect x="${x - 4}" y="${padT - 10}" width="${bw + 8}" height="${H - padT + 10}" fill="transparent"/>`;
-    out += `<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(h, 1)}" rx="3" fill="${fill}"><title>${b.label}: ${money(b.value, cur)}</title></rect>`;
-    if (b.value) out += `<text x="${x + bw / 2}" y="${y - 6}" text-anchor="middle" font-size="11" fill="#4a5575">${money(b.value, cur)}</text>`;
+    const sel = state.month === b.key;
+    out += `<g class="bar" role="button" tabindex="0" data-month="${b.key}" aria-label="${b.label}: ${money(b.value, cur)}. Show payments">`;
+    out += `<rect x="${x - 6}" y="${padT - 10}" width="${bw + 12}" height="${H - padT + 10}" fill="transparent"/>`;
+    out += `<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(h, 1)}" rx="3" fill="${sel ? '#2346d8' : '#18213d'}"><title>${b.label}: ${money(b.value, cur)}</title></rect>`;
+    if (b.value) out += `<text x="${x + bw / 2}" y="${y - 6}" text-anchor="middle" font-size="12" fill="#4a5575">${money(b.value, cur)}</text>`;
     out += `<text x="${x + bw / 2}" y="${H - 9}" text-anchor="middle" font-size="12" fill="${sel ? '#2346d8' : '#7c86a2'}" font-weight="${sel ? 700 : 400}">${b.label}</text></g>`;
-    x += bw + gap;
   });
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly earnings and forecast">${out}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Money received per month">${out}</svg>`;
 }
 
 async function showMonth(key) {
@@ -132,7 +121,7 @@ const COLS = [
   ['work', 'Work'],
   ['issueDate', 'Issued'],
   ['dueDate', 'Due'],
-  ['displayStatus', 'Status'],
+  ['displayStatus', 'Invoice status'],
   ['total', 'Amount', 'r'],
 ];
 
@@ -209,7 +198,7 @@ $('invoices').addEventListener('click', async (e) => {
   if (!id) return;
   e.target.disabled = true;
   await api(`/api/mock/pay/${id}`, { body: {} });
-  toast('Payment received');
+  if (!window.EventSource) toast('Payment received');
   load();
 });
 $('seg').addEventListener('click', (e) => {
@@ -243,7 +232,6 @@ function renderBrief(b) {
   steps.push(step(++n, 'Overdue, by customer', f.overdue.byCustomer.length ? `<p><b class="num">${money(f.overdue.total, cur)}</b> is late across ${f.overdue.invoices} invoice${f.overdue.invoices > 1 ? 's' : ''}:</p><ul class="mini">${f.overdue.byCustomer.map((o) => `<li><b>${esc(o.client)}</b>: <span style="color:var(--late)">${money(o.amount, o.currency)}</span> <span class="muted">(invoice ${o.invoices.map((x) => '#' + esc(x)).join(', ')} · up to ${o.maxDaysOverdue} days late · ${o.remindersSent} reminder${o.remindersSent === 1 ? '' : 's'} sent)</span></li>`).join('')}</ul>` : '<p>Nothing is overdue.</p>'));
   steps.push(step(++n, 'Still to collect', `<p><b class="num">${money(f.outstanding.total, cur)}</b> open across ${f.outstanding.invoices} invoice${f.outstanding.invoices === 1 ? '' : 's'}. Expected in the next 30 days: <b class="num">${money(f.next30Days.expected, cur)}</b> <span class="muted">(best case ${money(f.next30Days.bestCase, cur)})</span>.</p>`));
   if (f.watchList.length) steps.push(step(++n, 'Clients to watch', `<ul class="mini">${f.watchList.map((w) => `<li><b>${esc(w.client)}</b>: ${RISK_TEXT[w.risk]} risk, usually ${daysLateText(w.avgDaysLate).toLowerCase()}${w.outstanding ? `, owes ${money(w.outstanding, cur)}` : ''}</li>`).join('')}</ul>`));
-  if (f.unbilledTime.length) steps.push(step(++n, 'Unbilled time', `<ul class="mini">${f.unbilledTime.map((u) => `<li><b>${esc(u.client)}</b>: ${u.hours} h worth ${money(u.value, cur)}. <a href="/time">Invoice it</a></li>`).join('')}</ul>`));
   const ai = b.ai
     ? `${b.ai.headline ? `<p class="headline">${esc(b.ai.headline)}</p>` : ''}${b.ai.actions.length ? `<ol class="mini">${b.ai.actions.map((a) => `<li>${esc(a).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</li>`).join('')}</ol>` : ''}`
     : `<p class="muted">AI recommendations are unavailable right now (${esc(b.aiError || 'unknown error')}). The numbers above are always up to date.</p>`;
@@ -305,4 +293,8 @@ $('syncBtn').onclick = async (e) => {
 };
 
 await load();
+// a payment arrived (pushed live from the server): refresh the numbers right away
+window.addEventListener('pp:notification', (e) => {
+  if (e.detail.kind === 'payment') load().catch(() => {});
+});
 setInterval(() => document.visibilityState === 'visible' && load().catch(() => {}), 15000);

@@ -1,7 +1,7 @@
 // Human-in-the-loop: the AI only *proposes* actions that move money or contact
 // clients. Nothing reaches PayPal until the user approves the action card.
 import { config, isoDate, addDays } from './config.js';
-import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getTimeEntry, markTimeBilled, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
+import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
 import { paypal, PayPalError } from './paypal.js';
 import { invoiceTotals, isOpen } from './analytics.js';
 
@@ -21,12 +21,14 @@ export function getAction(id) {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+const invalid = (message) => Object.assign(new Error(message), { status: 400 });
+
 /** Shared validation for client + line items (invoices and recurring schedules). */
 function normaliseLines(d) {
   const clientName = String(d.clientName || '').trim();
   const clientEmail = String(d.clientEmail || '').trim();
-  if (!clientName) throw new Error('Client name is required');
-  if (!EMAIL_RE.test(clientEmail)) throw new Error('A valid client email is required');
+  if (!clientName) throw invalid('Client name is required');
+  if (!EMAIL_RE.test(clientEmail)) throw invalid('A valid client email is required');
   const items = (d.items || [])
     .map((it) => ({
       name: String(it.name || '').trim().slice(0, 200),
@@ -34,36 +36,44 @@ function normaliseLines(d) {
       unitPrice: round2(Number(it.unitPrice ?? it.unit_price)),
     }))
     .filter((it) => it.name);
-  if (!items.length) throw new Error('At least one line item is required');
-  if (items.length > 100) throw new Error('An invoice can have at most 100 line items');
+  if (!items.length) throw invalid('At least one line item is required');
+  if (items.length > 100) throw invalid('An invoice can have at most 100 line items');
   for (const it of items) {
-    if (!(it.quantity > 0)) throw new Error(`Quantity for "${it.name}" must be positive`);
-    if (!(it.unitPrice > 0)) throw new Error(`Price for "${it.name}" must be positive`);
+    if (!(it.quantity > 0)) throw invalid(`Quantity for "${it.name}" must be positive`);
+    if (!(it.unitPrice > 0)) throw invalid(`Price for "${it.name}" must be positive`);
   }
   const taxPercent = round2(Number(d.taxPercent ?? d.tax_percent ?? config.defaultTaxPercent) || 0);
-  if (taxPercent < 0 || taxPercent > 50) throw new Error('Sales tax must be between 0% and 50%');
+  if (taxPercent < 0 || taxPercent > 50) throw invalid('Sales tax must be between 0% and 50%');
   const currency = String(d.currency || config.currency).toUpperCase();
-  if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Currency must be a 3-letter code like USD');
-  return { clientName, clientEmail, items, taxPercent, currency, note: String(d.note || '').trim().slice(0, 4000) };
+  if (!/^[A-Z]{3}$/.test(currency)) throw invalid('Currency must be a 3-letter code like USD');
+  const company = String(d.company || '').trim().slice(0, 120);
+  return { clientName, clientEmail, company, items, taxPercent, currency, note: String(d.note || '').trim().slice(0, 4000) };
 }
 
 /** Normalise + validate an invoice draft. Throws on bad input. Shared by the AI tool and the approve step. */
 export function normaliseInvoiceDraft(d) {
   const base = normaliseLines(d);
   const today = isoDate();
-  let dueDate = d.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(d.dueDate) ? d.dueDate : addDays(today, Number(d.dueInDays ?? 7));
+  const isDate = (x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x);
+  let issueDate = isDate(d.issueDate) ? d.issueDate : today;
+  if (issueDate > today) throw invalid('Issue date cannot be in the future');
+  let dueDate = isDate(d.dueDate) ? d.dueDate : addDays(today, Number(d.dueInDays ?? 7));
   if (dueDate < today) dueDate = today;
+  if (dueDate < issueDate) throw invalid('Due date must be on or after the issue date');
+  const reference = String(d.reference || '').trim().slice(0, 120);
   const { subtotal, tax, total } = invoiceTotals(base.items, base.taxPercent);
   // Deposit (PayPal partial payment): absolute amount, or a percentage of the total.
   let depositAmount = Number(d.depositAmount ?? 0) || 0;
   const depositPercent = Number(d.depositPercent ?? d.deposit_percent ?? 0) || 0;
   if (!depositAmount && depositPercent > 0) depositAmount = round2((total * Math.min(depositPercent, 95)) / 100);
   depositAmount = round2(depositAmount);
-  if (depositAmount < 0) throw new Error('Deposit cannot be negative');
-  if (depositAmount >= total) throw new Error('Deposit must be less than the invoice total');
+  if (depositAmount < 0) throw invalid('Deposit cannot be negative');
+  if (depositAmount >= total) throw invalid('Deposit must be less than the invoice total');
   return {
     ...base,
+    issueDate,
     dueDate,
+    reference,
     subtotal,
     tax,
     total,
@@ -76,7 +86,7 @@ export function normaliseInvoiceDraft(d) {
 export function normaliseScheduleDraft(d) {
   const base = normaliseLines(d);
   const frequency = String(d.frequency || 'monthly').toLowerCase();
-  if (!['weekly', 'monthly'].includes(frequency)) throw new Error('Frequency must be weekly or monthly');
+  if (!['weekly', 'monthly'].includes(frequency)) throw invalid('Frequency must be weekly or monthly');
   const today = isoDate();
   let startDate = d.startDate && /^\d{4}-\d{2}-\d{2}$/.test(d.startDate) ? d.startDate : today;
   if (startDate < today) startDate = today;
@@ -88,14 +98,11 @@ export function normaliseScheduleDraft(d) {
 const executors = {
   async create_invoice(payload, requestId) {
     const draft = normaliseInvoiceDraft(payload);
-    // invoices built from tracked time: make sure those hours weren't billed meanwhile
-    const timeIds = Array.isArray(payload.timeEntryIds) ? payload.timeEntryIds : [];
-    if (timeIds.some((id) => getTimeEntry(id)?.billedInvoiceId)) {
-      throw new Error('Some of these hours are already on another invoice. Create a fresh draft from the Time page.');
-    }
-    const client = upsertClient({ name: draft.clientName, email: draft.clientEmail });
+    const client = upsertClient({ name: draft.clientName, email: draft.clientEmail, company: draft.company });
     const pp = await paypal.createAndSendInvoice({
       client,
+      issueDate: draft.issueDate < isoDate() ? draft.issueDate : undefined, // today -> let PayPal default it
+      reference: draft.reference,
       items: draft.items,
       currency: draft.currency,
       dueDate: draft.dueDate,
@@ -112,7 +119,7 @@ const executors = {
       currency: draft.currency,
       total: pp.total || draft.total, // PayPal's own total wins if it computed one
       status: pp.status,
-      issueDate: pp.issueDate || isoDate(),
+      issueDate: draft.issueDate || pp.issueDate || isoDate(),
       dueDate: draft.dueDate,
       paidDate: null,
       note: draft.note,
@@ -121,8 +128,8 @@ const executors = {
       source: 'paypal',
       taxPercent: draft.taxPercent,
       depositAmount: draft.depositAmount,
+      reference: draft.reference,
     });
-    if (timeIds.length) markTimeBilled(timeIds, inv.id);
     logActivity(
       'invoice_sent',
       `Invoice #${inv.number} for ${draft.currency} ${inv.total} sent to ${client.name}${draft.depositAmount ? ` (deposit ${draft.currency} ${draft.depositAmount} due upfront)` : ''}`

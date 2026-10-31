@@ -5,7 +5,7 @@ import express from 'express';
 import { config, isoDate, envFile } from './src/config.js';
 import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb, listSchedules, getSchedule, updateSchedule, deleteSchedule, getClient, logActivity } from './src/db.js';
 import { chat, resetSession } from './src/agent.js';
-import { listActions, approveAction, rejectAction } from './src/actions.js';
+import { listActions, approveAction, rejectAction, normaliseInvoiceDraft } from './src/actions.js';
 import { earningsSummary, forecastCashflow, chartSeries, clientStats, clientName, isOverdue } from './src/analytics.js';
 import { syncInvoices, applyWebhookEvent } from './src/sync.js';
 import { scanFollowups } from './src/followups.js';
@@ -16,8 +16,9 @@ import { runRecurring } from './src/recurring.js';
 import { moneyBrief } from './src/brief.js';
 import { startScheduler, runJobs, lastRun } from './src/scheduler.js';
 import { invoiceTotals, topCustomers, paymentsInMonth, invoicesCsv } from './src/analytics.js';
-import { runningTimer, startTimer, stopTimer, addManualEntry, listEntries, removeEntry, unbilledTime, proposeInvoiceFromTime, rateFor } from './src/timetracking.js';
 import { createAction } from './src/actions.js';
+import { eventStream } from './src/notify.js';
+import { listNotifications, unreadNotificationCount, markNotificationsRead } from './src/db.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 const startedAt = Date.now();
@@ -169,6 +170,27 @@ export function createApp() {
     res.json({ invoices: listInvoices().map((i) => invoiceRow(i, today)) });
   });
   api.post('/sync', async (req, res) => res.json(await syncInvoices()));
+  // New invoice form: the user filled it in themselves. sendNow=true sends right away,
+  // otherwise it's saved as a draft in the approval tray.
+  api.post('/invoices', async (req, res) => {
+    const b = req.body || {};
+    const draft = normaliseInvoiceDraft({
+      clientName: b.clientName,
+      clientEmail: b.clientEmail,
+      company: b.company,
+      items: b.items,
+      currency: b.currency,
+      issueDate: b.issueDate,
+      dueDate: b.dueDate,
+      taxPercent: b.taxPercent,
+      depositAmount: b.depositAmount,
+      reference: b.reference,
+      note: b.note,
+    });
+    const a = createAction('create_invoice', draft, { origin: 'form', summary: `Invoice ${draft.clientName} · ${draft.currency} ${draft.total}` });
+    if (!b.sendNow) return res.json({ action: a, sent: false });
+    res.json({ action: await approveAction(a.id), sent: true });
+  });
   api.get('/dashboard', (req, res) => {
     const today = isoDate();
     res.json({
@@ -189,6 +211,14 @@ export function createApp() {
     });
   });
 
+  // ---- notifications (live via Server-Sent Events) ----
+  api.get('/events', eventStream);
+  api.get('/notifications', (req, res) => res.json({ unread: unreadNotificationCount(), notifications: listNotifications(30) }));
+  api.post('/notifications/read', (req, res) => {
+    markNotificationsRead(req.body?.id ? Number(req.body.id) : null);
+    res.json({ unread: unreadNotificationCount() });
+  });
+
   // ---- insights ----
   api.get('/insights/top-customers', (req, res) => res.json({ customers: topCustomers({ limit: Math.min(Number(req.query.limit) || 5, 50) }) }));
   api.get('/payments', (req, res) => res.json(paymentsInMonth(String(req.query.month || isoDate().slice(0, 7)))));
@@ -196,19 +226,6 @@ export function createApp() {
     res.set('Content-Type', 'text/csv; charset=utf-8');
     res.set('Content-Disposition', `attachment; filename="paypilot-invoices-${isoDate()}.csv"`);
     res.send(invoicesCsv());
-  });
-
-  // ---- time tracking ----
-  api.get('/time', (req, res) => res.json({ running: runningTimer(), entries: listEntries(50), unbilled: unbilledTime() }));
-  api.get('/time/running', (req, res) => res.json({ running: runningTimer() }));
-  api.get('/time/rate/:clientId', (req, res) => res.json({ hourlyRate: rateFor(req.params.clientId) }));
-  api.post('/time/start', (req, res) => res.json(startTimer(req.body || {})));
-  api.post('/time/stop', (req, res) => res.json({ stopped: stopTimer() }));
-  api.post('/time/entries', (req, res) => res.json({ entry: addManualEntry(req.body || {}) }));
-  api.post('/time/entries/:id/delete', (req, res) => res.json(removeEntry(req.params.id)));
-  api.post('/time/invoice', (req, res) => {
-    const r = proposeInvoiceFromTime({ clientId: req.body?.clientId, origin: 'chat' });
-    res.json({ action: r.action, hours: r.hours, total: r.total });
   });
 
   // ---- AI money brief ----

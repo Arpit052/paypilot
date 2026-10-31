@@ -4,7 +4,6 @@ import { listInvoices, findClient, findInvoice } from './db.js';
 import { runToolLoop } from './llm.js';
 import { createAction, normaliseInvoiceDraft, normaliseScheduleDraft } from './actions.js';
 import { clientStats, earningsSummary, forecastCashflow, isOpen, isOverdue, clientName, topCustomers } from './analytics.js';
-import { unbilledTime, proposeInvoiceFromTime } from './timetracking.js';
 import { isMock } from './paypal.js';
 
 function systemPrompt() {
@@ -20,7 +19,7 @@ How you work:
 - When the user describes work done (in text, or in a screenshot of a chat/email/brief), extract client name, client email, line items (name, quantity, unit price), currency and due date. Convert phrases like "in 2 weeks" to due_in_days. If the client email is missing and the client isn't already known, ask for it instead of inventing one. Never invent prices.
 - To create an invoice, call propose_invoice directly. It already looks up the client (email and payment risk), so do NOT call list_invoices or get_client_insights first. If a known client's email is missing, you may pass just client_name. For high-risk clients the system automatically adds a suggested 50% deposit (paid upfront through PayPal's partial-payment option) unless the user specified one; tell the user, and say they can remove it on the slip. For medium risk, suggest a shorter due date.
 - Sales tax: only add tax_percent if the user mentions tax (e.g. "add 8% sales tax"). Default tax: ${config.defaultTaxPercent}%.
-- Tracked hours: "invoice my hours for Jake" -> propose_invoice_from_time. "Best customer?" -> get_top_customers.
+- "Best customer?" -> get_top_customers.
 - Recurring work ("every month", "weekly retainer"): use propose_recurring. Explain that each period a new draft will appear for approval; nothing is sent automatically.
 - For reminders, write the subject and message yourself. Match tone to how late it is: friendly (first nudge), firm (second), final (repeated/very late). Be professional and human, never rude. Sign off as ${config.businessName}.
 - Risk labels are none (reliable payer), low, medium or high. Days late are whole days.
@@ -70,20 +69,6 @@ export const tools = [
     name: 'get_top_customers',
     description: 'Clients ranked by total money actually paid (best customers first).',
     parameters: { type: 'object', properties: { limit: { type: 'number', description: 'Default 5' } } },
-  },
-  {
-    name: 'get_unbilled_time',
-    description: 'Hours tracked with the timer that have not been invoiced yet, per client.',
-    parameters: { type: 'object', properties: {} },
-  },
-  {
-    name: 'propose_invoice_from_time',
-    description: "Prepare an invoice draft from a client's unbilled tracked hours (for approval).",
-    parameters: {
-      type: 'object',
-      properties: { client: { type: 'string', description: 'Client name or email' }, due_in_days: { type: 'number' } },
-      required: ['client'],
-    },
   },
   {
     name: 'propose_invoice',
@@ -256,16 +241,6 @@ function makeHandlers(created) {
 
     get_top_customers({ limit = 5 }) {
       return { customers: topCustomers({ limit: Math.min(Math.max(Number(limit) || 5, 1), 20) }) };
-    },
-
-    get_unbilled_time() {
-      return { unbilled: unbilledTime().map((u) => ({ client: u.client, hours: u.hours, value: u.value, currency: u.currency })) };
-    },
-
-    propose_invoice_from_time({ client, due_in_days }) {
-      const r = proposeInvoiceFromTime({ clientName: client, dueInDays: due_in_days });
-      created.push(r.action);
-      return { status: 'awaiting_user_approval', action_id: r.action.id, hours: r.hours, total: r.total };
     },
 
     propose_recurring(input) {

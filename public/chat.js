@@ -22,8 +22,6 @@ const TOOL_LABEL = {
   propose_cancel: 'drafted cancellation',
   propose_recurring: 'drafted recurring schedule',
   get_top_customers: 'ranked customers',
-  get_unbilled_time: 'checked tracked time',
-  propose_invoice_from_time: 'drafted invoice from tracked hours',
 };
 
 function addMsg(kind, html) {
@@ -155,9 +153,6 @@ const cfg = await header('chat');
 if (cfg.llmProvider === 'none') {
   addMsg('err', 'AI is not configured yet. Add <b>ANTHROPIC_API_KEY</b> or <b>OPENAI_API_KEY</b> to your <code>.env</code> file and restart the server.');
 }
-const [fromChat, fromSchedules] = await Promise.all([
-  api('/api/actions?status=pending&origin=chat'),
-  api('/api/actions?status=pending&origin=schedule'),
-]);
-[...fromSchedules.actions, ...fromChat.actions].forEach((a) => addSlip(a, false));
+const trays = await Promise.all(['schedule', 'form', 'chat'].map((o) => api(`/api/actions?status=pending&origin=${o}`)));
+trays.flatMap((t) => t.actions).forEach((a) => addSlip(a, false));
 updateTrayCount();

@@ -94,18 +94,29 @@ export async function header(active) {
       ${link('/', 'Assistant', 'chat')}
       ${link('/dashboard', 'Dashboard', 'dashboard')}
       ${link('/followups', 'Follow-ups', 'followups', pending ? `<span class="badge" title="${pending} waiting for approval">${pending}</span>` : '')}
-      ${link('/time', 'Time', 'time')}
       ${link('/clients', 'Clients', 'clients')}
+      <a href="/new-invoice" class="nav-cta" ${active === 'new' ? 'aria-current="page"' : ''}>+ New invoice</a>
     </nav>
     <div class="modes">
-      <span id="timerPill"></span>
+      <span class="mode live-clock" id="liveClock" title="Current time (${esc(CONFIG.timezone || '')})"></span>
+      <div class="bell-wrap">
+        <button class="bell" id="bellBtn" aria-label="Notifications" aria-expanded="false" aria-haspopup="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
+          <span class="bell-count hidden" id="bellCount"></span>
+        </button>
+        <div class="bell-panel hidden" id="bellPanel" role="dialog" aria-label="Notifications">
+          <div class="bell-head"><b>Notifications</b><button class="linkbtn" id="markRead">Mark all as read</button></div>
+          <ul id="bellList"></ul>
+        </div>
+      </div>
       <span class="mode ${CONFIG.paypalMode === 'mock' ? 'warn' : ''}" title="PayPal environment">PayPal: <b>${pp}</b></span>
       <span class="mode ${ai === 'not set' ? 'warn' : ''}" title="AI provider">AI: <b>${esc(ai)}</b></span>
       ${CONFIG.demoTimeOffsetDays ? `<span class="mode warn" title="DEMO_TIME_OFFSET_DAYS">Clock +${CONFIG.demoTimeOffsetDays}d</span>` : ''}
       ${CONFIG.loginEnabled ? '<button class="mode" id="logoutBtn" style="background:none;cursor:pointer">Sign out</button>' : ''}
     </div>`;
   document.body.prepend(el);
-  refreshTimerPill();
+  startLiveClock(CONFIG.timezone);
+  startNotifications();
   el.querySelector('#logoutBtn')?.addEventListener('click', async () => {
     await api('/api/logout', { body: {} }).catch(() => {});
     location.href = '/login.html';
@@ -114,32 +125,119 @@ export async function header(active) {
 }
 
 // ------------------------------------------------------------------
-// Live timer badge (shown in the top bar on every page while a timer runs)
+// Notifications: bell + dropdown, live updates over Server-Sent Events
 // ------------------------------------------------------------------
-let pillTick = null;
-export function clockText(ms) {
-  const t = Math.max(0, Math.floor(ms / 1000));
-  const h = String(Math.floor(t / 3600)).padStart(2, '0');
-  const m = String(Math.floor((t % 3600) / 60)).padStart(2, '0');
-  const s = String(t % 60).padStart(2, '0');
-  return `${h}:${m}:${s}`;
+function ago(iso) {
+  const s = (Date.now() - new Date(iso)) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+const NOTE_ICON = { payment: '💰', approval: '📝' };
+let notes = [];
+let unread = 0;
+
+function renderBell() {
+  const count = document.getElementById('bellCount');
+  count.textContent = unread > 9 ? '9+' : String(unread);
+  count.classList.toggle('hidden', !unread);
+  document.getElementById('bellList').innerHTML = notes.length
+    ? notes
+        .map(
+          (n) => `<li class="${n.read ? '' : 'unread'}"><a href="${esc(n.link || '#')}" data-note="${n.id}">
+            <span class="ni">${NOTE_ICON[n.kind] || '🔔'}</span>
+            <span class="nt"><b>${esc(n.title)}</b><span>${esc(n.body || '')}</span><time>${ago(n.at)}</time></span></a></li>`
+        )
+        .join('')
+    : '<li class="empty-note">No notifications yet. You\'ll be told here the moment a client pays.</li>';
 }
 
-export async function refreshTimerPill(running) {
-  const host = document.getElementById('timerPill');
-  if (!host) return;
-  if (running === undefined) running = (await api('/api/time/running').catch(() => ({}))).running;
-  clearInterval(pillTick);
-  if (!running) {
-    host.innerHTML = '';
-    return;
+async function startNotifications() {
+  const btn = document.getElementById('bellBtn');
+  const panel = document.getElementById('bellPanel');
+  try {
+    const r = await api('/api/notifications');
+    notes = r.notifications;
+    unread = r.unread;
+  } catch {
+    /* ignore */
   }
-  const start = new Date(running.startedAt).getTime();
-  host.innerHTML = `<a class="mode timer" href="/time" title="Timer running for ${esc(running.client)}: ${esc(running.task)}"><span class="dot"></span><b class="num" id="pillClock">${clockText(Date.now() - start)}</b> ${esc(running.client)}</a>`;
-  pillTick = setInterval(() => {
-    const c = document.getElementById('pillClock');
-    if (c) c.textContent = clockText(Date.now() - start);
-  }, 1000);
+  renderBell();
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = panel.classList.toggle('hidden') === false;
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('click', (e) => {
+    if (!panel.contains(e.target) && e.target !== btn) {
+      panel.classList.add('hidden');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+  document.getElementById('markRead').addEventListener('click', async () => {
+    const r = await api('/api/notifications/read', { body: {} });
+    unread = r.unread;
+    notes = notes.map((n) => ({ ...n, read: true }));
+    renderBell();
+  });
+  document.getElementById('bellList').addEventListener('click', (e) => {
+    const a = e.target.closest('[data-note]');
+    if (a) api('/api/notifications/read', { body: { id: a.dataset.note } }).catch(() => {});
+  });
+
+  if (!window.EventSource) return;
+  const es = new EventSource('/api/events');
+  es.addEventListener('notification', (ev) => {
+    const n = JSON.parse(ev.data);
+    notes = [n, ...notes.filter((x) => x.id !== n.id)].slice(0, 30);
+    unread += 1;
+    renderBell();
+    popToast(n);
+    window.dispatchEvent(new CustomEvent('pp:notification', { detail: n }));
+  });
+}
+
+function popToast(n) {
+  const t = document.createElement('div');
+  t.className = `note-toast ${n.kind}`;
+  t.setAttribute('role', 'status');
+  t.innerHTML = `<span class="ni">${NOTE_ICON[n.kind] || '🔔'}</span><span><b>${esc(n.title)}</b><br>${esc(n.body || '')}</span>`;
+  document.body.append(t);
+  setTimeout(() => t.classList.add('out'), 5200);
+  setTimeout(() => t.remove(), 5600);
+}
+
+// ------------------------------------------------------------------
+// Live clock in the top bar (business time zone), ticking every second
+// ------------------------------------------------------------------
+export function startLiveClock(timeZone) {
+  const el = document.getElementById('liveClock');
+  if (!el) return;
+  let fmt;
+  try {
+    fmt = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short' });
+  } catch {
+    fmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short' });
+  }
+  // friendlier zone abbreviation where the US locale only knows "GMT+5:30" (e.g. IST)
+  let zone = '';
+  try {
+    zone = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'short' }).formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value || '';
+    if (/^GMT[+-]/.test(zone)) {
+      const alt = new Intl.DateTimeFormat('en-IN', { timeZone, timeZoneName: 'short' }).formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value;
+      if (alt && !/^GMT/.test(alt)) zone = alt;
+    }
+  } catch {
+    /* keep default */
+  }
+  const tick = () => {
+    const parts = fmt.formatToParts(new Date());
+    const get = (t) => parts.find((p) => p.type === t)?.value || '';
+    el.innerHTML = `${get('weekday')}, ${get('month')} ${get('day')} · <b class="clock-time">${get('hour')}:${get('minute')}:${get('second')} ${get('dayPeriod')}</b> ${zone || get('timeZoneName')}`;
+  };
+  tick();
+  setInterval(tick, 1000);
 }
 
 // ------------------------------------------------------------------

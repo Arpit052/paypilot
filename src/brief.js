@@ -14,7 +14,6 @@ import {
   lifetimeStats,
 } from './analytics.js';
 import { listActions } from './actions.js';
-import { unbilledTime } from './timetracking.js';
 
 const CACHE_MS = 10 * 60 * 1000;
 let aiCache = null;
@@ -77,7 +76,6 @@ export function briefFacts(today = isoDate()) {
     next30Days: { expected: cur(fc.expected), bestCase: cur(fc.bestCase) },
     watchList,
     pendingApprovals: listActions({ status: 'pending' }).length,
-    unbilledTime: unbilledTime().map((u) => ({ client: u.client, hours: u.hours, value: u.value })),
     activeRecurring: listSchedules().filter((s) => s.active).length,
   };
 }

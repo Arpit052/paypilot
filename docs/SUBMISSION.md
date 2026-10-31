@@ -19,7 +19,8 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, and for
 - **Knows your clients.** It computes a risk score from each client's PayPal payment history and warns you before you invoice a habitual late payer, suggesting a shorter due date or an advance.
 - **Protects cash flow automatically.** For clients who usually pay late, the agent adds a 50% upfront deposit using PayPal's partial-payment feature. It supports sales tax and recurring monthly or weekly invoices, and each recurring invoice still comes to you for approval.
 - **Money brief.** A step-by-step report covering lifetime earnings, this month vs last, top customers, overdue amount by customer, and what's still to collect, followed by AI-written next steps. The numbers are computed in code, never guessed by the model.
-- **Live time tracking → invoice.** A start/stop timer with a live clock; tracked hours become a PayPal invoice draft in one click, and billed hours are locked against double-billing.
+- **New invoice form.** Bill any new or existing customer (company, multiple services, issue/due dates, tax, deposit, PO number) with a live invoice preview, then send through PayPal or save a draft.
+- **Live payment notifications.** PayPal webhooks (plus a 2-minute safety-net check) mark invoices Paid in the database, and a notification pops up instantly in every open tab via Server-Sent Events.
 - **Interactive dashboard.** Clickable summary cards and months, sortable and searchable invoices, a top-customers leaderboard and CSV export.
 - **Chases late payments for you.** A scanner finds overdue invoices, and the AI writes reminders whose tone escalates from friendly to firm to final. Approve them, and they're sent through PayPal's remind endpoint. This can run on a schedule.
 - **Live status and forecast.** PayPal webhooks mark invoices paid instantly. A cash-flow forecast weights each open invoice by that client's real payment behaviour.

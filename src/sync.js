@@ -3,13 +3,21 @@ import { isoDate } from './config.js';
 import { listInvoices, getInvoiceByPaypalId, updateInvoice, logActivity } from './db.js';
 import { paypal } from './paypal.js';
 import { isOpen, clientName } from './analytics.js';
+import { notify } from './notify.js';
 
 function applyStatus(inv, status, paidDate) {
   if (!status || status === inv.status) return false;
   const was = inv.status;
+  const who = clientName(inv.clientId);
+  const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: inv.currency }).format(inv.total);
   if (['PAID', 'MARKED_AS_PAID'].includes(status)) {
     updateInvoice(inv.id, { status, paidDate: paidDate || isoDate() });
-    logActivity('invoice_paid', `💰 ${clientName(inv.clientId)} paid invoice #${inv.number} (${inv.currency} ${inv.total})`);
+    logActivity('invoice_paid', `💰 ${who} paid invoice #${inv.number} (${inv.currency} ${inv.total})`);
+    notify({ kind: 'payment', title: `Payment received: ${amount}`, body: `${who} paid invoice #${inv.number}.`, link: '/dashboard', invoiceId: inv.id });
+  } else if (status === 'PARTIALLY_PAID') {
+    updateInvoice(inv.id, { status });
+    logActivity('status', `${who} made a partial payment on invoice #${inv.number}`);
+    notify({ kind: 'payment', title: 'Deposit received', body: `${who} made a partial payment on invoice #${inv.number} (${amount} total).`, link: '/dashboard', invoiceId: inv.id });
   } else {
     updateInvoice(inv.id, { status });
     logActivity('status', `Invoice #${inv.number}: ${was} → ${status}`);

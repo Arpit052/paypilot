@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS clients (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  company TEXT,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS invoices (
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   source TEXT NOT NULL DEFAULT 'paypal',
   tax_percent REAL NOT NULL DEFAULT 0,
   deposit_amount REAL NOT NULL DEFAULT 0,
+  reference TEXT,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices(client_id);
@@ -76,18 +78,16 @@ CREATE TABLE IF NOT EXISTS schedules (
   last_run TEXT,
   created_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS time_entries (
-  id TEXT PRIMARY KEY,
-  client_id TEXT NOT NULL REFERENCES clients(id),
-  task TEXT NOT NULL,
-  started_at TEXT NOT NULL,
-  ended_at TEXT,
-  minutes INTEGER,
-  hourly_rate REAL NOT NULL,
-  billed_invoice_id TEXT,
-  created_at TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  link TEXT,
+  invoice_id TEXT,
+  read INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS idx_time_client ON time_entries(client_id);
 CREATE TABLE IF NOT EXISTS kv (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -98,6 +98,9 @@ function migrate(d) {
   const cols = new Set(d.prepare('PRAGMA table_info(invoices)').all().map((c) => c.name));
   if (!cols.has('tax_percent')) d.exec('ALTER TABLE invoices ADD COLUMN tax_percent REAL NOT NULL DEFAULT 0');
   if (!cols.has('deposit_amount')) d.exec('ALTER TABLE invoices ADD COLUMN deposit_amount REAL NOT NULL DEFAULT 0');
+  if (!cols.has('reference')) d.exec('ALTER TABLE invoices ADD COLUMN reference TEXT');
+  const ccols = new Set(d.prepare('PRAGMA table_info(clients)').all().map((c) => c.name));
+  if (!ccols.has('company')) d.exec('ALTER TABLE clients ADD COLUMN company TEXT');
 }
 
 let conn = null;
@@ -139,11 +142,11 @@ export function transaction(fn) {
 }
 
 export function resetDb() {
-  sql().exec('DELETE FROM actions; DELETE FROM schedules; DELETE FROM time_entries; DELETE FROM invoices; DELETE FROM clients; DELETE FROM activity; DELETE FROM kv;');
+  sql().exec('DELETE FROM notifications; DELETE FROM actions; DELETE FROM schedules; DELETE FROM invoices; DELETE FROM clients; DELETE FROM activity; DELETE FROM kv;');
 }
 
 // ---------------- clients ----------------
-const rowClient = (r) => r && { id: r.id, name: r.name, email: r.email, createdAt: r.created_at };
+const rowClient = (r) => r && { id: r.id, name: r.name, email: r.email, company: r.company || '', createdAt: r.created_at };
 
 export function listClients() {
   return sql().prepare('SELECT * FROM clients ORDER BY name').all().map(rowClient);
@@ -163,15 +166,16 @@ export function findClient(ref) {
   );
 }
 
-export function upsertClient({ name, email }) {
+export function upsertClient({ name, email, company }) {
   const d = sql();
   const existing = d.prepare('SELECT * FROM clients WHERE email = ? COLLATE NOCASE').get(email);
   if (existing) {
     if (name && name !== existing.name) d.prepare('UPDATE clients SET name = ? WHERE id = ?').run(name, existing.id);
+    if (company && company !== existing.company) d.prepare('UPDATE clients SET company = ? WHERE id = ?').run(company, existing.id);
     return getClient(existing.id);
   }
   const id = newId('cli');
-  d.prepare('INSERT INTO clients (id, name, email, created_at) VALUES (?, ?, ?, ?)').run(id, name, email, nowIso());
+  d.prepare('INSERT INTO clients (id, name, email, company, created_at) VALUES (?, ?, ?, ?, ?)').run(id, name, email, company || null, nowIso());
   return getClient(id);
 }
 
@@ -195,12 +199,13 @@ const rowInvoice = (r) =>
     source: r.source,
     taxPercent: r.tax_percent || 0,
     depositAmount: r.deposit_amount || 0,
+    reference: r.reference || '',
   };
 
 const INV_COLS = {
   paypalId: 'paypal_id', number: 'number', clientId: 'client_id', items: 'items', currency: 'currency', total: 'total',
   status: 'status', issueDate: 'issue_date', dueDate: 'due_date', paidDate: 'paid_date', note: 'note',
-  payerUrl: 'payer_url', reminders: 'reminders', source: 'source', taxPercent: 'tax_percent', depositAmount: 'deposit_amount',
+  payerUrl: 'payer_url', reminders: 'reminders', source: 'source', taxPercent: 'tax_percent', depositAmount: 'deposit_amount', reference: 'reference',
 };
 const JSON_FIELDS = new Set(['items', 'reminders', 'payload', 'result']);
 
@@ -233,13 +238,13 @@ export function insertInvoice(inv) {
   sql()
     .prepare(
       `INSERT INTO invoices (id, paypal_id, number, client_id, items, currency, total, status, issue_date, due_date,
-        paid_date, note, payer_url, reminders, source, tax_percent, deposit_amount, created_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        paid_date, note, payer_url, reminders, source, tax_percent, deposit_amount, reference, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     )
     .run(
       id, inv.paypalId ?? null, String(inv.number), inv.clientId, j(inv.items), inv.currency, inv.total, inv.status,
       inv.issueDate, inv.dueDate, inv.paidDate ?? null, inv.note ?? '', inv.payerUrl ?? null, j(inv.reminders || []),
-      inv.source || 'paypal', inv.taxPercent || 0, inv.depositAmount || 0, nowIso()
+      inv.source || 'paypal', inv.taxPercent || 0, inv.depositAmount || 0, inv.reference || null, nowIso()
     );
   return getInvoice(id);
 }
@@ -379,59 +384,26 @@ export function deleteSchedule(id) {
   return sql().prepare('DELETE FROM schedules WHERE id = ?').run(id).changes === 1;
 }
 
-// ---------------- time tracking ----------------
-const rowTime = (r) =>
-  r && {
-    id: r.id,
-    clientId: r.client_id,
-    task: r.task,
-    startedAt: r.started_at,
-    endedAt: r.ended_at,
-    minutes: r.minutes,
-    hourlyRate: r.hourly_rate,
-    billedInvoiceId: r.billed_invoice_id,
-    createdAt: r.created_at,
-  };
 
-export function insertTimeEntry(e) {
-  const id = newId('tim');
-  sql()
-    .prepare('INSERT INTO time_entries (id, client_id, task, started_at, ended_at, minutes, hourly_rate, created_at) VALUES (?,?,?,?,?,?,?,?)')
-    .run(id, e.clientId, e.task, e.startedAt, e.endedAt ?? null, e.minutes ?? null, e.hourlyRate, nowIso());
-  return getTimeEntry(id);
+// ---------------- notifications ----------------
+const rowNote = (r) => r && { id: r.id, at: r.at, kind: r.kind, title: r.title, body: r.body, link: r.link, invoiceId: r.invoice_id, read: Boolean(r.read) };
+
+export function insertNotification({ kind, title, body = '', link = null, invoiceId = null }) {
+  const r = sql()
+    .prepare('INSERT INTO notifications (at, kind, title, body, link, invoice_id) VALUES (?,?,?,?,?,?)')
+    .run(nowIso(), kind, title, body, link, invoiceId);
+  return rowNote(sql().prepare('SELECT * FROM notifications WHERE id = ?').get(r.lastInsertRowid));
 }
 
-export function getTimeEntry(id) {
-  return rowTime(sql().prepare('SELECT * FROM time_entries WHERE id = ?').get(id));
+export function listNotifications(limit = 30) {
+  return sql().prepare('SELECT * FROM notifications ORDER BY id DESC LIMIT ?').all(limit).map(rowNote);
 }
 
-export function getRunningTimer() {
-  return rowTime(sql().prepare('SELECT * FROM time_entries WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1').get());
+export function unreadNotificationCount() {
+  return sql().prepare('SELECT COUNT(*) AS n FROM notifications WHERE read = 0').get().n;
 }
 
-export function listTimeEntries({ limit = 50, unbilledOnly = false, clientId } = {}) {
-  const where = ['ended_at IS NOT NULL'];
-  const vals = [];
-  if (unbilledOnly) where.push('billed_invoice_id IS NULL');
-  if (clientId) where.push('client_id = ?') && vals.push(clientId);
-  return sql()
-    .prepare(`SELECT * FROM time_entries WHERE ${where.join(' AND ')} ORDER BY started_at DESC LIMIT ?`)
-    .all(...vals, limit)
-    .map(rowTime);
-}
-
-export function finishTimeEntry(id, endedAt, minutes) {
-  sql().prepare('UPDATE time_entries SET ended_at = ?, minutes = ? WHERE id = ?').run(endedAt, minutes, id);
-  return getTimeEntry(id);
-}
-
-export function markTimeBilled(ids, invoiceId) {
-  const st = sql().prepare('UPDATE time_entries SET billed_invoice_id = ? WHERE id = ? AND billed_invoice_id IS NULL');
-  let n = 0;
-  for (const id of ids) n += st.run(invoiceId, id).changes;
-  return n;
-}
-
-export function deleteTimeEntry(id) {
-  return sql().prepare('DELETE FROM time_entries WHERE id = ? AND billed_invoice_id IS NULL').run(id).changes === 1;
+export function markNotificationsRead(id) {
+  if (id) sql().prepare('UPDATE notifications SET read = 1 WHERE id = ?').run(id);
+  else sql().exec('UPDATE notifications SET read = 1 WHERE read = 0');
 }

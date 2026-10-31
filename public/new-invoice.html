@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · New invoice</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main>
+  <h1>New invoice</h1>
+  <p class="lede">Bill a new or existing customer. The invoice is saved, sent through PayPal, and its payment status is tracked automatically. You'll get a notification when it's paid.</p>
+
+  <div class="ni-grid">
+    <form class="panel" id="form" novalidate>
+      <fieldset>
+        <legend>Customer</legend>
+        <div class="form-grid">
+          <div class="full"><label for="cust">Customer</label>
+            <select id="cust"></select></div>
+          <div><label for="name">Full name *</label><input id="name" autocomplete="off" required placeholder="e.g. Sarah Johnson"></div>
+          <div><label for="email">Email *</label><input id="email" type="email" autocomplete="off" required placeholder="sarah@company.com"></div>
+          <div class="full"><label for="company">Company (optional)</label><input id="company" autocomplete="off" placeholder="e.g. Johnson Bakery LLC"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Services</legend>
+        <table class="items ni-items">
+          <thead><tr><th>Service *</th><th class="q">Qty</th><th class="p">Rate</th><th class="amt">Amount</th><th class="x"></th></tr></thead>
+          <tbody id="lines"></tbody>
+        </table>
+        <button type="button" class="add-line" id="addLine">+ Add service</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Dates</legend>
+        <div class="form-grid">
+          <div><label for="issue">Issue date</label><input id="issue" type="date"></div>
+          <div><label for="terms">Payment terms</label>
+            <select id="terms">
+              <option value="0">Due on receipt</option>
+              <option value="7" selected>Net 7 (7 days)</option>
+              <option value="15">Net 15</option>
+              <option value="30">Net 30</option>
+              <option value="custom">Custom date</option>
+            </select></div>
+          <div><label for="due">Due date</label><input id="due" type="date"></div>
+          <div><label for="currency">Currency</label>
+            <select id="currency">
+              <option>USD</option><option>EUR</option><option>GBP</option><option>CAD</option><option>AUD</option>
+            </select></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Extras</legend>
+        <div class="form-grid">
+          <div><label for="tax">Sales tax %</label><input id="tax" type="number" min="0" max="50" step="0.01" value="0"></div>
+          <div><label for="deposit">Deposit due upfront</label><input id="deposit" type="number" min="0" step="0.01" value="0"></div>
+          <div class="full"><label for="ref">Reference / PO number (optional)</label><input id="ref" placeholder="e.g. PO-2291"></div>
+          <div class="full"><label for="note">Note to customer (optional)</label><textarea id="note" rows="2" placeholder="Thanks for your business!"></textarea></div>
+        </div>
+      </fieldset>
+
+      <div class="slip-error" id="err" role="alert"></div>
+      <div class="slip-actions">
+        <button class="btn" type="submit" id="sendBtn">Send invoice via PayPal</button>
+        <button class="btn ghost" type="button" id="draftBtn">Save as draft</button>
+      </div>
+    </form>
+
+    <aside>
+      <div class="slip" id="preview" aria-live="polite"></div>
+      <div id="done"></div>
+    </aside>
+  </div>
+</main>
+<script type="module">
+  import { api, header, esc, money, fmtDate, toast } from '/common.js';
+  const cfg = await header('new');
+  const $ = (id) => document.getElementById(id);
+  const r2 = (n) => Math.round(n * 100) / 100;
+  let clients = [];
+
+  // ---- customer ----
+  const { clients: list } = await api('/api/clients');
+  clients = list;
+  $('cust').innerHTML = '<option value="">+ New customer</option>' + list.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}${c.company ? ` (${esc(c.company)})` : ''}</option>`).join('');
+  $('cust').addEventListener('change', () => {
+    const c = clients.find((x) => x.id === $('cust').value);
+    $('name').value = c?.name || '';
+    $('email').value = c?.email || '';
+    $('company').value = c?.company || '';
+    ['name', 'email'].forEach((id) => ($(id).readOnly = Boolean(c)));
+    render();
+  });
+
+  // ---- services ----
+  function addLine(it = { name: '', quantity: 1, unitPrice: '' }) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input data-i="name" value="${esc(it.name)}" placeholder="e.g. Website design" aria-label="Service"></td>
+      <td class="q"><input data-i="quantity" type="number" min="0" step="any" value="${esc(it.quantity)}" aria-label="Quantity"></td>
+      <td class="p"><input data-i="unitPrice" type="number" min="0" step="0.01" value="${esc(it.unitPrice)}" placeholder="0.00" aria-label="Rate"></td>
+      <td class="amt num"></td>
+      <td class="x"><button type="button" aria-label="Remove service">×</button></td>`;
+    tr.querySelector('.x button').onclick = () => {
+      if ($('lines').rows.length > 1) tr.remove();
+      render();
+    };
+    $('lines').append(tr);
+  }
+  const items = () =>
+    [...$('lines').rows].map((tr) => ({
+      name: tr.querySelector('[data-i=name]').value.trim(),
+      quantity: Number(tr.querySelector('[data-i=quantity]').value),
+      unitPrice: Number(tr.querySelector('[data-i=unitPrice]').value),
+    }));
+  $('addLine').onclick = () => {
+    addLine();
+    render();
+  };
+  addLine();
+
+  // ---- dates ----
+  const addDays = (d, n) => {
+    const x = new Date(d + 'T00:00:00Z');
+    x.setUTCDate(x.getUTCDate() + n);
+    return x.toISOString().slice(0, 10);
+  };
+  $('issue').value = cfg.today;
+  $('issue').max = cfg.today;
+  const syncDue = () => {
+    if ($('terms').value !== 'custom') $('due').value = addDays(cfg.today > $('issue').value ? cfg.today : $('issue').value, Number($('terms').value));
+  };
+  syncDue();
+  $('terms').addEventListener('change', () => { syncDue(); render(); });
+  $('issue').addEventListener('change', () => { syncDue(); render(); });
+  $('due').addEventListener('change', () => { $('terms').value = 'custom'; render(); });
+  $('currency').value = cfg.currency || 'USD';
+  $('tax').value = cfg.defaultTaxPercent || 0;
+
+  // ---- live preview ----
+  function totals() {
+    const pct = Number($('tax').value) || 0;
+    let sub = 0, tax = 0;
+    for (const it of items()) {
+      const a = r2((it.quantity || 0) * (it.unitPrice || 0));
+      sub += a;
+      tax += r2((a * pct) / 100);
+    }
+    return { sub: r2(sub), tax: r2(tax), total: r2(sub + tax), pct };
+  }
+  function render() {
+    const cur = $('currency').value;
+    [...$('lines').rows].forEach((tr, i) => {
+      const it = items()[i];
+      tr.querySelector('.amt').textContent = money(r2((it.quantity || 0) * (it.unitPrice || 0)), cur);
+    });
+    const t = totals();
+    const dep = Number($('deposit').value) || 0;
+    const lines = items().filter((i) => i.name);
+    $('preview').innerHTML = `
+      <div class="slip-head"><div><div class="slip-kind">Invoice preview</div><div class="slip-from">from ${esc(cfg.businessName)} · via PayPal</div></div><div class="slip-from">${esc(cur)}</div></div>
+      <div class="pv-to"><span class="muted">Bill to</span><br><b>${esc($('name').value) || '<span class="muted">Customer name</span>'}</b>${$('company').value ? `<br>${esc($('company').value)}` : ''}<br><span class="muted">${esc($('email').value) || 'email@example.com'}</span></div>
+      <div class="pv-dates"><span>Issued <b>${fmtDate($('issue').value)}</b></span><span>Due <b>${fmtDate($('due').value)}</b></span>${$('ref').value ? `<span>Ref <b>${esc($('ref').value)}</b></span>` : ''}</div>
+      <table class="items"><thead><tr><th>Service</th><th class="q">Qty</th><th class="amt">Amount</th></tr></thead><tbody>
+        ${lines.length ? lines.map((i) => `<tr><td>${esc(i.name)}</td><td class="q num">${i.quantity}</td><td class="amt num">${money(r2(i.quantity * i.unitPrice), cur)}</td></tr>`).join('') : '<tr><td colspan="3" class="muted">Add a service</td></tr>'}
+      </tbody></table>
+      <div class="sums num"><div><span>Subtotal</span><span>${money(t.sub, cur)}</span></div>${t.pct ? `<div><span>Sales tax (${t.pct}%)</span><span>${money(t.tax, cur)}</span></div>` : ''}</div>
+      <div class="total"><span>Total due</span><b class="num">${money(t.total, cur)}</b></div>
+      ${dep > 0 ? `<div class="deposit-line num">${money(dep, cur)} due upfront, ${money(Math.max(t.total - dep, 0), cur)} by the due date</div>` : ''}
+      ${$('note').value ? `<p class="muted" style="margin:12px 0 0;font-size:13px">${esc($('note').value)}</p>` : ''}`;
+  }
+  $('form').addEventListener('input', render);
+  render();
+
+  // ---- submit ----
+  function payload(sendNow) {
+    return {
+      clientName: $('name').value,
+      clientEmail: $('email').value,
+      company: $('company').value,
+      items: items().filter((i) => i.name),
+      currency: $('currency').value,
+      issueDate: $('issue').value,
+      dueDate: $('due').value,
+      taxPercent: Number($('tax').value) || 0,
+      depositAmount: Number($('deposit').value) || 0,
+      reference: $('ref').value,
+      note: $('note').value,
+      sendNow,
+    };
+  }
+  async function submit(sendNow) {
+    $('err').textContent = '';
+    if (!$('name').value.trim() || !$('email').value.trim()) return ($('err').textContent = 'Enter the customer name and email.');
+    if (!items().some((i) => i.name && i.unitPrice > 0)) return ($('err').textContent = 'Add at least one service with a rate.');
+    const btn = sendNow ? $('sendBtn') : $('draftBtn');
+    btn.disabled = true;
+    try {
+      const r = await api('/api/invoices', { body: payload(sendNow) });
+      if (r.sent) {
+        const res = r.action.result;
+        $('preview').insertAdjacentHTML('beforeend', '<div class="stamp">SENT</div>');
+        $('done').innerHTML = `<div class="panel done-card"><b>Invoice #${esc(res.number)} sent through PayPal.</b><p class="muted">It's now on your dashboard as <b>Sent</b>. When ${esc($('name').value)} pays, it changes to <b>Paid</b> automatically and you'll get a notification.</p>
+          <div class="slip-actions"><a class="btn" href="/dashboard">Go to dashboard</a>${res.payerUrl ? `<a class="btn ghost" href="${esc(res.payerUrl)}" target="_blank" rel="noopener">Customer's payment page</a>` : ''}<a class="btn ghost" href="/new-invoice">New invoice</a></div></div>`;
+        $('form').querySelectorAll('input,select,textarea,button').forEach((x) => (x.disabled = true));
+      } else {
+        toast('Saved as a draft in your approval tray');
+        setTimeout(() => (location.href = '/'), 900);
+      }
+    } catch (e) {
+      $('err').textContent = e.message;
+      btn.disabled = false;
+    }
+  }
+  $('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    submit(true);
+  });
+  $('draftBtn').onclick = () => submit(false);
+</script>
+</body>
+</html>
