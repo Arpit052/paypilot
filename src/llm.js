@@ -10,6 +10,39 @@ import { config } from './config.js';
 
 export class LlmError extends Error {}
 
+const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 90000);
+
+/** POST JSON to an LLM API with a timeout and a one-line log in the server console. */
+async function postJson(url, headers, body, label) {
+  const t0 = Date.now();
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  } catch (e) {
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') {
+      console.log(`  [AI] ${label}: no answer after ${secs}s (timeout)`);
+      throw new LlmError(`The AI did not answer within ${TIMEOUT_MS / 1000} seconds. Check your internet connection and try again.`);
+    }
+    const why = e.cause?.code || e.cause?.message || e.message;
+    console.log(`  [AI] ${label}: network error after ${secs}s: ${why}`);
+    throw new LlmError(`Could not reach the AI server (${why}). Check your internet connection.`);
+  }
+  const json = await res.json().catch(() => ({}));
+  const secs = ((Date.now() - t0) / 1000).toFixed(1);
+  console.log(`  [AI] ${label}: HTTP ${res.status} in ${secs}s`);
+  if (!res.ok) {
+    const err = Array.isArray(json) ? json[0]?.error : json.error;
+    throw new LlmError(`AI API error ${res.status}: ${err?.message || JSON.stringify(json).slice(0, 300)}`);
+  }
+  return json;
+}
+
 // ---------------- Anthropic ----------------
 export function toAnthropic(messages) {
   return messages.map((m) => {
@@ -32,23 +65,18 @@ export function toAnthropic(messages) {
 }
 
 async function anthropicComplete({ system, messages, tools, maxTokens = 2048 }) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': config.llm.anthropicKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
+  const json = await postJson(
+    'https://api.anthropic.com/v1/messages',
+    { 'x-api-key': config.llm.anthropicKey, 'anthropic-version': '2023-06-01' },
+    {
       model: config.llm.anthropicModel,
       max_tokens: maxTokens,
       system,
       messages: toAnthropic(messages),
       ...(tools?.length ? { tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters })) } : {}),
-    }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new LlmError(`Anthropic API error ${res.status}: ${json.error?.message || ''}`);
+    },
+    config.llm.anthropicModel
+  );
   const content = [];
   for (const b of json.content || []) {
     if (b.type === 'text' && b.text) content.push({ type: 'text', text: b.text });
@@ -72,6 +100,8 @@ export function toOpenAI(system, messages) {
           id: c.id,
           type: 'function',
           function: { name: c.name, arguments: JSON.stringify(c.input) },
+          // Gemini returns a "thought signature" that must be sent back with the call
+          ...(c.extra ? { extra_content: c.extra } : {}),
         }));
       }
       out.push(msg);
@@ -89,32 +119,47 @@ export function toOpenAI(system, messages) {
   return out;
 }
 
-async function openaiComplete({ system, messages, tools, maxTokens = 2048 }) {
-  const res = await fetch(`${config.llm.openaiBaseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${config.llm.openaiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
+async function openaiComplete({ system, messages, tools, maxTokens = 4096 }) {
+  const base = config.llm.openaiBaseUrl;
+  const isGemini = base.includes('generativelanguage.googleapis.com');
+  const json = await postJson(
+    `${base}/chat/completions`,
+    { Authorization: `Bearer ${config.llm.openaiKey}` },
+    {
       model: config.llm.openaiModel,
       max_tokens: maxTokens,
       messages: toOpenAI(system, messages),
+      // keep Gemini's "thinking" short so replies come back fast
+      ...(isGemini ? { reasoning_effort: process.env.GEMINI_REASONING || 'low' } : {}),
       ...(tools?.length
         ? { tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) }
         : {}),
-    }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new LlmError(`LLM API error ${res.status}: ${json.error?.message || JSON.stringify(json).slice(0, 200)}`);
-  const msg = json.choices?.[0]?.message || {};
+    },
+    config.llm.openaiModel
+  );
+  const choice = json.choices?.[0] || {};
+  const msg = choice.message || {};
   const content = [];
-  if (msg.content) content.push({ type: 'text', text: msg.content });
-  for (const tc of msg.tool_calls || []) {
-    let input = {};
-    try {
-      input = JSON.parse(tc.function.arguments || '{}');
-    } catch {
-      input = {};
+  if (typeof msg.content === 'string' && msg.content.trim()) content.push({ type: 'text', text: msg.content });
+  (msg.tool_calls || []).forEach((tc, i) => {
+    let input = tc.function?.arguments ?? {};
+    if (typeof input === 'string') {
+      try {
+        input = JSON.parse(input || '{}');
+      } catch {
+        input = {};
+      }
     }
-    content.push({ type: 'tool_call', id: tc.id, name: tc.function.name, input });
+    content.push({
+      type: 'tool_call',
+      id: tc.id || `call_${Date.now()}_${i}`,
+      name: tc.function?.name,
+      input,
+      ...(tc.extra_content ? { extra: tc.extra_content } : {}),
+    });
+  });
+  if (!content.length) {
+    console.log(`  [AI] empty reply (finish_reason: ${choice.finish_reason || 'unknown'})`);
   }
   return { content };
 }
@@ -161,6 +206,7 @@ export async function runToolLoop({ system, messages, tools, handlers, maxSteps 
       } catch (e) {
         output = { error: e.message };
       }
+      console.log(`  [AI]   tool ${call.name}${output?.error ? ' → error: ' + output.error : ''}`);
       onToolCall?.(call, output);
       results.push({ type: 'tool_result', id: call.id, name: call.name, output: JSON.stringify(output) });
     }

@@ -10,6 +10,7 @@ if errorlevel 1 (
   pause
   exit /b
 )
+taskkill /F /IM node.exe >nul 2>nul
 if not exist data\db.json node scripts\seed.js
 echo.
 echo  PayPilot start ho raha hai... browser apne aap khul jayega.

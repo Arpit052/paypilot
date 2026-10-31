@@ -49,8 +49,10 @@ function addSlip(action, prepend = true) {
   updateTrayCount();
 }
 
+let busy = false;
 async function send(text) {
-  if (!text.trim() && !image) return;
+  if (busy || (!text.trim() && !image)) return;
+  busy = true;
   const userHtml = (image ? `<img src="data:${image.mediaType};base64,${image.data}" alt="Attached screenshot">` : '') + esc(text);
   addMsg('user', userHtml);
   const payload = { sessionId, message: text, image };
@@ -61,6 +63,11 @@ async function send(text) {
   const typing = document.createElement('div');
   typing.className = 'typing';
   typing.textContent = 'Working';
+  const started = Date.now();
+  const tick = setInterval(() => {
+    const secs = Math.round((Date.now() - started) / 1000);
+    typing.textContent = secs >= 5 ? `Working (${secs}s)` : 'Working';
+  }, 1000);
   log.append(typing);
   log.scrollTop = log.scrollHeight;
   try {
@@ -73,6 +80,8 @@ async function send(text) {
     typing.remove();
     addMsg('err', esc(e.message));
   } finally {
+    clearInterval(tick);
+    busy = false;
     $('sendBtn').disabled = false;
     input.focus();
   }
