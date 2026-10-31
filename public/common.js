@@ -236,7 +236,7 @@ export function renderSlip(action, { onDone } = {}) {
       </div>
       <label>Subject</label><input data-f="subject" value="${esc(p.subject)}">
       <label>Message</label><textarea data-f="message">${esc(p.message)}</textarea>
-      ${p.draftedBy === 'template' ? '<div class="slip-meta muted">Drafted from a template (AI not configured).</div>' : ''}
+      ${p.draftedBy === 'template' ? '<div class="slip-meta muted">Drafted from a template because the AI was unavailable. Edit it as you like.</div>' : ''}
       <div class="slip-actions">
         <button class="btn" data-approve>Send reminder via PayPal</button>
         <button class="btn ghost" data-reject>Discard</button>
