@@ -71,7 +71,7 @@ flowchart LR
 
 ### AI tools used
 
-- **LLM with tool calling.** Claude by default (`ANTHROPIC_API_KEY`), or any **OpenAI-compatible** API (OpenAI, Google Gemini, Groq, OpenRouter, local models) through `OPENAI_API_KEY` and `OPENAI_BASE_URL`.
+- **LLM with tool calling.** Three adapters behind one interface: **Google Gemini** (native `generateContent`, with thought-signature round-tripping), **Claude** (Anthropic Messages API), and any **OpenAI-compatible** API (OpenAI, Groq, OpenRouter, local models).
   - **Agent loop** (`src/llm.js`, `src/agent.js`): multi-step tool calling over PayPal data, intent and entity extraction from free text, and multilingual replies.
   - **Vision** (`src/agent.js`): reads client emails and chat screenshots to draft invoices.
   - **Generation** (`src/followups.js`): writes reminder emails using the client's payment history and the escalation tone.
@@ -95,7 +95,10 @@ npm start                   # → http://localhost:3000
 3. Under **Testing tools → Sandbox accounts** you'll find a *Business* account (that's you, the invoicer) and a *Personal* account (use it as the client and to pay invoices).
 
 ### 2. AI key
-Set `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` (plus `OPENAI_BASE_URL` and `OPENAI_MODEL` for Gemini or another OpenAI-compatible provider).
+Set **one** of:
+- `GEMINI_API_KEY`: free key from [Google AI Studio](https://aistudio.google.com) (uses Gemini's native API, model `gemini-3.8-flash` by default)
+- `ANTHROPIC_API_KEY`: Claude
+- `OPENAI_API_KEY`: OpenAI, or any OpenAI-compatible provider via `OPENAI_BASE_URL` and `OPENAI_MODEL`
 
 ### 3. (Optional) Demo history
 ```bash
@@ -141,7 +144,7 @@ These are end-to-end tests with mock PayPal and a scripted model. They cover the
 ```
 server.js            HTTP server + API routes (no framework)
 src/agent.js         System prompt, tool schemas + handlers, chat sessions
-src/llm.js           Anthropic + OpenAI-compatible adapters, tool-calling loop
+src/llm.js           Gemini, Anthropic + OpenAI-compatible adapters, tool-calling loop
 src/paypal.js        PayPal Invoicing v2 client (sandbox/live) + mock
 src/actions.js       Pending actions, approval, execution against PayPal
 src/followups.js     Overdue scanner + AI reminder drafting

@@ -47,6 +47,7 @@ if (env.OPENAI_API_KEY?.startsWith('AIza')) {
 function detectLlmProvider() {
   if (env.LLM_PROVIDER) return env.LLM_PROVIDER.toLowerCase();
   if (env.ANTHROPIC_API_KEY) return 'anthropic';
+  if (env.GEMINI_API_KEY || env.OPENAI_API_KEY?.startsWith('AIza')) return 'gemini';
   if (env.OPENAI_API_KEY) return 'openai';
   return 'none';
 }
@@ -83,6 +84,10 @@ export const config = {
     openaiKey: env.OPENAI_API_KEY || '',
     openaiBaseUrl: (env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, ''),
     openaiModel: env.OPENAI_MODEL || 'gpt-4o-mini',
+    geminiKey: env.GEMINI_API_KEY || env.OPENAI_API_KEY || '',
+    geminiModel: env.GEMINI_MODEL || (env.OPENAI_MODEL?.startsWith('gemini') ? env.OPENAI_MODEL : 'gemini-3.8-flash'),
+    // thinking level: low | medium | high | off (= let the model decide)
+    geminiThinking: (env.GEMINI_REASONING || 'low').toLowerCase(),
   },
 };
 

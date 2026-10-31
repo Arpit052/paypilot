@@ -164,6 +164,77 @@ async function openaiComplete({ system, messages, tools, maxTokens = 4096 }) {
   return { content };
 }
 
+// ---------------- Google Gemini (native generateContent API) ----------------
+export function toGemini(messages) {
+  return messages.map((m) => {
+    if (m.role === 'tool') {
+      return {
+        role: 'user',
+        parts: m.content.map((c) => {
+          let response;
+          try {
+            response = JSON.parse(c.output);
+          } catch {
+            response = { result: c.output };
+          }
+          if (response === null || typeof response !== 'object' || Array.isArray(response)) response = { result: response };
+          return { functionResponse: { name: c.name, response, ...(c.extra?.callId ? { id: c.extra.callId } : {}) } };
+        }),
+      };
+    }
+    return {
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: m.content.map((c) => {
+        const sig = c.extra?.thoughtSignature ? { thoughtSignature: c.extra.thoughtSignature } : {};
+        if (c.type === 'text') return { text: c.text, ...sig };
+        if (c.type === 'image') return { inlineData: { mimeType: c.mediaType, data: c.data } };
+        if (c.type === 'tool_call') {
+          return { functionCall: { name: c.name, args: c.input || {}, ...(c.extra?.callId ? { id: c.extra.callId } : {}) }, ...sig };
+        }
+        throw new LlmError('Unknown content type ' + c.type);
+      }),
+    };
+  });
+}
+
+async function geminiComplete({ system, messages, tools, maxTokens = 4096 }) {
+  const model = config.llm.geminiModel;
+  const thinking = config.llm.geminiThinking;
+  const generationConfig = { maxOutputTokens: maxTokens };
+  if (thinking && thinking !== 'off') generationConfig.thinkingConfig = { thinkingLevel: thinking };
+  const json = await postJson(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    { 'x-goog-api-key': config.llm.geminiKey },
+    {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: toGemini(messages),
+      generationConfig,
+      ...(tools?.length
+        ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })) }] }
+        : {}),
+    },
+    model
+  );
+  const cand = json.candidates?.[0];
+  const content = [];
+  (cand?.content?.parts || []).forEach((p, i) => {
+    if (p.thought) return; // internal reasoning summary - not shown
+    const extra = {};
+    if (p.thoughtSignature) extra.thoughtSignature = p.thoughtSignature;
+    if (p.functionCall) {
+      if (p.functionCall.id) extra.callId = p.functionCall.id;
+      content.push({ type: 'tool_call', id: p.functionCall.id || `g_${Date.now()}_${i}`, name: p.functionCall.name, input: p.functionCall.args || {}, extra });
+    } else if (typeof p.text === 'string' && p.text.trim()) {
+      content.push({ type: 'text', text: p.text, ...(extra.thoughtSignature ? { extra } : {}) });
+    }
+  });
+  if (!content.length) {
+    const why = cand?.finishReason || json.promptFeedback?.blockReason || 'unknown';
+    console.log(`  [AI] empty reply (finishReason: ${why})`);
+  }
+  return { content };
+}
+
 // ---------------- dispatch ----------------
 let override = null;
 /** Tests can inject a fake provider: fn({system, messages, tools}) => {content} */
@@ -179,6 +250,7 @@ export async function complete(args) {
   if (override) return override(args);
   if (config.llm.provider === 'anthropic') return anthropicComplete(args);
   if (config.llm.provider === 'openai') return openaiComplete(args);
+  if (config.llm.provider === 'gemini') return geminiComplete(args);
   throw new LlmError('No AI provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env');
 }
 
@@ -208,7 +280,7 @@ export async function runToolLoop({ system, messages, tools, handlers, maxSteps 
       }
       console.log(`  [AI]   tool ${call.name}${output?.error ? ' → error: ' + output.error : ''}`);
       onToolCall?.(call, output);
-      results.push({ type: 'tool_result', id: call.id, name: call.name, output: JSON.stringify(output) });
+      results.push({ type: 'tool_result', id: call.id, name: call.name, output: JSON.stringify(output), ...(call.extra ? { extra: call.extra } : {}) });
     }
     convo.push({ role: 'tool', content: results });
   }
