@@ -11,7 +11,11 @@ if errorlevel 1 (
   exit /b
 )
 taskkill /F /IM node.exe >nul 2>nul
-if not exist data\db.json node scripts\seed.js
+if not exist node_modules\express (
+  echo  Pehli baar: zaroori packages install ho rahe hain...
+  call npm install --omit=dev
+)
+if not exist data\paypilot.db node scripts\seed.js
 echo.
 echo  PayPilot start ho raha hai... browser apne aap khul jayega.
 echo  Band karne ke liye yeh window close kar do.

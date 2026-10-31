@@ -1,35 +1,22 @@
 // Human-in-the-loop: the AI only *proposes* actions that move money or contact
 // clients. Nothing reaches PayPal until the user approves the action card.
 import { config, isoDate, addDays } from './config.js';
-import { db, save, newId, logActivity, upsertClient, findInvoice } from './db.js';
+import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
 import { paypal, PayPalError } from './paypal.js';
 import { invoiceTotal, isOpen } from './analytics.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export function createAction(type, payload, { origin = 'chat', summary } = {}) {
-  const a = {
-    id: newId('act'),
-    type,
-    status: 'pending',
-    origin,
-    summary,
-    payload,
-    createdAt: new Date().toISOString(),
-  };
-  db().actions.unshift(a);
-  save();
-  return a;
+  return insertAction({ type, origin, summary, payload });
 }
 
-export function listActions({ status, origin, type } = {}) {
-  return db().actions.filter(
-    (a) => (!status || a.status === status) && (!origin || a.origin === origin) && (!type || a.type === type)
-  );
+export function listActions(filter = {}) {
+  return dbListActions(filter);
 }
 
 export function getAction(id) {
-  return db().actions.find((a) => a.id === id) || null;
+  return dbGetAction(id);
 }
 
 /** Normalise + validate an invoice draft. Throws on bad input. Shared by the AI tool and the approve step. */
@@ -75,8 +62,7 @@ const executors = {
       dueDate: draft.dueDate,
       note: draft.note,
     });
-    const inv = {
-      id: newId('inv'),
+    const inv = insertInvoice({
       paypalId: pp.paypalId,
       number: pp.number,
       clientId: client.id,
@@ -91,9 +77,7 @@ const executors = {
       payerUrl: pp.payerUrl,
       reminders: [],
       source: 'paypal',
-    };
-    db().invoices.unshift(inv);
-    save();
+    });
     logActivity('invoice_sent', `Invoice #${inv.number} for ${draft.currency} ${draft.total} sent to ${client.name}`);
     return { invoiceId: inv.id, number: inv.number, paypalId: inv.paypalId, payerUrl: inv.payerUrl };
   },
@@ -106,10 +90,10 @@ const executors = {
     const message = String(payload.message || '').trim();
     if (!message) throw new Error('Reminder message is empty');
     await paypal.remind(inv.paypalId, { subject, note: message });
-    inv.reminders.push({ at: isoDate(), subject, tone: payload.tone || 'friendly' });
-    save();
+    const reminders = [...inv.reminders, { at: isoDate(), subject, tone: payload.tone || 'friendly' }];
+    updateInvoice(inv.id, { reminders });
     logActivity('reminder_sent', `Reminder (${payload.tone || 'friendly'}) sent for invoice #${inv.number}`);
-    return { number: inv.number, remindersSent: inv.reminders.length };
+    return { number: inv.number, remindersSent: reminders.length };
   },
 
   async cancel_invoice(payload) {
@@ -120,8 +104,7 @@ const executors = {
       subject: `Invoice #${inv.number} cancelled`,
       note: payload.reason || 'This invoice has been cancelled.',
     });
-    inv.status = 'CANCELLED';
-    save();
+    updateInvoice(inv.id, { status: 'CANCELLED' });
     logActivity('invoice_cancelled', `Invoice #${inv.number} cancelled`);
     return { number: inv.number, status: 'CANCELLED' };
   },
@@ -131,24 +114,15 @@ const executors = {
 export async function approveAction(id, edits) {
   const a = getAction(id);
   if (!a) throw Object.assign(new Error('Action not found'), { status: 404 });
-  if (a.status !== 'pending') throw Object.assign(new Error(`Action already ${a.status}`), { status: 409 });
+  // atomic claim: a double-click can never execute the same action twice
+  if (!transitionAction(id, 'pending', 'executing')) throw Object.assign(new Error(`Action already ${a.status}`), { status: 409 });
   const payload = edits && typeof edits === 'object' ? { ...a.payload, ...edits } : a.payload;
-  a.status = 'executing';
-  save();
   try {
     const result = await executors[a.type](payload);
-    a.payload = payload;
-    a.status = 'approved';
-    a.result = result;
-    a.error = null;
-    a.decidedAt = new Date().toISOString();
-    save();
-    return a;
+    return updateAction(id, { payload, status: 'approved', result, error: null, decidedAt: new Date().toISOString() });
   } catch (e) {
-    // keep it pending so the user can fix & retry
-    a.status = 'pending';
-    a.error = e.message;
-    save();
+    // back to pending so the user can fix & retry
+    updateAction(id, { status: 'pending', error: e.message });
     const status = e instanceof PayPalError ? (e.status < 500 ? 400 : 502) : e instanceof TypeError ? 502 : 400;
     throw Object.assign(new Error(e.message), { status });
   }
@@ -157,9 +131,6 @@ export async function approveAction(id, edits) {
 export function rejectAction(id) {
   const a = getAction(id);
   if (!a) throw Object.assign(new Error('Action not found'), { status: 404 });
-  if (a.status !== 'pending') throw Object.assign(new Error(`Action already ${a.status}`), { status: 409 });
-  a.status = 'rejected';
-  a.decidedAt = new Date().toISOString();
-  save();
-  return a;
+  if (!transitionAction(id, 'pending', 'rejected')) throw Object.assign(new Error(`Action already ${a.status}`), { status: 409 });
+  return updateAction(id, { decidedAt: new Date().toISOString() });
 }

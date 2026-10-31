@@ -197,25 +197,52 @@ export function toGemini(messages) {
   });
 }
 
+let genai = null;
+async function geminiClient() {
+  if (!genai) {
+    const { GoogleGenAI } = await import('@google/genai');
+    genai = new GoogleGenAI({ apiKey: config.llm.geminiKey });
+  }
+  return genai;
+}
+
 async function geminiComplete({ system, messages, tools, maxTokens = 4096 }) {
   const model = config.llm.geminiModel;
   const thinking = config.llm.geminiThinking;
-  const generationConfig = { maxOutputTokens: maxTokens };
-  if (thinking && thinking !== 'off') generationConfig.thinkingConfig = { thinkingLevel: thinking };
-  const json = await postJson(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-    { 'x-goog-api-key': config.llm.geminiKey },
-    {
-      systemInstruction: { parts: [{ text: system }] },
+  const ai = await geminiClient();
+  const t0 = Date.now();
+  let resp;
+  try {
+    resp = await ai.models.generateContent({
+      model,
       contents: toGemini(messages),
-      generationConfig,
-      ...(tools?.length
-        ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })) }] }
-        : {}),
-    },
-    model
-  );
-  const cand = json.candidates?.[0];
+      config: {
+        systemInstruction: system,
+        maxOutputTokens: maxTokens,
+        ...(thinking && thinking !== 'off' ? { thinkingConfig: { thinkingLevel: thinking } } : {}),
+        ...(tools?.length
+          ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.parameters })) }] }
+          : {}),
+        abortSignal: AbortSignal.timeout(TIMEOUT_MS),
+      },
+    });
+  } catch (e) {
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    if (e.name === 'AbortError' || e.name === 'TimeoutError' || /abort/i.test(e.message)) {
+      console.log(`  [AI] ${model}: no answer after ${secs}s (timeout)`);
+      throw new LlmError(`The AI did not answer within ${TIMEOUT_MS / 1000} seconds. Try again.`);
+    }
+    let msg = e.message || String(e);
+    try {
+      msg = JSON.parse(msg.slice(msg.indexOf('{'))).error?.message || msg;
+    } catch {
+      /* keep raw */
+    }
+    console.log(`  [AI] ${model}: error after ${secs}s: ${msg.slice(0, 200)}`);
+    throw new LlmError(`AI error: ${msg}`);
+  }
+  console.log(`  [AI] ${model}: OK in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+  const cand = resp.candidates?.[0];
   const content = [];
   (cand?.content?.parts || []).forEach((p, i) => {
     if (p.thought) return; // internal reasoning summary - not shown
@@ -229,8 +256,7 @@ async function geminiComplete({ system, messages, tools, maxTokens = 4096 }) {
     }
   });
   if (!content.length) {
-    const why = cand?.finishReason || json.promptFeedback?.blockReason || 'unknown';
-    console.log(`  [AI] empty reply (finishReason: ${why})`);
+    console.log(`  [AI] empty reply (finishReason: ${cand?.finishReason || resp.promptFeedback?.blockReason || 'unknown'})`);
   }
   return { content };
 }

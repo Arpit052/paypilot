@@ -1,6 +1,6 @@
 // The PayPilot agent: system prompt, tool definitions and handlers.
 import { config, isoDate, daysBetween } from './config.js';
-import { db, findClient, findInvoice } from './db.js';
+import { listInvoices, findClient, findInvoice } from './db.js';
 import { runToolLoop } from './llm.js';
 import { createAction, normaliseInvoiceDraft } from './actions.js';
 import { clientStats, earningsSummary, forecastCashflow, isOpen, isOverdue, clientName } from './analytics.js';
@@ -135,7 +135,7 @@ function makeHandlers(created) {
   const today = isoDate();
   return {
     list_invoices({ status = 'all', client }) {
-      let invs = db().invoices;
+      let invs = listInvoices();
       if (client) {
         const c = findClient(client);
         if (!c) return { error: `No client matching "${client}"` };

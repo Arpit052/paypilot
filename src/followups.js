@@ -1,7 +1,7 @@
 // Autonomous follow-ups: find overdue invoices and have the AI draft a reminder
 // whose tone escalates with lateness. Drafts land in the Follow-ups inbox for approval.
 import { config, isoDate, daysBetween } from './config.js';
-import { db } from './db.js';
+import { listInvoices } from './db.js';
 import { complete, llmAvailable } from './llm.js';
 import { createAction, listActions } from './actions.js';
 import { isOverdue, clientStats, clientName } from './analytics.js';
@@ -48,7 +48,7 @@ export async function scanFollowups({ sync = true } = {}) {
   const today = isoDate();
   const pendingFor = new Set(listActions({ status: 'pending', type: 'send_reminder' }).map((a) => a.payload.invoiceId));
   const created = [];
-  for (const inv of db().invoices) {
+  for (const inv of listInvoices()) {
     if (!isOverdue(inv, today) || pendingFor.has(inv.id) || !inv.paypalId) continue;
     const last = inv.reminders.at(-1)?.at;
     if (last && daysBetween(last, today) < config.reminderCooldownDays) continue;

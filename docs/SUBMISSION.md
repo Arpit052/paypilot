@@ -21,7 +21,7 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, and for
 - **Live status and forecast.** PayPal webhooks mark invoices paid instantly. A cash-flow forecast weights each open invoice by that client's real payment behaviour.
 - **Ask in your own language.** "Who owes me money?", "Is mahine kitna kamaya?" The agent answers from PayPal data in English, Hindi or Hinglish.
 
-**How it's built.** It's a zero-dependency Node.js server with a provider-neutral LLM tool-calling loop (Claude or any OpenAI-compatible model, including vision). Seven typed tools are split into read tools and proposal tools. A pending-action queue gates every write, and a PayPal Invoicing v2 client handles create, send, remind, cancel and status, plus webhook signature verification. Everything runs against the PayPal sandbox.
+**How it's built.** It's a Node.js + Express 5 server with SQLite storage and a provider-neutral LLM tool-calling loop (Google Gemini through the official Gen AI SDK, Claude, or any OpenAI-compatible model, including vision). Seven typed tools are split into read tools and proposal tools. A pending-action queue gates every write, and a PayPal Invoicing v2 client handles create, send, remind, cancel and status, plus webhook signature verification. Everything runs against the PayPal sandbox.
 
 ## PayPal technologies used
 - PayPal REST **Invoicing v2 API**: generate-next-invoice-number, create, send, get, remind, cancel
@@ -30,7 +30,7 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, and for
 - PayPal **Sandbox** business and personal accounts for the end-to-end flow
 
 ## AI tools used and how
-- **Claude (Anthropic Messages API)**, the default model. It is swappable with any **OpenAI-compatible** model (OpenAI, Gemini, Groq).
+- **Google Gemini** through the official **Google Gen AI SDK** (`@google/genai`), the default model. It is swappable with **Claude** (Anthropic API) or any **OpenAI-compatible** model.
   - *Agentic tool calling:* the model chooses among 7 tools (list invoices, client insights, earnings summary, cash-flow forecast, propose invoice, propose reminder, propose cancel) over multiple steps.
   - *Vision:* extracts invoice details from screenshots of client emails and chats.
   - *Generation:* writes reminder emails tuned to how late the invoice is and the client's history.
@@ -55,6 +55,6 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, and for
 | 1:35–1:55 | Pay from the sandbox personal account, then the dashboard flips to Paid | "The client pays, a PayPal webhook arrives, and the dashboard updates instantly." |
 | 1:55–2:30 | Follow-ups → Find overdue invoices. A firm reminder for Rahul and a friendly one for Acme. Approve one. | "For late payers, the AI writes reminders that get firmer each time, and sends them through PayPal's remind API only when I approve." |
 | 2:30–2:45 | Ask "Is mahine kitna kamaya?" and the forecast question | "And I can just ask, in Hinglish if I like." |
-| 2:45–3:00 | Architecture diagram from the README | "Claude tool-calling, PayPal Invoicing v2 and webhooks, and a human-approval gate on every write. That's PayPilot." |
+| 2:45–3:00 | Architecture diagram from the README | "Gemini tool-calling, PayPal Invoicing v2 and webhooks, and a human-approval gate on every write. That's PayPilot." |
 
 Use royalty-free or no background music. Don't show PayPal logos beyond what appears naturally in the sandbox pages.

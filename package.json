@@ -6,12 +6,16 @@
   "main": "server.js",
   "license": "MIT",
   "engines": {
-    "node": ">=20.12"
+    "node": ">=22.13"
   },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "seed": "node scripts/seed.js",
     "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.32.0",
+    "express": "^5.3.0"
   }
 }

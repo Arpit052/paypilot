@@ -44,7 +44,7 @@ flowchart LR
   U[Freelancer<br/>text / screenshot] --> UI[Web UI<br/>chat + approval tray]
   UI -->|/api/chat| AG[AI agent<br/>tool-calling loop]
   AG <-->|tools| T{{list_invoices<br/>get_client_insights<br/>get_earnings_summary<br/>forecast_cashflow<br/>propose_invoice<br/>propose_reminder<br/>propose_cancel}}
-  AG <--> LLM[(Claude / OpenAI-compatible LLM)]
+  AG <--> LLM[(Gemini via @google/genai<br/>or Claude / OpenAI-compatible)]
   T -->|propose_*| Q[Pending actions]
   Q -->|user approves| EX[Executor]
   EX -->|Invoicing v2: create, send, remind, cancel| PP[(PayPal REST API)]
@@ -53,6 +53,8 @@ flowchart LR
   EX --> DB
   CRON[Scheduler] -->|/api/cron/followups| FU[Follow-up scanner] -->|AI drafts reminder| Q
 ```
+
+**Stack.** Node.js + **Express 5** API, **SQLite** (Node's built-in `node:sqlite`, with a transactional repository layer and atomic approval claims so a double-click can never send twice), **Google Gen AI SDK** (`@google/genai`) for Gemini, PayPal REST APIs, and a vanilla-JS frontend.
 
 **Agent design.** The model gets **read tools** (invoices, client insights, earnings, forecast) and **proposal tools**. Proposal tools validate the draft (email format, positive amounts, due date not in the past) and create a *pending action*. They never call PayPal. Only the `/api/actions/:id/approve` endpoint, triggered by a human click, runs the PayPal calls. So even if the model gets confused or receives a prompt injection through a screenshot, it can't move money or message a client.
 
@@ -71,7 +73,7 @@ flowchart LR
 
 ### AI tools used
 
-- **LLM with tool calling.** Three adapters behind one interface: **Google Gemini** (native `generateContent`, with thought-signature round-tripping), **Claude** (Anthropic Messages API), and any **OpenAI-compatible** API (OpenAI, Groq, OpenRouter, local models).
+- **LLM with tool calling.** Three adapters behind one interface: **Google Gemini** (official `@google/genai` SDK, with thought-signature round-tripping), **Claude** (Anthropic Messages API), and any **OpenAI-compatible** API (OpenAI, Groq, OpenRouter, local models).
   - **Agent loop** (`src/llm.js`, `src/agent.js`): multi-step tool calling over PayPal data, intent and entity extraction from free text, and multilingual replies.
   - **Vision** (`src/agent.js`): reads client emails and chat screenshots to draft invoices.
   - **Generation** (`src/followups.js`): writes reminder emails using the client's payment history and the escalation tone.
@@ -81,13 +83,15 @@ flowchart LR
 
 ## Run it locally (about 5 minutes)
 
-**You need:** Node.js 20.12 or newer. There is **nothing to install**, because PayPilot has zero npm dependencies.
+**You need:** Node.js 22.13 or newer (uses Node's built-in SQLite).
 
 ```bash
 git clone <this-repo> paypilot && cd paypilot
+npm install
 cp .env.example .env        # then fill in the keys below
 npm start                   # → http://localhost:3000
 ```
+On Windows you can just double-click **`start-windows.bat`**. To check your AI setup, double-click **`check-ai.bat`**. It tests your key against Gemini and writes a working model and setting into `.env`.
 
 ### 1. PayPal sandbox keys
 1. Sign in at [developer.paypal.com](https://developer.paypal.com) and open **Apps & Credentials** with **Sandbox** selected.
@@ -130,7 +134,7 @@ With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-proces
 
 **Render:** New → Blueprint → select this repo (`render.yaml` is included). Add your keys in the dashboard. Scheduled follow-ups: create a Render Cron Job (or any cron service) that calls `GET https://<app>/api/cron/followups?key=<CRON_SECRET>` daily.
 
-Data is stored in `data/db.json`. On free hosting the disk is temporary, which is fine for a demo; set `DATA_DIR` to a persistent disk for real use.
+Data is stored in SQLite at `data/paypilot.db`. On free hosting the disk is temporary, which is fine for a demo; set `DATA_DIR` to a persistent disk for real use.
 
 ## Tests
 
@@ -142,10 +146,11 @@ These are end-to-end tests with mock PayPal and a scripted model. They cover the
 ## Project layout
 
 ```
-server.js            HTTP server + API routes (no framework)
+server.js            Express app + API routes
 src/agent.js         System prompt, tool schemas + handlers, chat sessions
-src/llm.js           Gemini, Anthropic + OpenAI-compatible adapters, tool-calling loop
+src/llm.js           Gemini (official @google/genai SDK), Anthropic + OpenAI-compatible adapters, tool-calling loop
 src/paypal.js        PayPal Invoicing v2 client (sandbox/live) + mock
+src/db.js            SQLite schema + repository (clients, invoices, actions, activity)
 src/actions.js       Pending actions, approval, execution against PayPal
 src/followups.js     Overdue scanner + AI reminder drafting
 src/analytics.js     Risk score, earnings, cash-flow forecast

@@ -97,7 +97,7 @@ const candidates = [...new Set([preferred, ...available.sort((a, b) => versionSc
 // 3. try a real tool call with each model / thinking setting
 const tool = {
   functionDeclarations: [
-    { name: 'ping', description: 'Health check. Always call this when asked to ping.', parameters: { type: 'object', properties: { note: { type: 'string' } } } },
+    { name: 'ping', description: 'Health check. Always call this when asked to ping.', parametersJsonSchema: { type: 'object', properties: { note: { type: 'string' } } } },
   ],
 };
 log('\n  Har model ko ek chhota test bhej raha hoon (har test max 45 sec)...\n');

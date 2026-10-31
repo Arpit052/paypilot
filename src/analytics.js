@@ -1,6 +1,6 @@
 // Business insights computed from invoice history: client risk, earnings, cash-flow forecast.
 import { config, isoDate, addDays, daysBetween } from './config.js';
-import { db } from './db.js';
+import { listInvoices, getClient } from './db.js';
 
 export const OPEN_STATUSES = ['SENT', 'UNPAID', 'PARTIALLY_PAID', 'PAYMENT_PENDING', 'SCHEDULED'];
 export const PAID_STATUSES = ['PAID', 'MARKED_AS_PAID'];
@@ -14,7 +14,7 @@ export function invoiceTotal(items) {
 }
 
 export function clientStats(clientId, today = isoDate()) {
-  const invs = db().invoices.filter((i) => i.clientId === clientId);
+  const invs = listInvoices({ clientId });
   const paid = invs.filter((i) => isPaid(i) && i.paidDate);
   const delays = paid.map((i) => Math.max(0, daysBetween(i.dueDate, i.paidDate)));
   const avgDaysLate = delays.length ? Math.round((delays.reduce((a, b) => a + b, 0) / delays.length) * 10) / 10 : null;
@@ -61,7 +61,7 @@ function byCurrency(invs, pick = (i) => i.total) {
 export function earningsSummary({ from, to } = {}, today = isoDate()) {
   from ||= today.slice(0, 8) + '01';
   to ||= today;
-  const all = db().invoices;
+  const all = listInvoices();
   const paidInRange = all.filter((i) => isPaid(i) && i.paidDate && i.paidDate >= from && i.paidDate <= to);
   const issuedInRange = all.filter((i) => i.status !== 'CANCELLED' && i.issueDate >= from && i.issueDate <= to);
   const open = all.filter(isOpen);
@@ -88,7 +88,7 @@ export function earningsSummary({ from, to } = {}, today = isoDate()) {
 export function forecastCashflow(days = 30, today = isoDate()) {
   const horizon = addDays(today, days);
   const rows = [];
-  for (const inv of db().invoices.filter(isOpen)) {
+  for (const inv of listInvoices().filter(isOpen)) {
     const st = clientStats(inv.clientId, today);
     let expected = addDays(inv.dueDate, Math.round(st.avgDaysLate ?? 3));
     let probability = { low: 0.95, medium: 0.8, high: 0.6 }[st.riskLabel];
@@ -119,20 +119,21 @@ export function forecastCashflow(days = 30, today = isoDate()) {
 }
 
 export function clientName(id) {
-  return db().clients.find((c) => c.id === id)?.name || 'Unknown';
+  return getClient(id)?.name || 'Unknown';
 }
 
 /** Data for the dashboard chart: last 6 months earned + next 4 weeks forecast (primary currency). */
 export function chartSeries(today = isoDate()) {
   const cur = config.currency;
   const months = [];
+  const allInvoices = listInvoices();
   const d = new Date(today + 'T00:00:00Z');
   for (let k = 5; k >= 0; k--) {
     const m = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - k, 1));
     const key = m.toISOString().slice(0, 7);
     const label = m.toLocaleString('en', { month: 'short', timeZone: 'UTC' });
-    const value = db()
-      .invoices.filter((i) => isPaid(i) && i.currency === cur && i.paidDate?.startsWith(key))
+    const value = allInvoices
+      .filter((i) => isPaid(i) && i.currency === cur && i.paidDate?.startsWith(key))
       .reduce((s, i) => s + i.total, 0);
     months.push({ label, value: round(value), kind: 'actual' });
   }

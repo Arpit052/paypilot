@@ -2,7 +2,7 @@
 //  - "sandbox"/"live": real REST calls to PayPal
 //  - "mock": in-process simulation with the same interface (offline dev & tests)
 import { config, isoDate, now } from './config.js';
-import { db, save } from './db.js';
+import { kvGet, kvSet } from './db.js';
 
 export class PayPalError extends Error {
   constructor(message, status, details) {
@@ -161,45 +161,42 @@ const real = {
 };
 
 // ======================= MOCK PAYPAL =======================
-function mockStore() {
-  const s = db();
-  s.mockPaypal ||= { seq: 1000, invoices: {} };
-  return s.mockPaypal;
+const mockGet = (id) => kvGet(`mock:inv:${id}`);
+const mockPut = (id, v) => kvSet(`mock:inv:${id}`, v);
+export function mockNextNumber() {
+  const seq = kvGet('mock:seq', 1000) + 1;
+  kvSet('mock:seq', seq);
+  return String(seq).padStart(4, '0');
 }
+export { mockPut };
 
 const mock = {
   async createAndSendInvoice({ client, items, currency, dueDate, note }) {
-    const m = mockStore();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(client.email)) throw new PayPalError('Invalid recipient email', 422);
-    const number = String(++m.seq).padStart(4, '0');
+    const number = mockNextNumber();
     const paypalId = `INV2-MOCK-${number}`;
-    m.invoices[paypalId] = {
-      status: 'SENT',
-      body: buildInvoiceBody({ number, client, items, currency, issueDate: isoDate(), dueDate, note }),
-      reminders: 0,
-    };
-    save();
+    mockPut(paypalId, { status: 'SENT', reminders: 0, body: buildInvoiceBody({ number, client, items, currency, issueDate: isoDate(), dueDate, note }) });
     return { paypalId, number, status: 'SENT', payerUrl: `/mock-pay.html?id=${paypalId}`, issueDate: isoDate() };
   },
   async getInvoice(paypalId) {
-    const inv = mockStore().invoices[paypalId];
+    const inv = mockGet(paypalId);
     if (!inv) throw new PayPalError('Invoice not found', 404);
     return { status: inv.status, paidDate: inv.paidDate || null, payerUrl: `/mock-pay.html?id=${paypalId}` };
   },
   async remind(paypalId) {
-    const inv = mockStore().invoices[paypalId];
+    const inv = mockGet(paypalId);
     if (!inv) throw new PayPalError('Invoice not found', 404);
     if (!['SENT', 'UNPAID', 'PARTIALLY_PAID'].includes(inv.status)) throw new PayPalError(`Cannot remind an invoice in status ${inv.status}`, 422);
     inv.reminders++;
-    save();
+    mockPut(paypalId, inv);
     return { ok: true };
   },
   async cancel(paypalId) {
-    const inv = mockStore().invoices[paypalId];
+    const inv = mockGet(paypalId);
     if (!inv) throw new PayPalError('Invoice not found', 404);
     if (inv.status === 'PAID') throw new PayPalError('Cannot cancel a paid invoice', 422);
     inv.status = 'CANCELLED';
-    save();
+    mockPut(paypalId, inv);
     return { ok: true };
   },
   async verifyWebhook() {
@@ -207,11 +204,11 @@ const mock = {
   },
   /** Mock-only: pretend the client paid. */
   simulatePayment(paypalId) {
-    const inv = mockStore().invoices[paypalId];
+    const inv = mockGet(paypalId);
     if (!inv) throw new PayPalError('Invoice not found', 404);
     inv.status = 'PAID';
     inv.paidDate = isoDate(now());
-    save();
+    mockPut(paypalId, inv);
     return { status: 'PAID', paidDate: inv.paidDate };
   },
 };
