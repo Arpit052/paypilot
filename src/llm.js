@@ -206,7 +206,29 @@ async function geminiClient() {
   return genai;
 }
 
-async function geminiComplete({ system, messages, tools, maxTokens = 4096 }) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Gemini call with automatic wait-and-retry when the free-tier per-minute limit is hit. */
+async function geminiComplete(args) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await geminiOnce(args);
+    } catch (e) {
+      const m = /retry in ([\d.]+)s/i.exec(e.message || '');
+      const rateLimited = e.rateLimited || /exceeded your current quota|RESOURCE_EXHAUSTED|429/i.test(e.message || '');
+      if (!rateLimited) throw e;
+      const wait = Math.min(Math.ceil(m ? Number(m[1]) : 10) + 1, 30);
+      // daily quota (or a long wait) - don't hang the user
+      if (attempt >= 2 || (m && Number(m[1]) > 30)) {
+        throw new LlmError('Gemini free-tier limit reached. Wait about a minute and try again (or use a different Gemini model / a paid key).');
+      }
+      console.log(`  [AI] free-tier rate limit - waiting ${wait}s and retrying...`);
+      await sleep(wait * 1000);
+    }
+  }
+}
+
+async function geminiOnce({ system, messages, tools, maxTokens = 4096 }) {
   const model = config.llm.geminiModel;
   const thinking = config.llm.geminiThinking;
   const ai = await geminiClient();
@@ -238,8 +260,10 @@ async function geminiComplete({ system, messages, tools, maxTokens = 4096 }) {
     } catch {
       /* keep raw */
     }
-    console.log(`  [AI] ${model}: error after ${secs}s: ${msg.slice(0, 200)}`);
-    throw new LlmError(`AI error: ${msg}`);
+    const rateLimited = e.status === 429 || /exceeded your current quota|RESOURCE_EXHAUSTED/i.test(msg);
+    console.log(`  [AI] ${model}: ${rateLimited ? 'rate limited' : 'error'} after ${secs}s${rateLimited ? '' : ': ' + msg.slice(0, 200)}`);
+    const retry = /retry in ([\d.]+)s/i.exec(e.message || '');
+    throw Object.assign(new LlmError(`AI error: ${msg}${retry ? ` (retry in ${retry[1]}s)` : ''}`), { rateLimited });
   }
   console.log(`  [AI] ${model}: OK in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
   const cand = resp.candidates?.[0];

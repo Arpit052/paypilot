@@ -100,7 +100,7 @@ On Windows you can just double-click **`start-windows.bat`**. To check your AI s
 
 ### 2. AI key
 Set **one** of:
-- `GEMINI_API_KEY`: free key from [Google AI Studio](https://aistudio.google.com) (uses Gemini's native API, model `gemini-3.8-flash` by default)
+- `GEMINI_API_KEY`: free key from [Google AI Studio](https://aistudio.google.com) (uses Gemini's native API, model `gemini-3.6-flash` by default)
 - `ANTHROPIC_API_KEY`: Claude
 - `OPENAI_API_KEY`: OpenAI, or any OpenAI-compatible provider via `OPENAI_BASE_URL` and `OPENAI_MODEL`
 

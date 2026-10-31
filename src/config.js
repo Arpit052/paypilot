@@ -41,7 +41,7 @@ const env = process.env;
 if (!env.OPENAI_API_KEY && env.GEMINI_API_KEY) env.OPENAI_API_KEY = env.GEMINI_API_KEY;
 if (/^(AIza|AQ\.)/.test(env.OPENAI_API_KEY || '')) {
   env.OPENAI_BASE_URL ||= 'https://generativelanguage.googleapis.com/v1beta/openai';
-  env.OPENAI_MODEL ||= 'gemini-3.8-flash';
+  env.OPENAI_MODEL ||= 'gemini-3.6-flash';
 }
 
 // Google AI Studio keys: classic "AIza..." and the newer "AQ." format
@@ -88,7 +88,7 @@ export const config = {
     openaiBaseUrl: (env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, ''),
     openaiModel: env.OPENAI_MODEL || 'gpt-4o-mini',
     geminiKey: env.GEMINI_API_KEY || env.OPENAI_API_KEY || '',
-    geminiModel: env.GEMINI_MODEL || (env.OPENAI_MODEL?.startsWith('gemini') ? env.OPENAI_MODEL : 'gemini-3.8-flash'),
+    geminiModel: env.GEMINI_MODEL || (env.OPENAI_MODEL?.startsWith('gemini') ? env.OPENAI_MODEL : 'gemini-3.6-flash'),
     // thinking level: low | medium | high | off (= let the model decide)
     geminiThinking: (env.GEMINI_REASONING || 'low').toLowerCase(),
   },
