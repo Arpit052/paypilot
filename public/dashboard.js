@@ -1,4 +1,4 @@
-import { api, header, esc, money, moneyMap, fmtDate, toast } from './common.js';
+import { api, header, esc, money, moneyMap, fmtDate, toast, md } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const cfg = await header('dashboard');
@@ -70,7 +70,7 @@ async function load() {
             <td class="muted">${esc(i.items.map((x) => x.name).join(', ')).slice(0, 60)}</td>
             <td>${fmtDate(i.issueDate)}</td>
             <td>${fmtDate(i.dueDate)}</td>
-            <td><span class="pill ${i.displayStatus}">${i.displayStatus === 'OVERDUE' ? 'Overdue' : i.displayStatus.charAt(0) + i.displayStatus.slice(1).toLowerCase().replace(/_/g, ' ')}</span>${i.source === 'seed' ? ' <span class="muted" title="Demo history, not on PayPal">demo</span>' : ''}</td>
+            <td><span class="pill ${i.displayStatus}">${i.displayStatus === 'OVERDUE' ? 'Overdue' : i.displayStatus.charAt(0) + i.displayStatus.slice(1).toLowerCase().replace(/_/g, ' ')}</span>${i.source === 'seed' ? ' <span class="muted" title="Demo history, not on PayPal">demo</span>' : ''}${i.depositAmount ? ` <span class="muted" title="Deposit due upfront">deposit ${money(i.depositAmount, i.currency)}</span>` : ''}</td>
             <td class="r num">${money(i.total, i.currency)}</td>
             <td class="r">${
               i.payerUrl && ['SENT', 'UNPAID', 'PARTIALLY_PAID'].includes(i.status)
@@ -93,6 +93,24 @@ $('invoices').addEventListener('click', async (e) => {
   toast('Payment received');
   load();
 });
+
+$('briefBtn').onclick = async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  const refresh = btn.textContent === 'Refresh';
+  btn.textContent = 'Thinking…';
+  try {
+    const b = await api('/api/brief', { body: { refresh } });
+    $('briefBody').innerHTML = md(b.text);
+    $('briefMeta').textContent = `Generated ${new Date(b.generatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}${b.cached ? ' (cached)' : ''}`;
+    btn.textContent = 'Refresh';
+  } catch (err) {
+    $('briefBody').innerHTML = `<p style="color:var(--late)">${esc(err.message)}</p>`;
+    btn.textContent = 'Try again';
+  } finally {
+    btn.disabled = false;
+  }
+};
 
 $('syncBtn').onclick = async (e) => {
   e.target.disabled = true;

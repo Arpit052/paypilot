@@ -23,11 +23,10 @@ function money(currency, value) {
 }
 
 /** Build a PayPal v2 invoice body from our internal shape. Exported for tests. */
-export function buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note }) {
+export function buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note, taxPercent = 0, depositAmount = 0 }) {
   const body = {
     detail: {
       currency_code: currency,
-      invoice_date: issueDate,
       payment_term: { term_type: 'DUE_ON_DATE_SPECIFIED', due_date: dueDate },
     },
     invoicer: { business_name: config.businessName },
@@ -39,8 +38,21 @@ export function buildInvoiceBody({ number, client, items, currency, issueDate, d
       quantity: String(it.quantity),
       unit_amount: money(currency, it.unitPrice),
       unit_of_measure: 'QUANTITY',
+      ...(taxPercent > 0 ? { tax: { name: 'Sales Tax', percent: String(taxPercent) } } : {}),
     })),
+    configuration: {
+      allow_tip: false,
+      tax_calculated_after_discount: true,
+      tax_inclusive: false,
+      partial_payment:
+        depositAmount > 0
+          ? { allow_partial_payment: true, minimum_amount_due: money(currency, depositAmount) }
+          : { allow_partial_payment: false },
+    },
   };
+  // invoice_date is optional - PayPal defaults it to "today" in its own time zone, which
+  // avoids "date in the future" errors when the freelancer is ahead of US time.
+  if (issueDate) body.detail.invoice_date = issueDate;
   if (number) body.detail.invoice_number = number;
   if (note) body.detail.note = String(note).slice(0, 4000);
   return body;
@@ -101,23 +113,44 @@ async function api(method, path, body, extraHeaders = {}) {
 }
 
 const real = {
-  async createAndSendInvoice({ client, items, currency, dueDate, note }) {
-    const issueDate = isoDate();
-    const { invoice_number: number } = await api('POST', '/v2/invoicing/generate-next-invoice-number');
-    const created = await api(
-      'POST',
-      '/v2/invoicing/invoices',
-      buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note }),
-      { Prefer: 'return=representation' }
-    );
-    const id = created.id || String(created.href || '').split('/').pop();
-    if (!id) throw new PayPalError('PayPal did not return an invoice id', 500, created);
-    const sent = await api('POST', `/v2/invoicing/invoices/${id}/send`, { send_to_invoicer: true });
-    const payerUrl =
-      sent?.href && /payer|invoice\/p/i.test(sent.href)
-        ? sent.href
-        : (sent?.links || []).find((l) => l.rel === 'payer-view')?.href || null;
-    return { paypalId: id, number: created.detail?.invoice_number || number, status: 'SENT', payerUrl, issueDate };
+  /**
+   * Create + send an invoice. `requestId` (the approval action id) makes this idempotent:
+   * - PayPal-Request-Id headers let PayPal de-duplicate retried POSTs
+   * - progress is checkpointed locally, so a retry after a partial failure resumes
+   *   (reuses the same number / invoice id) instead of creating a duplicate.
+   */
+  async createAndSendInvoice({ client, items, currency, dueDate, note, taxPercent, depositAmount, requestId }) {
+    const ck = requestId ? `idem:${requestId}` : null;
+    const state = (ck && kvGet(ck)) || {};
+    const save = () => ck && kvSet(ck, state);
+    const hdr = (step) => (requestId ? { 'PayPal-Request-Id': `${requestId}-${step}` } : {});
+
+    if (!state.number) {
+      state.number = (await api('POST', '/v2/invoicing/generate-next-invoice-number', undefined, hdr('number'))).invoice_number;
+      save();
+    }
+    if (!state.id) {
+      const created = await api(
+        'POST',
+        '/v2/invoicing/invoices',
+        buildInvoiceBody({ number: state.number, client, items, currency, dueDate, note, taxPercent, depositAmount }),
+        { Prefer: 'return=representation', ...hdr('create') }
+      );
+      state.id = created.id || String(created.href || '').split('/').pop();
+      if (!state.id) throw new PayPalError('PayPal did not return an invoice id', 500, created);
+      state.total = Number(created.amount?.value) || null;
+      save();
+    }
+    if (!state.sent) {
+      const sent = await api('POST', `/v2/invoicing/invoices/${state.id}/send`, { send_to_invoicer: true }, hdr('send'));
+      state.payerUrl =
+        sent?.href && /payer|invoice\/p/i.test(sent.href)
+          ? sent.href
+          : (sent?.links || []).find((l) => l.rel === 'payer-view')?.href || null;
+      state.sent = true;
+      save();
+    }
+    return { paypalId: state.id, number: state.number, status: 'SENT', payerUrl: state.payerUrl, issueDate: isoDate(), total: state.total };
   },
 
   async getInvoice(paypalId) {
@@ -126,22 +159,23 @@ const real = {
     return { status: inv.status, paidDate: paidDateFrom(inv), payerUrl, raw: inv };
   },
 
-  async remind(paypalId, { subject, note }) {
-    await api('POST', `/v2/invoicing/invoices/${paypalId}/remind`, {
-      subject: String(subject).slice(0, 4000),
-      note: String(note).slice(0, 4000),
-      send_to_invoicer: true,
-    });
+  async remind(paypalId, { subject, note, requestId }) {
+    await api(
+      'POST',
+      `/v2/invoicing/invoices/${paypalId}/remind`,
+      { subject: String(subject).slice(0, 4000), note: String(note).slice(0, 4000), send_to_invoicer: true },
+      requestId ? { 'PayPal-Request-Id': `${requestId}-remind` } : {}
+    );
     return { ok: true };
   },
 
-  async cancel(paypalId, { subject, note }) {
-    await api('POST', `/v2/invoicing/invoices/${paypalId}/cancel`, {
-      subject: String(subject).slice(0, 4000),
-      note: String(note).slice(0, 4000),
-      send_to_invoicer: true,
-      send_to_recipient: true,
-    });
+  async cancel(paypalId, { subject, note, requestId }) {
+    await api(
+      'POST',
+      `/v2/invoicing/invoices/${paypalId}/cancel`,
+      { subject: String(subject).slice(0, 4000), note: String(note).slice(0, 4000), send_to_invoicer: true, send_to_recipient: true },
+      requestId ? { 'PayPal-Request-Id': `${requestId}-cancel` } : {}
+    );
     return { ok: true };
   },
 
@@ -171,12 +205,16 @@ export function mockNextNumber() {
 export { mockPut };
 
 const mock = {
-  async createAndSendInvoice({ client, items, currency, dueDate, note }) {
+  async createAndSendInvoice({ client, items, currency, dueDate, note, taxPercent, depositAmount, requestId }) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(client.email)) throw new PayPalError('Invalid recipient email', 422);
+    const done = requestId && kvGet(`idem:${requestId}`);
+    if (done) return done; // idempotent retry
     const number = mockNextNumber();
     const paypalId = `INV2-MOCK-${number}`;
-    mockPut(paypalId, { status: 'SENT', reminders: 0, body: buildInvoiceBody({ number, client, items, currency, issueDate: isoDate(), dueDate, note }) });
-    return { paypalId, number, status: 'SENT', payerUrl: `/mock-pay.html?id=${paypalId}`, issueDate: isoDate() };
+    mockPut(paypalId, { status: 'SENT', reminders: 0, body: buildInvoiceBody({ number, client, items, currency, dueDate, note, taxPercent, depositAmount }) });
+    const result = { paypalId, number, status: 'SENT', payerUrl: `/mock-pay.html?id=${paypalId}`, issueDate: isoDate() };
+    if (requestId) kvSet(`idem:${requestId}`, result);
+    return result;
   },
   async getInvoice(paypalId) {
     const inv = mockGet(paypalId);

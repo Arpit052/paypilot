@@ -1,9 +1,9 @@
 // Human-in-the-loop: the AI only *proposes* actions that move money or contact
 // clients. Nothing reaches PayPal until the user approves the action card.
 import { config, isoDate, addDays } from './config.js';
-import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
+import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
 import { paypal, PayPalError } from './paypal.js';
-import { invoiceTotal, isOpen } from './analytics.js';
+import { invoiceTotals, isOpen } from './analytics.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -19,40 +19,74 @@ export function getAction(id) {
   return dbGetAction(id);
 }
 
-/** Normalise + validate an invoice draft. Throws on bad input. Shared by the AI tool and the approve step. */
-export function normaliseInvoiceDraft(d) {
+const round2 = (n) => Math.round(n * 100) / 100;
+
+/** Shared validation for client + line items (invoices and recurring schedules). */
+function normaliseLines(d) {
   const clientName = String(d.clientName || '').trim();
   const clientEmail = String(d.clientEmail || '').trim();
   if (!clientName) throw new Error('Client name is required');
   if (!EMAIL_RE.test(clientEmail)) throw new Error('A valid client email is required');
   const items = (d.items || [])
     .map((it) => ({
-      name: String(it.name || '').trim(),
+      name: String(it.name || '').trim().slice(0, 200),
       quantity: Number(it.quantity ?? 1),
-      unitPrice: Number(it.unitPrice ?? it.unit_price),
+      unitPrice: round2(Number(it.unitPrice ?? it.unit_price)),
     }))
     .filter((it) => it.name);
   if (!items.length) throw new Error('At least one line item is required');
+  if (items.length > 100) throw new Error('An invoice can have at most 100 line items');
   for (const it of items) {
     if (!(it.quantity > 0)) throw new Error(`Quantity for "${it.name}" must be positive`);
     if (!(it.unitPrice > 0)) throw new Error(`Price for "${it.name}" must be positive`);
   }
+  const taxPercent = round2(Number(d.taxPercent ?? d.tax_percent ?? config.defaultTaxPercent) || 0);
+  if (taxPercent < 0 || taxPercent > 50) throw new Error('Sales tax must be between 0% and 50%');
+  const currency = String(d.currency || config.currency).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) throw new Error('Currency must be a 3-letter code like USD');
+  return { clientName, clientEmail, items, taxPercent, currency, note: String(d.note || '').trim().slice(0, 4000) };
+}
+
+/** Normalise + validate an invoice draft. Throws on bad input. Shared by the AI tool and the approve step. */
+export function normaliseInvoiceDraft(d) {
+  const base = normaliseLines(d);
   const today = isoDate();
   let dueDate = d.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(d.dueDate) ? d.dueDate : addDays(today, Number(d.dueInDays ?? 7));
   if (dueDate < today) dueDate = today;
+  const { subtotal, tax, total } = invoiceTotals(base.items, base.taxPercent);
+  // Deposit (PayPal partial payment): absolute amount, or a percentage of the total.
+  let depositAmount = Number(d.depositAmount ?? 0) || 0;
+  const depositPercent = Number(d.depositPercent ?? d.deposit_percent ?? 0) || 0;
+  if (!depositAmount && depositPercent > 0) depositAmount = round2((total * Math.min(depositPercent, 95)) / 100);
+  depositAmount = round2(depositAmount);
+  if (depositAmount < 0) throw new Error('Deposit cannot be negative');
+  if (depositAmount >= total) throw new Error('Deposit must be less than the invoice total');
   return {
-    clientName,
-    clientEmail,
-    items,
-    currency: String(d.currency || config.currency).toUpperCase(),
+    ...base,
     dueDate,
-    note: String(d.note || '').trim(),
-    total: invoiceTotal(items),
+    subtotal,
+    tax,
+    total,
+    depositAmount,
+    depositSuggested: Boolean(d.depositSuggested) && depositAmount > 0,
   };
 }
 
+/** Normalise + validate a recurring schedule. */
+export function normaliseScheduleDraft(d) {
+  const base = normaliseLines(d);
+  const frequency = String(d.frequency || 'monthly').toLowerCase();
+  if (!['weekly', 'monthly'].includes(frequency)) throw new Error('Frequency must be weekly or monthly');
+  const today = isoDate();
+  let startDate = d.startDate && /^\d{4}-\d{2}-\d{2}$/.test(d.startDate) ? d.startDate : today;
+  if (startDate < today) startDate = today;
+  const dueInDays = Math.min(Math.max(Math.round(Number(d.dueInDays ?? 7)), 0), 90);
+  const { total } = invoiceTotals(base.items, base.taxPercent);
+  return { ...base, frequency, startDate, dueInDays, total };
+}
+
 const executors = {
-  async create_invoice(payload) {
+  async create_invoice(payload, requestId) {
     const draft = normaliseInvoiceDraft(payload);
     const client = upsertClient({ name: draft.clientName, email: draft.clientEmail });
     const pp = await paypal.createAndSendInvoice({
@@ -61,6 +95,9 @@ const executors = {
       currency: draft.currency,
       dueDate: draft.dueDate,
       note: draft.note,
+      taxPercent: draft.taxPercent,
+      depositAmount: draft.depositAmount,
+      requestId,
     });
     const inv = insertInvoice({
       paypalId: pp.paypalId,
@@ -68,7 +105,7 @@ const executors = {
       clientId: client.id,
       items: draft.items,
       currency: draft.currency,
-      total: draft.total,
+      total: pp.total || draft.total, // PayPal's own total wins if it computed one
       status: pp.status,
       issueDate: pp.issueDate || isoDate(),
       dueDate: draft.dueDate,
@@ -77,36 +114,61 @@ const executors = {
       payerUrl: pp.payerUrl,
       reminders: [],
       source: 'paypal',
+      taxPercent: draft.taxPercent,
+      depositAmount: draft.depositAmount,
     });
-    logActivity('invoice_sent', `Invoice #${inv.number} for ${draft.currency} ${draft.total} sent to ${client.name}`);
+    logActivity(
+      'invoice_sent',
+      `Invoice #${inv.number} for ${draft.currency} ${inv.total} sent to ${client.name}${draft.depositAmount ? ` (deposit ${draft.currency} ${draft.depositAmount} due upfront)` : ''}`
+    );
     return { invoiceId: inv.id, number: inv.number, paypalId: inv.paypalId, payerUrl: inv.payerUrl };
   },
 
-  async send_reminder(payload) {
+  async send_reminder(payload, requestId) {
     const inv = findInvoice(payload.invoiceId);
     if (!inv) throw new Error('Invoice not found');
     if (!isOpen(inv)) throw new Error(`Invoice #${inv.number} is ${inv.status}; no reminder needed`);
     const subject = String(payload.subject || '').trim() || `Reminder: invoice #${inv.number}`;
     const message = String(payload.message || '').trim();
     if (!message) throw new Error('Reminder message is empty');
-    await paypal.remind(inv.paypalId, { subject, note: message });
+    await paypal.remind(inv.paypalId, { subject, note: message, requestId });
     const reminders = [...inv.reminders, { at: isoDate(), subject, tone: payload.tone || 'friendly' }];
     updateInvoice(inv.id, { reminders });
     logActivity('reminder_sent', `Reminder (${payload.tone || 'friendly'}) sent for invoice #${inv.number}`);
     return { number: inv.number, remindersSent: reminders.length };
   },
 
-  async cancel_invoice(payload) {
+  async cancel_invoice(payload, requestId) {
     const inv = findInvoice(payload.invoiceId);
     if (!inv) throw new Error('Invoice not found');
     if (!isOpen(inv)) throw new Error(`Invoice #${inv.number} is ${inv.status}; cannot cancel`);
     await paypal.cancel(inv.paypalId, {
       subject: `Invoice #${inv.number} cancelled`,
       note: payload.reason || 'This invoice has been cancelled.',
+      requestId,
     });
     updateInvoice(inv.id, { status: 'CANCELLED' });
     logActivity('invoice_cancelled', `Invoice #${inv.number} cancelled`);
     return { number: inv.number, status: 'CANCELLED' };
+  },
+
+  // Recurring invoices: approving stores the schedule only. Each time it comes due, the
+  // scheduler creates a normal invoice *draft* that still needs approval - nothing auto-sends.
+  async create_schedule(payload) {
+    const d = normaliseScheduleDraft(payload);
+    const client = upsertClient({ name: d.clientName, email: d.clientEmail });
+    const sc = insertSchedule({
+      clientId: client.id,
+      items: d.items,
+      currency: d.currency,
+      taxPercent: d.taxPercent,
+      frequency: d.frequency,
+      nextRun: d.startDate,
+      dueInDays: d.dueInDays,
+      note: d.note,
+    });
+    logActivity('schedule_created', `Recurring ${d.frequency} invoice set up for ${client.name} (${d.currency} ${d.total}), first draft on ${d.startDate}`);
+    return { scheduleId: sc.id, nextRun: sc.nextRun, frequency: sc.frequency };
   },
 };
 
@@ -118,7 +180,7 @@ export async function approveAction(id, edits) {
   if (!transitionAction(id, 'pending', 'executing')) throw Object.assign(new Error(`Action already ${a.status}`), { status: 409 });
   const payload = edits && typeof edits === 'object' ? { ...a.payload, ...edits } : a.payload;
   try {
-    const result = await executors[a.type](payload);
+    const result = await executors[a.type](payload, a.id);
     return updateAction(id, { payload, status: 'approved', result, error: null, decidedAt: new Date().toISOString() });
   } catch (e) {
     // back to pending so the user can fix & retry

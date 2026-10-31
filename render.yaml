@@ -18,8 +18,12 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: BUSINESS_NAME
-        value: Arpit Designs
+        value: Northline Studio
       - key: DEFAULT_CURRENCY
         value: USD
       - key: CRON_SECRET
         generateValue: true
+      - key: APP_PASSWORD
+        sync: false
+      - key: APP_TIMEZONE
+        value: America/New_York

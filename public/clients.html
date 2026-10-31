@@ -9,29 +9,84 @@
 <body>
 <main>
   <h1>Clients</h1>
-  <p class="lede">Payment risk is based on each client's PayPal history: how late they usually pay, and what they owe right now. Riskiest clients are listed first.</p>
+  <p class="lede">Payment risk comes from each client's PayPal history: how late they usually pay, and what they owe right now. Riskiest clients are listed first.</p>
   <section class="panel table-wrap" id="clients"></section>
+
+  <div class="dash-top" style="margin-top:36px">
+    <div>
+      <h2 style="margin:0">Recurring invoices</h2>
+      <p class="lede" style="margin:4px 0 0">When a schedule comes due, a new invoice draft lands in your approval tray. Ask the assistant something like "Bill Emily $600 every month" to add one.</p>
+    </div>
+    <button class="btn ghost" id="runBtn">Create due drafts now</button>
+  </div>
+  <section class="panel table-wrap" id="schedules"></section>
 </main>
 <script type="module">
-  import { api, header, esc, money } from '/common.js';
+  import { api, header, esc, money, fmtDate, toast } from '/common.js';
   await header('clients');
-  const { clients } = await api('/api/clients');
-  const el = document.getElementById('clients');
-  el.innerHTML = clients.length
-    ? `<table class="data"><thead><tr><th>Client</th><th>Risk</th><th class="r">Usually pays</th><th class="r">Invoices</th><th class="r">Total billed</th><th class="r">Outstanding</th><th class="r">Overdue</th></tr></thead><tbody>${clients
-        .map(
-          (c) => `<tr>
-            <td><b>${esc(c.name)}</b><br><span class="muted">${esc(c.email)}</span></td>
-            <td><span class="pill ${c.riskLabel}">${c.riskLabel} · ${c.riskScore}</span></td>
-            <td class="r num">${c.avgDaysLate === null ? '<span class="muted">no history</span>' : c.avgDaysLate <= 1 ? 'on time' : `${c.avgDaysLate} days late`}</td>
-            <td class="r num">${c.invoiceCount}</td>
-            <td class="r num">${money(c.totalBilled, c.currency)}</td>
-            <td class="r num">${money(c.outstanding, c.currency)}</td>
-            <td class="r num">${c.overdueCount ? `<span style="color:var(--late)">${money(c.overdueAmount, c.currency)}</span>` : '—'}</td>
-          </tr>`
-        )
-        .join('')}</tbody></table>`
-    : '<div class="empty">No clients yet. They appear here after your first invoice.</div>';
+
+  async function loadClients() {
+    const { clients } = await api('/api/clients');
+    document.getElementById('clients').innerHTML = clients.length
+      ? `<table class="data"><thead><tr><th>Client</th><th>Risk</th><th class="r">Usually pays</th><th class="r">Invoices</th><th class="r">Total billed</th><th class="r">Outstanding</th><th class="r">Overdue</th></tr></thead><tbody>${clients
+          .map(
+            (c) => `<tr>
+              <td><b>${esc(c.name)}</b><br><span class="muted">${esc(c.email)}</span></td>
+              <td><span class="pill ${c.riskLabel}">${c.riskLabel} · ${c.riskScore}</span></td>
+              <td class="r num">${c.avgDaysLate === null ? '<span class="muted">no history</span>' : c.avgDaysLate <= 1 ? 'on time' : `${c.avgDaysLate} days late`}</td>
+              <td class="r num">${c.invoiceCount}</td>
+              <td class="r num">${money(c.totalBilled, c.currency)}</td>
+              <td class="r num">${money(c.outstanding, c.currency)}</td>
+              <td class="r num">${c.overdueCount ? `<span style="color:var(--late)">${money(c.overdueAmount, c.currency)}</span>` : '—'}</td>
+            </tr>`
+          )
+          .join('')}</tbody></table>`
+      : '<div class="empty">No clients yet. They appear here after your first invoice.</div>';
+  }
+
+  async function loadSchedules() {
+    const { schedules } = await api('/api/schedules');
+    const el = document.getElementById('schedules');
+    el.innerHTML = schedules.length
+      ? `<table class="data"><thead><tr><th>Client</th><th>Work</th><th>Every</th><th>Next draft</th><th>Status</th><th class="r">Amount</th><th></th></tr></thead><tbody>${schedules
+          .map(
+            (s) => `<tr>
+              <td>${esc(s.client)}</td>
+              <td class="muted">${esc(s.items.map((i) => i.name).join(', '))}</td>
+              <td><span class="pill ${esc(s.frequency)}">${esc(s.frequency === 'weekly' ? 'week' : 'month')}</span></td>
+              <td>${s.active ? fmtDate(s.nextRun) : '—'}</td>
+              <td>${s.active ? 'Active' : '<span class="muted">Paused</span>'}</td>
+              <td class="r num">${money(s.total, s.currency)}</td>
+              <td class="r">
+                <button class="btn ghost small" data-op="${s.active ? 'pause' : 'resume'}" data-id="${esc(s.id)}">${s.active ? 'Pause' : 'Resume'}</button>
+                <button class="btn ghost small" data-op="delete" data-id="${esc(s.id)}">Delete</button>
+              </td>
+            </tr>`
+          )
+          .join('')}</tbody></table>`
+      : '<div class="empty">No recurring invoices yet.</div>';
+  }
+
+  document.getElementById('schedules').addEventListener('click', async (e) => {
+    const { op, id } = e.target.dataset || {};
+    if (!op) return;
+    if (op === 'delete' && !e.target.dataset.confirm) {
+      e.target.dataset.confirm = '1';
+      e.target.textContent = 'Click again to delete';
+      return;
+    }
+    await api(`/api/schedules/${id}/${op}`, { body: {} });
+    toast({ pause: 'Schedule paused', resume: 'Schedule resumed', delete: 'Schedule deleted' }[op]);
+    loadSchedules();
+  });
+
+  document.getElementById('runBtn').onclick = async () => {
+    const { created } = await api('/api/schedules/run', { body: {} });
+    toast(created.length ? `${created.length} draft${created.length > 1 ? 's' : ''} added to your approval tray` : 'No recurring invoices are due yet');
+    loadSchedules();
+  };
+
+  await Promise.all([loadClients(), loadSchedules()]);
 </script>
 </body>
 </html>

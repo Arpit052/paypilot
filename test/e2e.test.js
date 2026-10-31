@@ -9,6 +9,8 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'paypilot-'));
 process.env.PAYPAL_MODE = 'mock';
 process.env.LLM_PROVIDER = 'none';
 process.env.DEFAULT_CURRENCY = 'USD';
+process.env.SCHEDULER_INTERVAL_MIN = '0';
+process.env.APP_TIMEZONE = 'UTC';
 
 const { start } = await import('../server.js');
 const { setLlmOverride, toAnthropic, toOpenAI } = await import('../src/llm.js');
@@ -28,23 +30,32 @@ setLlmOverride(async ({ messages, tools }) => {
   calls.push({ messages, tools });
   const last = messages.at(-1);
   const userText = last.role === 'user' ? last.content.find((c) => c.type === 'text')?.text || '' : '';
+  if (/money brief/i.test(userText)) {
+    return { content: [{ type: 'text', text: '**Where you stand**\n- You earned money.\n**Do next**\n- Chase invoice #1001.' }] };
+  }
   if (last.role === 'user' && /bill/i.test(userText)) {
     return {
       content: [
-        { type: 'tool_call', id: 't1', name: 'get_client_insights', input: { client: 'Rahul Sharma' } },
+        { type: 'tool_call', id: 't1', name: 'get_client_insights', input: { client: 'Jake Miller' } },
         {
           type: 'tool_call',
           id: 't2',
           name: 'propose_invoice',
           input: {
-            client_name: 'Rahul Sharma',
-            client_email: 'rahul.sharma@example.com',
+            client_name: 'Jake Miller',
+            client_email: 'jake.miller@example.com',
             items: [{ name: 'Logo concept', quantity: 3, unit_price: 150 }],
             due_in_days: 10,
           },
         },
       ],
     };
+  }
+  if (last.role === 'user' && /tax/i.test(userText)) {
+    return { content: [{ type: 'tool_call', id: 'tx', name: 'propose_invoice', input: { client_name: 'Olivia Brooks', client_email: 'olivia.brooks@example.com', items: [{ name: 'Instagram post', quantity: 10, unit_price: 25 }], tax_percent: 8, deposit_percent: 20 } }] };
+  }
+  if (last.role === 'user' && /every month/i.test(userText)) {
+    return { content: [{ type: 'tool_call', id: 'rc', name: 'propose_recurring', input: { client_name: 'Emily Carter', client_email: 'emily@cartercreative.example', items: [{ name: 'Design retainer', quantity: 1, unit_price: 600 }], frequency: 'monthly' } }] };
   }
   if (last.role === 'user' && /owe/i.test(userText)) {
     return { content: [{ type: 'tool_call', id: 't3', name: 'list_invoices', input: { status: 'overdue' } }] };
@@ -68,16 +79,16 @@ test('seed demo history', async () => {
   assert.equal(r.status, 200);
   const { data } = await call('/api/clients');
   assert.equal(data.clients.length, 4);
-  const rahul = data.clients.find((c) => c.name === 'Rahul Sharma');
-  assert.equal(rahul.riskLabel, 'high', 'late payer should be high risk');
-  const priya = data.clients.find((c) => c.name === 'Priya Mehta');
-  assert.equal(priya.riskLabel, 'low');
+  const jake = data.clients.find((c) => c.name === 'Jake Miller');
+  assert.equal(jake.riskLabel, 'high', 'late payer should be high risk');
+  const emily = data.clients.find((c) => c.name === 'Emily Carter');
+  assert.equal(emily.riskLabel, 'low');
 });
 
 let actionId;
 test('chat → AI proposes invoice (nothing sent yet)', async () => {
   const before = (await call('/api/invoices')).data.invoices.length;
-  const { status, data } = await call('/api/chat', { sessionId: 's1', message: 'Bill Rahul for 3 logos at $150, due in 10 days' });
+  const { status, data } = await call('/api/chat', { sessionId: 's1', message: 'Bill Jake for 3 logos at $150, due in 10 days' });
   assert.equal(status, 200, JSON.stringify(data));
   assert.deepEqual(data.tools, ['get_client_insights', 'propose_invoice']);
   assert.equal(data.actions.length, 1);
@@ -86,6 +97,8 @@ test('chat → AI proposes invoice (nothing sent yet)', async () => {
   assert.equal(a.status, 'pending');
   assert.equal(a.payload.total, 450);
   assert.equal(a.payload.risk.label, 'high');
+  assert.equal(a.payload.depositAmount, 225, 'high-risk client gets a suggested 50% deposit');
+  assert.equal(a.payload.depositSuggested, true);
   actionId = a.id;
   assert.equal((await call('/api/invoices')).data.invoices.length, before, 'no invoice before approval');
   // tool results were fed back to the model
@@ -105,7 +118,7 @@ test('chat history persists across turns and images are stripped', async () => {
 
 test('approve with user edits → invoice sent via PayPal (mock)', async () => {
   const { status, data } = await call(`/api/actions/${actionId}/approve`, {
-    edits: { items: [{ name: 'Logo concept', quantity: 3, unitPrice: 160 }] },
+    edits: { items: [{ name: 'Logo concept', quantity: 3, unitPrice: 160 }], depositAmount: 0 },
   });
   assert.equal(status, 200, JSON.stringify(data));
   assert.equal(data.action.status, 'approved');
@@ -118,7 +131,7 @@ test('approve with user edits → invoice sent via PayPal (mock)', async () => {
 });
 
 test('approve rejects invalid edits and keeps action pending', async () => {
-  const { data } = await call('/api/chat', { sessionId: 's3', message: 'bill rahul' });
+  const { data } = await call('/api/chat', { sessionId: 's3', message: 'bill jake' });
   const id = data.actions[0].id;
   const r = await call(`/api/actions/${id}/approve`, { edits: { clientEmail: 'not-an-email' } });
   assert.equal(r.status, 400);
@@ -128,7 +141,7 @@ test('approve rejects invalid edits and keeps action pending', async () => {
 });
 
 test('payment via webhook path flips status to PAID', async () => {
-  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Neha Kapoor');
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Olivia Brooks');
   const r = await call(`/api/mock/pay/${inv.paypalId}`, {});
   assert.equal(r.data.changed, true);
   const after = (await call('/api/invoices')).data.invoices.find((i) => i.id === inv.id);
@@ -139,13 +152,13 @@ test('payment via webhook path flips status to PAID', async () => {
 test('follow-up scan drafts reminders for overdue invoices only, then sends', async () => {
   const { data } = await call('/api/followups/scan', {});
   const nums = data.created.map((a) => a.payload.client).sort();
-  assert.deepEqual(nums, ['Acme Labs', 'Rahul Sharma']);
-  const rahul = data.created.find((a) => a.payload.client === 'Rahul Sharma');
-  assert.equal(rahul.payload.tone, 'firm', 'second reminder escalates');
-  assert.equal(rahul.payload.subject, 'Quick reminder', 'AI drafted');
+  assert.deepEqual(nums, ['Acme Labs', 'Jake Miller']);
+  const jake = data.created.find((a) => a.payload.client === 'Jake Miller');
+  assert.equal(jake.payload.tone, 'firm', 'second reminder escalates');
+  assert.equal(jake.payload.subject, 'Quick reminder', 'AI drafted');
   // rescan does not duplicate
   assert.equal((await call('/api/followups/scan', {})).data.created.length, 0);
-  const sent = await call(`/api/actions/${rahul.id}/approve`, { edits: { message: 'Edited by me' } });
+  const sent = await call(`/api/actions/${jake.id}/approve`, { edits: { message: 'Edited by me' } });
   assert.equal(sent.status, 200);
   assert.equal(sent.data.action.result.remindersSent, 2);
 });
@@ -166,6 +179,84 @@ test('cron endpoint requires secret; static pages served', async () => {
     assert.equal(res.status, 200, p);
   }
   assert.equal((await fetch(base + '/../package.json')).status, 404);
+});
+
+test('sales tax + deposit flow through to the PayPal invoice body', async () => {
+  const { data } = await call('/api/chat', { sessionId: 'tax', message: 'Invoice Olivia for 10 posts at $25 plus 8% tax' });
+  const a = data.actions[0];
+  assert.equal(a.payload.subtotal, 250);
+  assert.equal(a.payload.tax, 20);
+  assert.equal(a.payload.total, 270);
+  assert.equal(a.payload.depositAmount, 54);
+  const ok = await call(`/api/actions/${a.id}/approve`, {});
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId === ok.data.action.result.paypalId);
+  assert.equal(inv.total, 270);
+  assert.equal(inv.taxPercent, 8);
+  assert.equal(inv.depositAmount, 54);
+  const { kvGet } = await import('../src/db.js');
+  const body = kvGet(`mock:inv:${inv.paypalId}`).body;
+  assert.deepEqual(body.items[0].tax, { name: 'Sales Tax', percent: '8' });
+  assert.deepEqual(body.configuration.partial_payment, { allow_partial_payment: true, minimum_amount_due: { currency_code: 'USD', value: '54.00' } });
+  // a deposit >= total is rejected
+  const bad = await call('/api/chat', { sessionId: 'tax2', message: 'tax again' });
+  const r = await call(`/api/actions/${bad.data.actions[0].id}/approve`, { edits: { depositAmount: 999 } });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /Deposit must be less/);
+});
+
+test('PayPal create is idempotent per approval', async () => {
+  const { paypal } = await import('../src/paypal.js');
+  const args = { client: { name: 'A B', email: 'a@b.co' }, items: [{ name: 'x', quantity: 1, unitPrice: 5 }], currency: 'USD', dueDate: '2030-01-01', requestId: 'act_same' };
+  const one = await paypal.createAndSendInvoice(args);
+  const two = await paypal.createAndSendInvoice(args);
+  assert.equal(one.paypalId, two.paypalId);
+});
+
+test('recurring invoices: schedule → due draft → next month', async () => {
+  const { data } = await call('/api/chat', { sessionId: 'rec', message: 'Set up Emily for $600 every month' });
+  const a = data.actions[0];
+  assert.equal(a.type, 'create_schedule');
+  const ok = await call(`/api/actions/${a.id}/approve`, {});
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  let sch = (await call('/api/schedules')).data.schedules;
+  assert.equal(sch.length, 1);
+  const first = sch[0].nextRun;
+  const run = await call('/api/schedules/run', {});
+  assert.equal(run.data.created.length, 1);
+  assert.equal(run.data.created[0].origin, 'schedule');
+  assert.equal(run.data.created[0].payload.total, 600);
+  sch = (await call('/api/schedules')).data.schedules;
+  assert.ok(sch[0].nextRun > first, 'next run advanced');
+  assert.equal((await call('/api/schedules/run', {})).data.created.length, 0, 'not due again yet');
+  await call(`/api/schedules/${sch[0].id}/pause`, {});
+  assert.equal((await call('/api/schedules')).data.schedules[0].active, false);
+});
+
+test('AI money brief uses computed facts', async () => {
+  const { briefFacts } = await import('../src/brief.js');
+  const f = briefFacts();
+  assert.ok(f.overdue.length >= 1);
+  assert.ok('expected' in f.next30Days);
+  const { status, data } = await call('/api/brief', { refresh: true });
+  assert.equal(status, 200, JSON.stringify(data));
+  assert.match(data.text, /Where you stand/);
+  assert.equal((await call('/api/brief', {})).data.cached, true);
+});
+
+test('health endpoint + security headers', async () => {
+  const res = await fetch(base + '/api/health');
+  const h = await res.json();
+  assert.equal(h.ok, true);
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.match(res.headers.get('content-security-policy'), /default-src 'self'/);
+});
+
+test('calendar helpers', async () => {
+  const { addMonths, addDays } = await import('../src/config.js');
+  assert.equal(addMonths('2026-01-31', 1), '2026-02-28');
+  assert.equal(addMonths('2026-12-15', 1), '2027-01-15');
+  assert.equal(addDays('2026-10-31', 1), '2026-11-01');
 });
 
 test('provider adapters map tool calls correctly', () => {
@@ -189,7 +280,7 @@ test('provider adapters map tool calls correctly', () => {
 test('PayPal invoice body shape', () => {
   const b = buildInvoiceBody({
     number: '0007',
-    client: { name: 'Priya Mehta', email: 'p@x.com' },
+    client: { name: 'Emily Carter', email: 'p@x.com' },
     items: [{ name: 'Retainer', quantity: 1, unitPrice: 600 }],
     currency: 'USD',
     issueDate: '2026-11-01',
@@ -198,7 +289,7 @@ test('PayPal invoice body shape', () => {
   });
   assert.equal(b.detail.invoice_number, '0007');
   assert.equal(b.detail.payment_term.due_date, '2026-11-15');
-  assert.deepEqual(b.primary_recipients[0].billing_info.name, { given_name: 'Priya', surname: 'Mehta' });
+  assert.deepEqual(b.primary_recipients[0].billing_info.name, { given_name: 'Emily', surname: 'Carter' });
   assert.deepEqual(b.items[0].unit_amount, { currency_code: 'USD', value: '600.00' });
   assert.equal(b.items[0].quantity, '1');
 });

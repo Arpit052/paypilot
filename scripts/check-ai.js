@@ -59,27 +59,27 @@ log(`  .env file:  ${envFile ? 'found (' + envFile + ')' : 'NOT FOUND in ' + con
 const key = process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || '';
 if (!key) {
   log('  API key:    NOT FOUND\n');
-  log('  Fix: .env file mein yeh line daalo (apni Google AI Studio key ke saath):');
+  log('  Fix: add this line to your .env file (with your Google AI Studio key):');
   log('       GEMINI_API_KEY=AIza...');
   bye(1);
 }
 if (key.startsWith('sk-')) {
   log('  API key:    found, but it is an OpenAI key (starts with "sk-"), not a Google key\n');
-  log('  Fix: aistudio.google.com se key copy karke .env mein daalo:  GEMINI_API_KEY=...');
+  log('  Fix: copy your key from aistudio.google.com into .env:  GEMINI_API_KEY=...');
   bye(1);
 }
 log(`  API key:    found (${key.slice(0, 4)}...${key.slice(-4)})`);
 
 // 2. list models (also validates the key + network)
-log('\n  Google se baat kar raha hoon...');
+log('\n  Contacting Google...');
 const list = await call(`${BASE}/models?pageSize=200`, { headers: { 'x-goog-api-key': key } }, 25000);
 if (list.status !== 200) {
   if (list.status === 'TIMEOUT' || list.status === 'NETWORK') {
-    log(`  Google tak nahi pahunch paya (${list.status}${list.error ? ': ' + list.error : ''}).`);
-    log('  Fix: internet check karo, ya phone hotspot se try karo.');
+    log(`  Could not reach Google (${list.status}${list.error ? ': ' + list.error : ''}).`);
+    log('  Fix: check your internet connection, or try a different network.');
   } else {
-    log(`  Google ne key reject ki (HTTP ${list.status}): ${list.json?.error?.message || ''}`);
-    log('  Fix: aistudio.google.com par nayi API key banao aur .env mein daalo.');
+    log(`  Google rejected the key (HTTP ${list.status}): ${list.json?.error?.message || ''}`);
+    log('  Fix: create a new API key at aistudio.google.com and put it in .env.');
   }
   bye(1);
 }
@@ -87,7 +87,7 @@ const available = (list.json.models || [])
   .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
   .map((m) => m.name.replace(/^models\//, ''))
   .filter((n) => /flash/.test(n) && !/(image|tts|live|audio|embedding|native|thinking-exp|robotics|computer)/.test(n));
-log(`  Key sahi hai. ${available.length} flash models mile.`);
+log(`  Key is valid. Found ${available.length} flash models.`);
 
 const preferred = config.llm.geminiModel;
 const candidates = [...new Set([preferred, ...available.sort((a, b) => versionScore(b) - versionScore(a) || a.length - b.length)])]
@@ -100,7 +100,7 @@ const tool = {
     { name: 'ping', description: 'Health check. Always call this when asked to ping.', parametersJsonSchema: { type: 'object', properties: { note: { type: 'string' } } } },
   ],
 };
-log('\n  Har model ko ek chhota test bhej raha hoon (har test max 45 sec)...\n');
+log('\n  Sending a small tool-calling test to each model (max 45s each)...\n');
 let winner = null;
 for (const model of candidates) {
   for (const thinking of ['low', 'off']) {
@@ -138,13 +138,13 @@ for (const model of candidates) {
 }
 
 if (!winner) {
-  log('\n  Koi bhi model tool-calling ke saath kaam nahi kiya.');
-  log('  Is window ka screenshot bhej do (isme key nahi dikhti).');
+  log('\n  No model worked with tool calling.');
+  log('  Share a screenshot of this window (your key is not shown).');
   bye(1);
 }
 
 const file = updateEnv({ GEMINI_API_KEY: key, GEMINI_MODEL: winner.model, GEMINI_REASONING: winner.thinking });
-log(`\n  ✔ Kaam karne wala setup mil gaya: ${winner.model} (thinking=${winner.thinking})`);
-log(`  ✔ ${path.basename(file)} update kar di.`);
-log('\n  Ab start-windows.bat chalao. AI kaam karega.');
+log(`\n  ✔ Found a working setup: ${winner.model} (thinking=${winner.thinking})`);
+log(`  ✔ Updated ${path.basename(file)}.`);
+log('\n  Now run start-windows.bat (or npm start).');
 bye(0);

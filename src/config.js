@@ -61,17 +61,36 @@ function detectPaypalMode() {
   return env.PAYPAL_CLIENT_ID && env.PAYPAL_CLIENT_SECRET ? 'sandbox' : 'mock';
 }
 
+function validTimeZone(tz) {
+  if (!tz) return null;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return tz;
+  } catch {
+    console.warn(`  APP_TIMEZONE "${tz}" is not a valid time zone - ignoring it.`);
+    return null;
+  }
+}
+
 export const config = {
   root: ROOT,
   port: Number(env.PORT || 3000),
   dataDir: env.DATA_DIR || path.join(ROOT, 'data'),
 
-  businessName: env.BUSINESS_NAME || 'Arpit Designs',
+  businessName: env.BUSINESS_NAME || 'Northline Studio',
   currency: (env.DEFAULT_CURRENCY || 'USD').toUpperCase(),
   // Shift the app's clock forward for demos ("what happens in 10 days?").
   demoTimeOffsetDays: Number(env.DEMO_TIME_OFFSET_DAYS || 0),
   reminderCooldownDays: Number(env.REMINDER_COOLDOWN_DAYS || 3),
   cronSecret: env.CRON_SECRET || '',
+  defaultTaxPercent: Number(env.DEFAULT_TAX_PERCENT || 0),
+  // Business-day calendar: dates ("today", due dates) are computed in this time zone.
+  timezone: validTimeZone(env.APP_TIMEZONE) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  // Optional passcode for the web app (recommended when the demo is hosted publicly).
+  appPassword: env.APP_PASSWORD || '',
+  // Background jobs (PayPal sync, overdue scan, recurring invoices). 0 = off.
+  schedulerMinutes: env.SCHEDULER_INTERVAL_MIN === undefined ? 360 : Number(env.SCHEDULER_INTERVAL_MIN),
+  chatRateLimitPerMin: Number(env.CHAT_RATE_LIMIT_PER_MIN || 15),
 
   paypal: {
     mode: detectPaypalMode(),
@@ -89,6 +108,11 @@ export const config = {
     openaiModel: env.OPENAI_MODEL || 'gpt-4o-mini',
     geminiKey: env.GEMINI_API_KEY || env.OPENAI_API_KEY || '',
     geminiModel: env.GEMINI_MODEL || (env.OPENAI_MODEL?.startsWith('gemini') ? env.OPENAI_MODEL : 'gemini-3.6-flash'),
+    // tried in order when the primary model is rate-limited or overloaded (each has its own quota)
+    geminiFallbacks: (env.GEMINI_FALLBACK_MODELS || 'gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite')
+      .split(',')
+      .map((m) => m.trim())
+      .filter(Boolean),
     // thinking level: low | medium | high | off (= let the model decide)
     geminiThinking: (env.GEMINI_REASONING || 'low').toLowerCase(),
   },
@@ -102,15 +126,27 @@ export function now() {
   return new Date(Date.now() + config.demoTimeOffsetDays * 86400000);
 }
 
-/** YYYY-MM-DD for a Date (UTC). */
+let dayFmt = null;
+/** Calendar date (YYYY-MM-DD) of an instant, in the business time zone (APP_TIMEZONE). */
 export function isoDate(d = now()) {
-  return new Date(d).toISOString().slice(0, 10);
+  dayFmt ||= new Intl.DateTimeFormat('en-CA', { timeZone: config.timezone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  return dayFmt.format(new Date(d));
 }
 
+/** Pure calendar arithmetic on YYYY-MM-DD strings (time-zone independent). */
 export function addDays(dateStr, days) {
   const d = new Date(dateStr + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + days);
-  return isoDate(d);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Same day next month(s), clamped to month end (Jan 31 + 1 month = Feb 28/29). */
+export function addMonths(dateStr, months) {
+  const [y, m, day] = dateStr.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + months, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  first.setUTCDate(Math.min(day, last));
+  return first.toISOString().slice(0, 10);
 }
 
 export function daysBetween(a, b) {

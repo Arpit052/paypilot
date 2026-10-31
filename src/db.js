@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS invoices (
   payer_url TEXT,
   reminders TEXT NOT NULL DEFAULT '[]',
   source TEXT NOT NULL DEFAULT 'paypal',
+  tax_percent REAL NOT NULL DEFAULT 0,
+  deposit_amount REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices(client_id);
@@ -60,10 +62,31 @@ CREATE TABLE IF NOT EXISTS activity (
   kind TEXT NOT NULL,
   text TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS schedules (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL REFERENCES clients(id),
+  items TEXT NOT NULL,
+  currency TEXT NOT NULL,
+  tax_percent REAL NOT NULL DEFAULT 0,
+  frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'monthly')),
+  next_run TEXT NOT NULL,
+  due_in_days INTEGER NOT NULL DEFAULT 7,
+  note TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  last_run TEXT,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS kv (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );`;
+
+/** Additive migrations for databases created by older versions. */
+function migrate(d) {
+  const cols = new Set(d.prepare('PRAGMA table_info(invoices)').all().map((c) => c.name));
+  if (!cols.has('tax_percent')) d.exec('ALTER TABLE invoices ADD COLUMN tax_percent REAL NOT NULL DEFAULT 0');
+  if (!cols.has('deposit_amount')) d.exec('ALTER TABLE invoices ADD COLUMN deposit_amount REAL NOT NULL DEFAULT 0');
+}
 
 let conn = null;
 function sql() {
@@ -71,6 +94,7 @@ function sql() {
   fs.mkdirSync(config.dataDir, { recursive: true });
   conn = new DatabaseSync(path.join(config.dataDir, 'paypilot.db'));
   conn.exec(SCHEMA);
+  migrate(conn);
   return conn;
 }
 
@@ -103,7 +127,7 @@ export function transaction(fn) {
 }
 
 export function resetDb() {
-  sql().exec('DELETE FROM actions; DELETE FROM invoices; DELETE FROM clients; DELETE FROM activity; DELETE FROM kv;');
+  sql().exec('DELETE FROM actions; DELETE FROM schedules; DELETE FROM invoices; DELETE FROM clients; DELETE FROM activity; DELETE FROM kv;');
 }
 
 // ---------------- clients ----------------
@@ -157,12 +181,14 @@ const rowInvoice = (r) =>
     payerUrl: r.payer_url,
     reminders: pj(r.reminders, []),
     source: r.source,
+    taxPercent: r.tax_percent || 0,
+    depositAmount: r.deposit_amount || 0,
   };
 
 const INV_COLS = {
   paypalId: 'paypal_id', number: 'number', clientId: 'client_id', items: 'items', currency: 'currency', total: 'total',
   status: 'status', issueDate: 'issue_date', dueDate: 'due_date', paidDate: 'paid_date', note: 'note',
-  payerUrl: 'payer_url', reminders: 'reminders', source: 'source',
+  payerUrl: 'payer_url', reminders: 'reminders', source: 'source', taxPercent: 'tax_percent', depositAmount: 'deposit_amount',
 };
 const JSON_FIELDS = new Set(['items', 'reminders', 'payload', 'result']);
 
@@ -195,12 +221,13 @@ export function insertInvoice(inv) {
   sql()
     .prepare(
       `INSERT INTO invoices (id, paypal_id, number, client_id, items, currency, total, status, issue_date, due_date,
-        paid_date, note, payer_url, reminders, source, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        paid_date, note, payer_url, reminders, source, tax_percent, deposit_amount, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
     )
     .run(
       id, inv.paypalId ?? null, String(inv.number), inv.clientId, j(inv.items), inv.currency, inv.total, inv.status,
       inv.issueDate, inv.dueDate, inv.paidDate ?? null, inv.note ?? '', inv.payerUrl ?? null, j(inv.reminders || []),
-      inv.source || 'paypal', nowIso()
+      inv.source || 'paypal', inv.taxPercent || 0, inv.depositAmount || 0, nowIso()
     );
   return getInvoice(id);
 }
@@ -290,4 +317,52 @@ export function kvGet(key, fallback = null) {
 
 export function kvSet(key, value) {
   sql().prepare('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, j(value));
+}
+
+// ---------------- recurring schedules ----------------
+const rowSchedule = (r) =>
+  r && {
+    id: r.id,
+    clientId: r.client_id,
+    items: pj(r.items, []),
+    currency: r.currency,
+    taxPercent: r.tax_percent || 0,
+    frequency: r.frequency,
+    nextRun: r.next_run,
+    dueInDays: r.due_in_days,
+    note: r.note || '',
+    active: Boolean(r.active),
+    lastRun: r.last_run,
+    createdAt: r.created_at,
+  };
+const SCH_COLS = { nextRun: 'next_run', active: 'active', lastRun: 'last_run' };
+
+export function insertSchedule(sc) {
+  const id = newId('sch');
+  sql()
+    .prepare(
+      `INSERT INTO schedules (id, client_id, items, currency, tax_percent, frequency, next_run, due_in_days, note, active, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,1,?)`
+    )
+    .run(id, sc.clientId, j(sc.items), sc.currency, sc.taxPercent || 0, sc.frequency, sc.nextRun, sc.dueInDays ?? 7, sc.note ?? '', nowIso());
+  return getSchedule(id);
+}
+
+export function getSchedule(id) {
+  return rowSchedule(sql().prepare('SELECT * FROM schedules WHERE id = ?').get(id));
+}
+
+export function listSchedules() {
+  return sql().prepare('SELECT * FROM schedules ORDER BY active DESC, next_run').all().map(rowSchedule);
+}
+
+export function updateSchedule(id, patch) {
+  const p = { ...patch };
+  if ('active' in p) p.active = p.active ? 1 : 0;
+  update('schedules', SCH_COLS, id, p);
+  return getSchedule(id);
+}
+
+export function deleteSchedule(id) {
+  return sql().prepare('DELETE FROM schedules WHERE id = ?').run(id).changes === 1;
 }

@@ -6,6 +6,10 @@ export async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && !path.startsWith('/api/login')) {
+    location.href = '/login.html';
+    throw new Error('Please sign in.');
+  }
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
@@ -88,15 +92,20 @@ export async function header(active) {
       <span class="mode ${CONFIG.paypalMode === 'mock' ? 'warn' : ''}" title="PayPal environment">PayPal: <b>${pp}</b></span>
       <span class="mode ${ai === 'not set' ? 'warn' : ''}" title="AI provider">AI: <b>${esc(ai)}</b></span>
       ${CONFIG.demoTimeOffsetDays ? `<span class="mode warn" title="DEMO_TIME_OFFSET_DAYS">Clock +${CONFIG.demoTimeOffsetDays}d</span>` : ''}
+      ${CONFIG.loginEnabled ? '<button class="mode" id="logoutBtn" style="background:none;cursor:pointer">Sign out</button>' : ''}
     </div>`;
   document.body.prepend(el);
+  el.querySelector('#logoutBtn')?.addEventListener('click', async () => {
+    await api('/api/logout', { body: {} }).catch(() => {});
+    location.href = '/login.html';
+  });
   return CONFIG;
 }
 
 // ------------------------------------------------------------------
 // Approval slips
 // ------------------------------------------------------------------
-const STAMP = { create_invoice: 'SENT', send_reminder: 'REMINDED', cancel_invoice: 'VOID' };
+const STAMP = { create_invoice: 'SENT', send_reminder: 'REMINDED', cancel_invoice: 'VOID', create_schedule: 'SCHEDULED' };
 
 /**
  * Render an approval card for an action. `onDone(action)` fires after approve/reject.
@@ -111,7 +120,7 @@ export function renderSlip(action, { onDone } = {}) {
   if (action.type === 'create_invoice') {
     el.innerHTML = `
       <div class="slip-head">
-        <div><div class="slip-kind">Invoice draft</div><div class="slip-from">from ${esc(CONFIG?.businessName || '')} · via PayPal</div></div>
+        <div><div class="slip-kind">${action.origin === 'schedule' ? 'Recurring invoice draft' : 'Invoice draft'}</div><div class="slip-from">from ${esc(CONFIG?.businessName || '')} · via PayPal</div></div>
         <div class="slip-from num">${esc(cur)}</div>
       </div>
       <div class="row2">
@@ -127,8 +136,17 @@ export function renderSlip(action, { onDone } = {}) {
         <div><label>Due date</label><input data-f="dueDate" type="date" value="${esc(p.dueDate)}"></div>
         <div><label>Note to client</label><input data-f="note" value="${esc(p.note)}" placeholder="Optional"></div>
       </div>
+      <div class="row2">
+        <div><label>Sales tax %</label><input data-f="taxPercent" class="num" type="number" min="0" max="50" step="0.01" value="${esc(p.taxPercent || 0)}"></div>
+        <div><label>Deposit due upfront (${esc(cur)})</label><input data-f="depositAmount" class="num" type="number" min="0" step="0.01" value="${esc(p.depositAmount || 0)}" placeholder="0 = none"></div>
+      </div>
+      <div class="sums num">
+        <div><span>Subtotal</span><span data-sub></span></div>
+        <div data-taxrow><span>Sales tax</span><span data-tax></span></div>
+      </div>
       <div class="total"><span>Total due</span><b class="num" data-total></b></div>
-      ${p.risk && p.risk.label !== 'low' ? `<div class="risk ${p.risk.label}">This client has ${p.risk.label} payment risk${p.risk.avgDaysLate ? ` and usually pays ${p.risk.avgDaysLate} days late` : ''}. Consider a shorter due date or an advance.</div>` : ''}
+      <div class="deposit-line num" data-deprow></div>
+      ${p.risk && p.risk.label !== 'low' ? `<div class="risk ${p.risk.label}">This client has ${p.risk.label} payment risk${p.risk.avgDaysLate ? ` and usually pays ${p.risk.avgDaysLate} days late` : ''}.${p.depositSuggested ? ' A 50% deposit was added so you get paid part upfront. Set it to 0 to remove it.' : ' Consider a shorter due date or a deposit.'}</div>` : ''}
       <div class="slip-actions">
         <button class="btn" data-approve>Approve &amp; send via PayPal</button>
         <button class="btn ghost" data-reject>Discard</button>
@@ -153,15 +171,24 @@ export function renderSlip(action, { onDone } = {}) {
         quantity: Number(tr.querySelector('[data-i=quantity]').value),
         unitPrice: Number(tr.querySelector('[data-i=unitPrice]').value),
       }));
+    const r2 = (n) => Math.round(n * 100) / 100;
     const recalc = () => {
-      let t = 0;
+      let sub = 0;
+      let tax = 0;
+      const pct = Number(el.querySelector('[data-f=taxPercent]').value) || 0;
       [...tbody.rows].forEach((tr, i) => {
         const it = items()[i];
-        const a = (it.quantity || 0) * (it.unitPrice || 0);
-        t += a;
+        const a = r2((it.quantity || 0) * (it.unitPrice || 0));
+        sub += a;
+        tax += r2((a * pct) / 100);
         tr.querySelector('.amt').textContent = money(a, cur);
       });
-      el.querySelector('[data-total]').textContent = money(t, cur);
+      el.querySelector('[data-sub]').textContent = money(sub, cur);
+      el.querySelector('[data-tax]').textContent = money(tax, cur);
+      el.querySelector('[data-taxrow]').classList.toggle('hidden', !pct);
+      el.querySelector('[data-total]').textContent = money(sub + tax, cur);
+      const dep = Number(el.querySelector('[data-f=depositAmount]').value) || 0;
+      el.querySelector('[data-deprow]').textContent = dep > 0 ? `${money(dep, cur)} due upfront, ${money(Math.max(sub + tax - dep, 0), cur)} by the due date` : '';
     };
     p.items.forEach(addRow);
     el.querySelector('.add-line').onclick = () => { addRow(); recalc(); };
@@ -172,8 +199,34 @@ export function renderSlip(action, { onDone } = {}) {
       clientEmail: el.querySelector('[data-f=clientEmail]').value,
       dueDate: el.querySelector('[data-f=dueDate]').value,
       note: el.querySelector('[data-f=note]').value,
+      taxPercent: Number(el.querySelector('[data-f=taxPercent]').value) || 0,
+      depositAmount: Number(el.querySelector('[data-f=depositAmount]').value) || 0,
+      depositPercent: 0,
       items: items(),
     });
+  } else if (action.type === 'create_schedule') {
+    el.innerHTML = `
+      <div class="slip-head">
+        <div><div class="slip-kind">Recurring invoice</div><div class="slip-from">${esc(p.clientName)} · ${esc(p.clientEmail)}</div></div>
+        <span class="pill SCHEDULED">${esc(p.frequency)}</span>
+      </div>
+      <table class="items">
+        <thead><tr><th>Work</th><th class="q">Qty</th><th class="amt">Amount</th></tr></thead>
+        <tbody>${p.items.map((it) => `<tr><td>${esc(it.name)}</td><td class="q num">${esc(it.quantity)}</td><td class="amt num">${money(it.quantity * it.unitPrice, cur)}</td></tr>`).join('')}</tbody>
+      </table>
+      <div class="total"><span>Per invoice${p.taxPercent ? ` (incl. ${esc(p.taxPercent)}% tax)` : ''}</span><b class="num">${money(p.total, cur)}</b></div>
+      <div class="row2">
+        <div><label>First invoice on</label><input data-f="startDate" type="date" value="${esc(p.startDate)}"></div>
+        <div><label>Payment terms (days)</label><input data-f="dueInDays" class="num" type="number" min="0" max="90" value="${esc(p.dueInDays)}"></div>
+      </div>
+      <div class="slip-meta" style="margin-top:10px">Each ${p.frequency === 'weekly' ? 'week' : 'month'} a new invoice draft appears in your approval tray. Nothing is sent without your approval.</div>
+      <div class="slip-actions">
+        <button class="btn" data-approve>Approve schedule</button>
+        <button class="btn ghost" data-reject>Discard</button>
+      </div>
+      <div class="slip-error" role="alert"></div>
+      <div class="slip-result"></div>`;
+    el._edits = () => ({ startDate: el.querySelector('[data-f=startDate]').value, dueInDays: Number(el.querySelector('[data-f=dueInDays]').value) });
   } else if (action.type === 'send_reminder') {
     el.innerHTML = `
       <div class="slip-head">
@@ -220,7 +273,9 @@ export function renderSlip(action, { onDone } = {}) {
     el.append(s);
     const r = a.result || {};
     el.querySelector('.slip-result').innerHTML =
-      a.type === 'create_invoice'
+      a.type === 'create_schedule'
+        ? `Recurring ${esc(r.frequency)} invoice scheduled. First draft on <b>${esc(fmtDate(r.nextRun))}</b>.`
+        : a.type === 'create_invoice'
         ? `Invoice <b>#${esc(r.number)}</b> sent through PayPal.${r.payerUrl ? ` <a href="${esc(r.payerUrl)}" target="_blank" rel="noopener">Open client's payment page</a>` : ''}`
         : a.type === 'send_reminder'
           ? `Reminder sent for invoice <b>#${esc(r.number)}</b>.`

@@ -13,6 +13,19 @@ export function invoiceTotal(items) {
   return Math.round(items.reduce((s, it) => s + Number(it.quantity) * Number(it.unitPrice), 0) * 100) / 100;
 }
 
+/** Subtotal, sales tax (per line, like PayPal) and grand total. */
+export function invoiceTotals(items, taxPercent = 0) {
+  const r = (n) => Math.round(n * 100) / 100;
+  let subtotal = 0;
+  let tax = 0;
+  for (const it of items) {
+    const line = r(Number(it.quantity) * Number(it.unitPrice));
+    subtotal += line;
+    tax += r((line * taxPercent) / 100);
+  }
+  return { subtotal: r(subtotal), tax: r(tax), total: r(subtotal + tax) };
+}
+
 export function clientStats(clientId, today = isoDate()) {
   const invs = listInvoices({ clientId });
   const paid = invs.filter((i) => isPaid(i) && i.paidDate);

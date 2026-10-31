@@ -20,6 +20,7 @@ const TOOL_LABEL = {
   propose_invoice: 'drafted invoice',
   propose_reminder: 'drafted reminder',
   propose_cancel: 'drafted cancellation',
+  propose_recurring: 'drafted recurring schedule',
 };
 
 function addMsg(kind, html) {
@@ -42,7 +43,10 @@ function addSlip(action, prepend = true) {
   const el = renderSlip(action, {
     onDone: (a) => {
       updateTrayCount();
-      if (a.status === 'approved') toast(a.type === 'create_invoice' ? `Invoice #${a.result.number} sent` : a.type === 'send_reminder' ? 'Reminder sent' : 'Invoice cancelled');
+      if (a.status === 'approved')
+        toast(
+          { create_invoice: `Invoice #${a.result.number} sent`, send_reminder: 'Reminder sent', cancel_invoice: 'Invoice cancelled', create_schedule: 'Recurring invoice scheduled' }[a.type]
+        );
     },
   });
   prepend ? tray.prepend(el) : tray.append(el);
@@ -148,6 +152,9 @@ const cfg = await header('chat');
 if (cfg.llmProvider === 'none') {
   addMsg('err', 'AI is not configured yet. Add <b>ANTHROPIC_API_KEY</b> or <b>OPENAI_API_KEY</b> to your <code>.env</code> file and restart the server.');
 }
-const { actions } = await api('/api/actions?status=pending&origin=chat');
-actions.forEach((a) => addSlip(a, false));
+const [fromChat, fromSchedules] = await Promise.all([
+  api('/api/actions?status=pending&origin=chat'),
+  api('/api/actions?status=pending&origin=schedule'),
+]);
+[...fromSchedules.actions, ...fromChat.actions].forEach((a) => addSlip(a, false));
 updateTrayCount();

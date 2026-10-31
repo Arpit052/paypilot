@@ -7,10 +7,10 @@ import { isMock, mockNextNumber, mockPut } from './paypal.js';
 import { invoiceTotal } from './analytics.js';
 
 const CLIENTS = [
-  { name: 'Rahul Sharma', email: 'rahul.sharma@example.com', lateBy: [12, 18, 9, 21] },
-  { name: 'Priya Mehta', email: 'priya@mehtastudio.example', lateBy: [0, 0, 1, 0, 0] },
+  { name: 'Jake Miller', email: 'jake.miller@example.com', lateBy: [12, 18, 9, 21] },
+  { name: 'Emily Carter', email: 'emily@cartercreative.example', lateBy: [0, 0, 1, 0, 0] },
   { name: 'Acme Labs', email: 'billing@acmelabs.example', lateBy: [3, 6, 2] },
-  { name: 'Neha Kapoor', email: 'neha.k@example.com', lateBy: [0, 4] },
+  { name: 'Olivia Brooks', email: 'olivia.brooks@example.com', lateBy: [0, 4] },
 ];
 
 const WORK = [
@@ -60,12 +60,41 @@ function seedInner() {
     });
   }
 
+  // A couple of payments inside the current month, so "Earned this month" is never empty
+  // (e.g. when the demo runs on the 1st).
+  const monthStart = today.slice(0, 8) + '01';
+  const recentPaid = [
+    { email: 'emily@cartercreative.example', item: ['Monthly retainer', 1, 600], paid: today },
+    { email: 'olivia.brooks@example.com', item: ['Landing page copy', 1, 300], paid: today },
+  ];
+  for (const r of recentPaid) {
+    const client = findClient(r.email);
+    const items = [{ name: r.item[0], quantity: r.item[1], unitPrice: r.item[2] }];
+    const due = r.paid < monthStart ? monthStart : r.paid;
+    insertInvoice({
+      paypalId: null,
+      number: `D-${++seq}`,
+      clientId: client.id,
+      items,
+      currency: config.currency,
+      total: invoiceTotal(items),
+      status: 'PAID',
+      issueDate: addDays(due, -14),
+      dueDate: due,
+      paidDate: r.paid,
+      note: '',
+      payerUrl: null,
+      reminders: [],
+      source: 'seed',
+    });
+  }
+
   if (isMock) {
     const open = [
-      { email: 'rahul.sharma@example.com', item: ['Website redesign - phase 1', 1, 850], issue: -26, due: -12, reminders: 1 },
+      { email: 'jake.miller@example.com', item: ['Website redesign - phase 1', 1, 850], issue: -26, due: -12, reminders: 1 },
       { email: 'billing@acmelabs.example', item: ['Pitch deck design', 1, 320], issue: -12, due: -3, reminders: 0 },
-      { email: 'priya@mehtastudio.example', item: ['Monthly retainer', 1, 600], issue: -2, due: 12, reminders: 0 },
-      { email: 'neha.k@example.com', item: ['Instagram post pack', 10, 25], issue: -1, due: 6, reminders: 0 },
+      { email: 'emily@cartercreative.example', item: ['Monthly retainer', 1, 600], issue: -2, due: 12, reminders: 0 },
+      { email: 'olivia.brooks@example.com', item: ['Instagram post pack', 10, 25], issue: -1, due: 6, reminders: 0 },
     ];
     for (const o of open) {
       const client = findClient(o.email);

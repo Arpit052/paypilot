@@ -2,7 +2,7 @@
 import { config, isoDate, daysBetween } from './config.js';
 import { listInvoices, findClient, findInvoice } from './db.js';
 import { runToolLoop } from './llm.js';
-import { createAction, normaliseInvoiceDraft } from './actions.js';
+import { createAction, normaliseInvoiceDraft, normaliseScheduleDraft } from './actions.js';
 import { clientStats, earningsSummary, forecastCashflow, isOpen, isOverdue, clientName } from './analytics.js';
 import { isMock } from './paypal.js';
 
@@ -17,9 +17,11 @@ How you work:
 - You can read data with list_invoices, get_client_insights, get_earnings_summary and forecast_cashflow. Use them instead of guessing numbers.
 - You NEVER send, remind or cancel directly. You call propose_invoice / propose_reminder / propose_cancel, which put an approval card in the user's UI. Nothing reaches PayPal or the client until the user clicks Approve. After proposing, tell the user briefly what you prepared and ask them to review the approval slip on the right. Never claim an invoice "was sent" unless the user has approved it.
 - When the user describes work done (in text, or in a screenshot of a chat/email/brief), extract client name, client email, line items (name, quantity, unit price), currency and due date. Convert phrases like "in 2 weeks" to due_in_days. If the client email is missing and the client isn't already known, ask for it instead of inventing one. Never invent prices.
-- propose_invoice already returns the client's payment risk (clientRisk), so you don't need a separate lookup before invoicing. If the risk is medium/high, mention it and suggest a shorter due date or an advance.
+- To create an invoice, call propose_invoice directly. It already looks up the client (email and payment risk), so do NOT call list_invoices or get_client_insights first. If a known client's email is missing, you may pass just client_name. For high-risk clients the system automatically adds a suggested 50% deposit (paid upfront through PayPal's partial-payment option) unless the user specified one; tell the user, and say they can remove it on the slip. For medium risk, suggest a shorter due date.
+- Sales tax: only add tax_percent if the user mentions tax (e.g. "add 8% sales tax"). Default tax: ${config.defaultTaxPercent}%.
+- Recurring work ("every month", "weekly retainer"): use propose_recurring. Explain that each period a new draft will appear for approval; nothing is sent automatically.
 - For reminders, write the subject and message yourself. Match tone to how late it is: friendly (first nudge), firm (second), final (repeated/very late). Be professional and human, never rude. Sign off as ${config.businessName}.
-- Reply in the same language the user writes in (English, Hindi or Hinglish are all fine). Keep replies short and skimmable; use **bold** for key amounts.`;
+- Reply in clear, friendly English (US business tone). Keep replies short and skimmable; use **bold** for key amounts.`;
 }
 
 const invoiceRef = { type: 'string', description: 'Invoice number (e.g. "0012") or id' };
@@ -68,7 +70,7 @@ export const tools = [
       type: 'object',
       properties: {
         client_name: { type: 'string' },
-        client_email: { type: 'string' },
+        client_email: { type: 'string', description: 'Required for new clients; optional for known ones' },
         items: {
           type: 'array',
           items: {
@@ -85,8 +87,36 @@ export const tools = [
         due_in_days: { type: 'number', description: 'Days until due (default 7)' },
         due_date: { type: 'string', description: 'YYYY-MM-DD (overrides due_in_days)' },
         note: { type: 'string', description: 'Optional friendly note shown on the invoice' },
+        tax_percent: { type: 'number', description: 'Sales tax percent, only if the user asked for tax' },
+        deposit_percent: { type: 'number', description: 'Upfront deposit as % of total (PayPal partial payment). 0 = no deposit.' },
       },
-      required: ['client_name', 'client_email', 'items'],
+      required: ['client_name', 'items'],
+    },
+  },
+  {
+    name: 'propose_recurring',
+    description: 'Prepare a recurring invoice schedule (weekly or monthly) for approval. Each period creates a new draft for the user to approve.',
+    parameters: {
+      type: 'object',
+      properties: {
+        client_name: { type: 'string' },
+        client_email: { type: 'string' },
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { name: { type: 'string' }, quantity: { type: 'number' }, unit_price: { type: 'number' } },
+            required: ['name', 'quantity', 'unit_price'],
+          },
+        },
+        frequency: { type: 'string', enum: ['weekly', 'monthly'] },
+        start_date: { type: 'string', description: 'YYYY-MM-DD of the first invoice (default today)' },
+        due_in_days: { type: 'number', description: 'Payment terms for each invoice (default 7)' },
+        currency: { type: 'string' },
+        tax_percent: { type: 'number' },
+        note: { type: 'string' },
+      },
+      required: ['client_name', 'client_email', 'items', 'frequency'],
     },
   },
   {
@@ -168,6 +198,10 @@ function makeHandlers(created) {
 
     propose_invoice(input) {
       const known = findClient(input.client_email) || findClient(input.client_name);
+      const risk = known ? clientStats(known.id, today) : null;
+      // Risk-based deposit: if the client usually pays late and no deposit was specified,
+      // suggest collecting 50% upfront (PayPal partial payment).
+      const autoDeposit = input.deposit_percent === undefined && risk?.riskLabel === 'high';
       const draft = normaliseInvoiceDraft({
         clientName: input.client_name || known?.name,
         clientEmail: input.client_email || known?.email,
@@ -176,14 +210,44 @@ function makeHandlers(created) {
         dueInDays: input.due_in_days,
         dueDate: input.due_date,
         note: input.note,
+        taxPercent: input.tax_percent,
+        depositPercent: autoDeposit ? 50 : input.deposit_percent,
+        depositSuggested: autoDeposit,
       });
-      const risk = known ? clientStats(known.id, today) : null;
       draft.risk = risk ? { label: risk.riskLabel, avgDaysLate: risk.avgDaysLate, overdueCount: risk.overdueCount } : null;
       const a = createAction('create_invoice', draft, {
         summary: `Invoice ${draft.clientName} · ${draft.currency} ${draft.total}`,
       });
       created.push(a);
-      return { status: 'awaiting_user_approval', action_id: a.id, total: draft.total, currency: draft.currency, dueDate: draft.dueDate, clientRisk: a.payload.risk };
+      return {
+        status: 'awaiting_user_approval',
+        action_id: a.id,
+        subtotal: draft.subtotal,
+        tax: draft.tax,
+        total: draft.total,
+        currency: draft.currency,
+        dueDate: draft.dueDate,
+        deposit: draft.depositAmount ? { amount: draft.depositAmount, autoSuggested: draft.depositSuggested } : null,
+        clientRisk: draft.risk,
+      };
+    },
+
+    propose_recurring(input) {
+      const known = findClient(input.client_email) || findClient(input.client_name);
+      const d = normaliseScheduleDraft({
+        clientName: input.client_name || known?.name,
+        clientEmail: input.client_email || known?.email,
+        items: input.items,
+        currency: input.currency,
+        taxPercent: input.tax_percent,
+        frequency: input.frequency,
+        startDate: input.start_date,
+        dueInDays: input.due_in_days,
+        note: input.note,
+      });
+      const a = createAction('create_schedule', d, { summary: `Recurring ${d.frequency} · ${d.clientName} · ${d.currency} ${d.total}` });
+      created.push(a);
+      return { status: 'awaiting_user_approval', action_id: a.id, frequency: d.frequency, firstDraftOn: d.startDate, totalPerInvoice: d.total };
     },
 
     propose_reminder({ invoice, tone = 'friendly', subject, message }) {

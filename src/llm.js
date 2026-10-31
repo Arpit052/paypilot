@@ -11,6 +11,8 @@ import { config } from './config.js';
 export class LlmError extends Error {}
 
 const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS || 90000);
+// per attempt; a slow Gemini model falls through to the next fallback instead of hanging
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS || 40000);
 
 /** POST JSON to an LLM API with a timeout and a one-line log in the server console. */
 async function postJson(url, headers, body, label) {
@@ -165,7 +167,11 @@ async function openaiComplete({ system, messages, tools, maxTokens = 4096 }) {
 }
 
 // ---------------- Google Gemini (native generateContent API) ----------------
-export function toGemini(messages) {
+// Thought signatures are tied to the model that produced them. When a conversation moves
+// to a fallback model, Gemini accepts this documented placeholder instead.
+const FOREIGN_SIGNATURE = 'skip_thought_signature_validator';
+
+export function toGemini(messages, model) {
   return messages.map((m) => {
     if (m.role === 'tool') {
       return {
@@ -185,7 +191,8 @@ export function toGemini(messages) {
     return {
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: m.content.map((c) => {
-        const sig = c.extra?.thoughtSignature ? { thoughtSignature: c.extra.thoughtSignature } : {};
+        const own = c.extra?.thoughtSignature && (!c.extra.sigModel || !model || c.extra.sigModel === model);
+        const sig = c.extra?.thoughtSignature ? { thoughtSignature: own ? c.extra.thoughtSignature : FOREIGN_SIGNATURE } : {};
         if (c.type === 'text') return { text: c.text, ...sig };
         if (c.type === 'image') return { inlineData: { mimeType: c.mediaType, data: c.data } };
         if (c.type === 'tool_call') {
@@ -208,36 +215,77 @@ async function geminiClient() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Gemini call with automatic wait-and-retry when the free-tier per-minute limit is hit. */
+// Per-model cool-downs after a rate limit / overload, and models that reject thinkingLevel.
+const cooldownUntil = new Map();
+const noThinking = new Set();
+
+function classify(e) {
+  const msg = e.message || '';
+  if (e.rateLimited || /exceeded your current quota|RESOURCE_EXHAUSTED|\b429\b/i.test(msg)) return 'rate';
+  if (/high demand|overloaded|UNAVAILABLE|\b503\b|timed? ?out|did not answer/i.test(msg)) return 'busy';
+  if (/no longer available|not found|is not supported for generateContent|\b404\b/i.test(msg)) return 'missing';
+  if (/thinking level|thinking_level|thinkingConfig|thinking is not supported/i.test(msg)) return 'thinking';
+  return 'other';
+}
+
+/**
+ * Gemini call with resilience for free-tier keys:
+ *  - tries the primary model, then GEMINI_FALLBACK_MODELS (each model has its own quota)
+ *  - models that are rate-limited/overloaded get a short cool-down
+ *  - if every model is limited, waits once for the shortest retry window
+ */
 async function geminiComplete(args) {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await geminiOnce(args);
-    } catch (e) {
-      const m = /retry in ([\d.]+)s/i.exec(e.message || '');
-      const rateLimited = e.rateLimited || /exceeded your current quota|RESOURCE_EXHAUSTED|429/i.test(e.message || '');
-      if (!rateLimited) throw e;
-      const wait = Math.min(Math.ceil(m ? Number(m[1]) : 10) + 1, 30);
-      // daily quota (or a long wait) - don't hang the user
-      if (attempt >= 2 || (m && Number(m[1]) > 30)) {
-        throw new LlmError('Gemini free-tier limit reached. Wait about a minute and try again (or use a different Gemini model / a paid key).');
+  const models = [config.llm.geminiModel, ...config.llm.geminiFallbacks.filter((m) => m !== config.llm.geminiModel)];
+  let waited = false;
+  for (;;) {
+    let lastErr = null;
+    let shortestRetry = Infinity;
+    for (const model of models) {
+      if ((cooldownUntil.get(model) || 0) > Date.now()) continue;
+      try {
+        return await geminiOnce({ ...args, model });
+      } catch (e) {
+        let kind = classify(e);
+        if (kind === 'thinking' && !noThinking.has(model)) {
+          noThinking.add(model); // retry this model once without a thinking level
+          try {
+            return await geminiOnce({ ...args, model });
+          } catch (e2) {
+            e = e2;
+            kind = classify(e2);
+          }
+        }
+        lastErr = e;
+        if (kind === 'other') throw e;
+        const retry = Number(/retry in ([\d.]+)s/i.exec(e.message || '')?.[1]);
+        const coolSecs = kind === 'missing' ? 3600 : Number.isFinite(retry) ? retry + 1 : kind === 'busy' ? 30 : 20;
+        cooldownUntil.set(model, Date.now() + coolSecs * 1000);
+        shortestRetry = Math.min(shortestRetry, coolSecs);
+        console.log(`  [AI] ${model} ${kind === 'rate' ? 'rate-limited' : kind === 'busy' ? 'busy' : 'unavailable'} - trying next model`);
       }
-      console.log(`  [AI] free-tier rate limit - waiting ${wait}s and retrying...`);
-      await sleep(wait * 1000);
     }
+    // every model is cooling down: wait once (max 30s) for the earliest one, then give up
+    const nextFree = Math.min(...models.map((m) => cooldownUntil.get(m) || 0));
+    const waitMs = Math.max(0, Math.min(Number.isFinite(shortestRetry) ? shortestRetry * 1000 : nextFree - Date.now(), nextFree - Date.now()));
+    if (waited || waitMs > 30000) {
+      if (lastErr && classify(lastErr) === 'busy') throw new LlmError('Gemini is very busy right now. Please try again in a minute.');
+      throw new LlmError('Gemini free-tier limit reached on all models. Wait about a minute and try again (a paid key removes this limit).');
+    }
+    waited = true;
+    console.log(`  [AI] all models limited - waiting ${Math.ceil(waitMs / 1000)}s`);
+    await sleep(waitMs + 250);
   }
 }
 
-async function geminiOnce({ system, messages, tools, maxTokens = 4096 }) {
-  const model = config.llm.geminiModel;
-  const thinking = config.llm.geminiThinking;
+async function geminiOnce({ system, messages, tools, maxTokens = 4096, model = config.llm.geminiModel }) {
+  const thinking = noThinking.has(model) ? 'off' : config.llm.geminiThinking;
   const ai = await geminiClient();
   const t0 = Date.now();
   let resp;
   try {
     resp = await ai.models.generateContent({
       model,
-      contents: toGemini(messages),
+      contents: toGemini(messages, model),
       config: {
         systemInstruction: system,
         maxOutputTokens: maxTokens,
@@ -245,14 +293,14 @@ async function geminiOnce({ system, messages, tools, maxTokens = 4096 }) {
         ...(tools?.length
           ? { tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.parameters })) }] }
           : {}),
-        abortSignal: AbortSignal.timeout(TIMEOUT_MS),
+        abortSignal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       },
     });
   } catch (e) {
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     if (e.name === 'AbortError' || e.name === 'TimeoutError' || /abort/i.test(e.message)) {
       console.log(`  [AI] ${model}: no answer after ${secs}s (timeout)`);
-      throw new LlmError(`The AI did not answer within ${TIMEOUT_MS / 1000} seconds. Try again.`);
+      throw new LlmError(`The AI did not answer within ${GEMINI_TIMEOUT_MS / 1000} seconds. Try again.`);
     }
     let msg = e.message || String(e);
     try {
@@ -271,7 +319,10 @@ async function geminiOnce({ system, messages, tools, maxTokens = 4096 }) {
   (cand?.content?.parts || []).forEach((p, i) => {
     if (p.thought) return; // internal reasoning summary - not shown
     const extra = {};
-    if (p.thoughtSignature) extra.thoughtSignature = p.thoughtSignature;
+    if (p.thoughtSignature) {
+      extra.thoughtSignature = p.thoughtSignature;
+      extra.sigModel = model;
+    }
     if (p.functionCall) {
       if (p.functionCall.id) extra.callId = p.functionCall.id;
       content.push({ type: 'tool_call', id: p.functionCall.id || `g_${Date.now()}_${i}`, name: p.functionCall.name, input: p.functionCall.args || {}, extra });

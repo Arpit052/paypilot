@@ -21,15 +21,19 @@ Freelancers lose time and money on getting paid:
 
 | Feature | How it works |
 |---|---|
-| **Text → invoice** | *"Bill Rahul (rahul@abc.com) for 3 logo concepts at $150 and an urgent revision for $60, due in 10 days."* The AI extracts the client, line items, rates and due date, and puts an editable **invoice slip** in the approval tray. |
+| **Text → invoice** | *"Bill Jake (jake@abc.com) for 3 logo concepts at $150 and an urgent revision for $60, due in 10 days."* The AI extracts the client, line items, rates and due date, and puts an editable **invoice slip** in the approval tray. |
 | **Screenshot → invoice** | Attach or paste a screenshot of a client email or chat. A vision model reads it and drafts the invoice. |
 | **Human-in-the-loop** | The AI can only *propose*. Nothing reaches PayPal or the client until you click **Approve & send via PayPal**. You can edit any field first. |
 | **Real PayPal invoices** | Approved drafts are created and sent with the **PayPal Invoicing v2 API**. The client gets PayPal's email and payment page. |
 | **Live payment status** | **PayPal webhooks** (`INVOICING.INVOICE.PAID`, with signature verification) and on-demand polling update the dashboard as soon as a client pays. |
 | **Client risk scoring** | Each client gets a risk score from their payment history (average days late, late ratio, current overdue). The agent warns you before you invoice a risky client and suggests a shorter due date or an advance. |
 | **Escalating follow-ups** | PayPilot scans for overdue invoices, and the AI drafts a reminder for each whose tone moves from *friendly* to *firm* to *final*, based on reminders already sent and days overdue. Approve, and it goes out through PayPal's **remind** endpoint. This can run on a schedule. |
+| **Deposits for risky clients** | When a client usually pays late, the agent automatically adds a **50% upfront deposit** using PayPal's **partial-payment** option, and tells you why. You can change or remove it on the slip. |
+| **Sales tax** | Add a sales-tax % to any invoice ("plus 8% sales tax"). It's sent to PayPal as per-line tax, so the client sees a proper breakdown. |
+| **Recurring invoices** | *"Bill Emily $600 every month."* Creates a weekly or monthly schedule. Each period a new draft lands in your approval tray, so nothing auto-sends. Pause, resume or delete schedules on the Clients page. |
+| **AI money brief** | One click on the dashboard gives a 100-word summary of where your money stands and the 2–3 most urgent actions, written only from computed numbers. |
 | **Cash-flow forecast** | Expected incoming money over the next 30 days, weighted by each client's real payment behaviour. |
-| **Ask anything** | *"Who owes me money?"*, *"Is mahine kitna kamaya?"*, *"Cancel Neha's invoice."* The agent answers from PayPal data and replies in your language (English, Hindi or Hinglish). |
+| **Ask anything** | *"Who owes me money?"*, *"How much did I earn this month?"*, *"Cancel Olivia's invoice."* The agent answers from your real PayPal data, never from guesses. |
 
 | Dashboard | Follow-ups | Clients |
 |---|---|---|
@@ -54,7 +58,14 @@ flowchart LR
   CRON[Scheduler] -->|/api/cron/followups| FU[Follow-up scanner] -->|AI drafts reminder| Q
 ```
 
-**Stack.** Node.js + **Express 5** API, **SQLite** (Node's built-in `node:sqlite`, with a transactional repository layer and atomic approval claims so a double-click can never send twice), **Google Gen AI SDK** (`@google/genai`) for Gemini, PayPal REST APIs, and a vanilla-JS frontend.
+**Stack.** Node.js + **Express 5** API, **SQLite** (Node's built-in `node:sqlite`, with a transactional repository layer and automatic migrations), **Google Gen AI SDK** (`@google/genai`) for Gemini, PayPal REST APIs, and a vanilla-JS frontend.
+
+**Reliability and security.**
+- **Exactly-once payments:** approvals are claimed atomically (a double-click can't send twice), and every PayPal write carries a `PayPal-Request-Id` and a local checkpoint, so a retry after a network failure resumes instead of creating a duplicate invoice.
+- **Resilient AI:** if the primary Gemini model is rate-limited or overloaded, PayPilot falls back to other Gemini models (each has its own quota) and handles thought signatures across models.
+- **Background jobs:** a scheduler (default every 6 h) syncs payment status from PayPal, creates due recurring drafts, and drafts reminders for overdue invoices. Everything still waits for approval.
+- **Optional passcode login** (`APP_PASSWORD`) with an HMAC-signed, HttpOnly session cookie. Webhooks, cron and `/api/health` stay public.
+- Per-IP rate limiting on AI endpoints, a strict Content-Security-Policy and other security headers, verified PayPal webhooks, and dates computed in the business time zone (`APP_TIMEZONE`).
 
 **Agent design.** The model gets **read tools** (invoices, client insights, earnings, forecast) and **proposal tools**. Proposal tools validate the draft (email format, positive amounts, due date not in the past) and create a *pending action*. They never call PayPal. Only the `/api/actions/:id/approve` endpoint, triggered by a human click, runs the PayPal calls. So even if the model gets confused or receives a prompt injection through a screenshot, it can't move money or message a client.
 
@@ -64,7 +75,7 @@ flowchart LR
 |---|---|---|
 | OAuth 2.0 | `POST /v1/oauth2/token` | Client-credentials token (cached) |
 | Invoicing v2 | `POST /v2/invoicing/generate-next-invoice-number` | Invoice numbering |
-| Invoicing v2 | `POST /v2/invoicing/invoices` | Create draft invoice |
+| Invoicing v2 | `POST /v2/invoicing/invoices` | Create draft invoice, with per-line **sales tax** and **partial payment** (deposit) configuration |
 | Invoicing v2 | `POST /v2/invoicing/invoices/{id}/send` | Send to client (PayPal email and payment page) |
 | Invoicing v2 | `GET /v2/invoicing/invoices/{id}` | Poll status and payments |
 | Invoicing v2 | `POST /v2/invoicing/invoices/{id}/remind` | AI-drafted payment reminders |
@@ -120,11 +131,11 @@ With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-proces
 
 ## Try this flow (what the demo video shows)
 
-1. **Assistant:** *"Bill Rahul Sharma (your-sandbox-personal-email) for 3 logo concepts at $150 each and an urgent revision for $60, due in 10 days."* An invoice slip appears with a risk warning if Rahul pays late.
+1. **Assistant:** *"Bill Jake Miller (your-sandbox-personal-email) for 3 logo concepts at $150 each and an urgent revision for $60, due in 10 days."* An invoice slip appears with a risk warning if Jake pays late.
 2. Edit a rate and click **Approve & send via PayPal**. The slip is stamped **SENT**. Open the sandbox personal account to see the invoice.
 3. Pay it from the sandbox personal account. The dashboard flips to **Paid** through the webhook.
 4. **Follow-ups → Find overdue invoices.** The AI drafts tone-matched reminders. Approve one, and PayPal sends the reminder.
-5. Ask *"How much cash should I expect in the next 30 days?"* or *"Is mahine kitna kamaya?"*
+5. Ask *"How much cash should I expect in the next 30 days?"* or *"How much did I earn this month?"*
 
 > **Tip for demos:** set `DEMO_TIME_OFFSET_DAYS=15` and restart to fast-forward the app's clock, so invoices you just sent become overdue and the follow-up flow runs against real sandbox invoices.
 
@@ -155,12 +166,25 @@ src/actions.js       Pending actions, approval, execution against PayPal
 src/followups.js     Overdue scanner + AI reminder drafting
 src/analytics.js     Risk score, earnings, cash-flow forecast
 src/sync.js          Polling + webhook status updates
+src/recurring.js     Recurring schedules → invoice drafts
+src/scheduler.js     Background jobs (PayPal sync, overdue scan, recurring)
+src/brief.js         AI money brief from computed facts
 public/              UI (vanilla JS): assistant, dashboard, follow-ups, clients
 test/                End-to-end tests
 ```
 
+## Configuration (optional `.env` settings)
+| Variable | Default | What it does |
+|---|---|---|
+| `APP_PASSWORD` | – | Require a passcode to open the app (recommended for a public demo URL) |
+| `APP_TIMEZONE` | system time zone | Time zone for "today" and due dates, e.g. `America/New_York` |
+| `DEFAULT_TAX_PERCENT` | `0` | Sales tax applied when none is specified |
+| `GEMINI_FALLBACK_MODELS` | `gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite` | Models to try when the main one is busy |
+| `SCHEDULER_INTERVAL_MIN` | `360` | Background job interval in minutes (`0` = off) |
+| `CHAT_RATE_LIMIT_PER_MIN` | `15` | Assistant messages per minute per IP |
+
 ## Security notes
-- The AI cannot execute payments, reminders or cancellations. A human approves every action.
+- The AI cannot execute payments, reminders or cancellations. A human approves every action, including each recurring invoice.
 - Webhook signatures are verified with PayPal before any state changes (sandbox/live).
 - Keys live only in `.env` (git-ignored). Uploaded screenshots are sent to the model for that turn only and are not kept in chat history.
 
