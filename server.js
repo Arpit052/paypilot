@@ -2,7 +2,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { config, isoDate } from './src/config.js';
+import { config, isoDate, envFile } from './src/config.js';
 import { db, resetDb } from './src/db.js';
 import { chat, resetSession } from './src/agent.js';
 import { listActions, approveAction, rejectAction } from './src/actions.js';
@@ -206,6 +206,13 @@ export function start(port = config.port) {
 if (process.argv[1] && path.resolve(process.argv[1]) === path.join(config.root, 'server.js')) {
   start().then(() => {
     console.log(`\n  PayPilot running → http://localhost:${config.port}`);
+    console.log(
+      envFile
+        ? `  Settings: read from "${envFile}"`
+        : `  Settings: NO .env FILE FOUND in ${config.root}`
+    );
+    const keys = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET'];
+    console.log('  Keys found: ' + (keys.filter((k) => process.env[k]).join(', ') || 'none'));
     console.log(`  PayPal: ${config.paypal.mode}${isMock ? ' (offline simulation - add PayPal sandbox keys to .env for real invoices)' : ''}`);
     console.log(`  AI:     ${llmAvailable() ? config.llm.provider : 'NOT CONFIGURED - set ANTHROPIC_API_KEY or OPENAI_API_KEY'}\n`);
   });

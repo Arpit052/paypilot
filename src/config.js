@@ -1,16 +1,48 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// Load .env if present (Node >= 20.12). Real env vars always win.
-try {
-  process.loadEnvFile(path.join(ROOT, '.env'));
-} catch {
-  /* no .env file - fine */
+/**
+ * Load settings from .env. Tolerant of what Windows Notepad produces:
+ * UTF-8 with BOM, UTF-16, a ".env.txt" name, spaces around "=", quotes.
+ * Real environment variables always win. Returns the file name used, or null.
+ */
+function loadEnvFile() {
+  for (const name of ['.env', '.env.txt', 'env', 'env.txt', '.env.example.txt']) {
+    const file = path.join(ROOT, name);
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
+    const buf = fs.readFileSync(file);
+    let text;
+    if (buf[0] === 0xff && buf[1] === 0xfe) text = buf.subarray(2).toString('utf16le');
+    else if (buf[0] === 0xfe && buf[1] === 0xff) text = Buffer.from(buf.subarray(2)).swap16().toString('utf16le');
+    else text = buf.toString('utf8');
+    text = text.replace(/^﻿/, '');
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (!m) continue;
+      let v = m[2];
+      if (/^(["']).*\1$/.test(v)) v = v.slice(1, -1);
+      else v = v.replace(/\s+#.*$/, '');
+      if (!process.env[m[1]]) process.env[m[1]] = v;
+    }
+    return name;
+  }
+  return null;
 }
 
+export const envFile = loadEnvFile();
+
 const env = process.env;
+
+// Convenience: a Gemini key (starts with "AIza") pasted into OPENAI_API_KEY or
+// GEMINI_API_KEY works even if the base URL / model lines were left out.
+if (!env.OPENAI_API_KEY && env.GEMINI_API_KEY) env.OPENAI_API_KEY = env.GEMINI_API_KEY;
+if (env.OPENAI_API_KEY?.startsWith('AIza')) {
+  env.OPENAI_BASE_URL ||= 'https://generativelanguage.googleapis.com/v1beta/openai';
+  env.OPENAI_MODEL ||= 'gemini-flash-latest';
+}
 
 function detectLlmProvider() {
   if (env.LLM_PROVIDER) return env.LLM_PROVIDER.toLowerCase();
