@@ -75,7 +75,7 @@ export function toast(msg) {
   setTimeout(() => t.remove(), 3200);
 }
 
-const LOGO = `<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="20" height="24" rx="2" fill="#fff"/><path d="M7 11h12M7 15h12M7 19h7" stroke="#18213d" stroke-width="2" stroke-linecap="round"/><circle cx="23" cy="22" r="7" fill="#2346d8" stroke="#18213d" stroke-width="2"/><path d="M20 22l2 2 4-4" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>`;
+export const LOGO = `<svg viewBox="0 0 40 40" aria-hidden="true"><defs><linearGradient id="ppg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset=".55" stop-color="#6366f1"/><stop offset="1" stop-color="#38bdf8"/></linearGradient></defs><rect width="40" height="40" rx="11" fill="url(#ppg)"/><path d="M7.5 32.5C11 31 13.5 28 15.6 24.4" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="2.2" stroke-linecap="round" stroke-dasharray=".1 4.2"/><path d="M31.5 8.5 10 17.6l8.2 3.4 3.3 8.5z" fill="#fff"/><path d="M31.5 8.5 18.2 21l3.3 8.5z" fill="#c7d2fe"/></svg>`;
 
 export let CONFIG = null;
 
@@ -89,7 +89,7 @@ export async function header(active) {
   const el = document.createElement('header');
   el.className = 'topbar';
   el.innerHTML = `
-    <a class="brand" href="/">${LOGO}PayPilot</a>
+    <a class="brand" href="/" aria-label="PayPilot home">${LOGO}<span class="wordmark">PayPilot</span></a>
     <nav class="nav" aria-label="Main">
       ${link('/', 'Assistant', 'chat')}
       ${link('/dashboard', 'Dashboard', 'dashboard')}

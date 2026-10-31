@@ -39,7 +39,7 @@ function safeEqual(a, b) {
 }
 
 // Routes that must work without a session: login itself, PayPal webhooks, cron, health.
-const PUBLIC_PATHS = [/^\/login(\.html)?$/, /^\/app\.css$/, /^\/api\/login$/, /^\/api\/health$/, /^\/api\/webhooks\//, /^\/api\/cron\//];
+const PUBLIC_PATHS = [/^\/login(\.html)?$/, /^\/app\.css$/, /^\/common\.js$/, /^\/favicon\.svg$/, /^\/fonts\//, /^\/api\/login$/, /^\/api\/health$/, /^\/api\/webhooks\//, /^\/api\/cron\//];
 
 function requireLogin(req, res, next) {
   if (!config.appPassword || PUBLIC_PATHS.some((re) => re.test(req.path))) return next();
@@ -74,8 +74,8 @@ function securityHeaders(req, res, next) {
     'Referrer-Policy': 'same-origin',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     'Content-Security-Policy':
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-      "font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+      "font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
   });
   next();
 }

@@ -22,6 +22,9 @@ test('API and pages require a session; webhooks/health stay public', async () =>
   assert.equal(page.status, 302);
   assert.equal(page.headers.get('location'), '/login.html');
   assert.equal((await fetch(base + '/login.html')).status, 200);
+  for (const asset of ['/app.css', '/common.js', '/favicon.svg', '/fonts/manrope-latin-400-normal.woff2']) {
+    assert.equal((await fetch(base + asset)).status, 200, asset + ' must load on the login page');
+  }
   assert.equal((await fetch(base + '/api/health')).status, 200);
   const wh = await fetch(base + '/api/webhooks/paypal', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   assert.notEqual(wh.status, 401);

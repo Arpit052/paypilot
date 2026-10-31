@@ -5,11 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PayPilot · Sign in</title>
   <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#060914">
 </head>
 <body>
 <main class="login">
+  <div class="brand-big" id="brandBig"></div>
   <form class="slip" id="form">
-    <div class="slip-kind" style="font-size:22px">PayPilot</div>
+    <div class="slip-kind" style="font-size:18px">Welcome back</div>
     <p class="muted" style="margin:4px 0 14px">Enter the passcode to open this workspace.</p>
     <label for="pw">Passcode</label>
     <input id="pw" type="password" autocomplete="current-password" required autofocus>
@@ -17,7 +20,9 @@
     <div class="slip-error" id="err" role="alert"></div>
   </form>
 </main>
-<script>
+<script type="module">
+  import { LOGO } from '/common.js';
+  document.getElementById('brandBig').innerHTML = `${LOGO}<span class="wordmark">PayPilot</span>`;
   document.getElementById('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = document.getElementById('err');

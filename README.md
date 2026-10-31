@@ -66,6 +66,8 @@ flowchart LR
   CRON[Scheduler] -->|/api/cron/followups| FU[Follow-up scanner] -->|AI drafts reminder| Q
 ```
 
+**Design.** A dark "midnight cockpit" interface (frosted-glass panels on an aurora background) with invoices rendered as white paper slips that get a rubber-stamp animation when sent. The PayPilot logo and wordmark are original; fonts (Unbounded, Manrope; SIL Open Font License) are bundled so it looks right offline.
+
 **Stack.** Node.js + **Express 5** API, **SQLite** (Node's built-in `node:sqlite`, with a transactional repository layer and automatic migrations), **Google Gen AI SDK** (`@google/genai`) for Gemini, PayPal REST APIs, and a vanilla-JS frontend.
 
 **Reliability and security.**

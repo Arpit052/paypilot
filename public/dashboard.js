@@ -50,7 +50,12 @@ function chartSvg({ months }) {
   const W = 640, H = 240, padL = 8, padB = 28, padT = 22, gap = 22;
   const max = Math.max(1, ...months.map((b) => b.value));
   const bw = (W - padL * 2 - gap * (months.length - 1)) / months.length;
-  let out = '';
+  let out = `<defs><linearGradient id="barg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#6366f1" stop-opacity=".75"/></linearGradient>
+    <linearGradient id="barsel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7dd3fc"/><stop offset="1" stop-color="#38bdf8" stop-opacity=".8"/></linearGradient></defs>`;
+  for (let g = 0; g <= 3; g++) {
+    const gy = padT + ((H - padB - padT) * g) / 3;
+    out += `<line x1="0" x2="${W}" y1="${gy}" y2="${gy}" stroke="rgba(255,255,255,0.06)"/>`;
+  }
   months.forEach((b, i) => {
     const x = padL + i * (bw + gap);
     const h = ((H - padB - padT) * b.value) / max;
@@ -58,9 +63,9 @@ function chartSvg({ months }) {
     const sel = state.month === b.key;
     out += `<g class="bar" role="button" tabindex="0" data-month="${b.key}" aria-label="${b.label}: ${money(b.value, cur)}. Show payments">`;
     out += `<rect x="${x - 6}" y="${padT - 10}" width="${bw + 12}" height="${H - padT + 10}" fill="transparent"/>`;
-    out += `<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(h, 1)}" rx="3" fill="${sel ? '#2346d8' : '#18213d'}"><title>${b.label}: ${money(b.value, cur)}</title></rect>`;
-    if (b.value) out += `<text x="${x + bw / 2}" y="${y - 6}" text-anchor="middle" font-size="12" fill="#4a5575">${money(b.value, cur)}</text>`;
-    out += `<text x="${x + bw / 2}" y="${H - 9}" text-anchor="middle" font-size="12" fill="${sel ? '#2346d8' : '#7c86a2'}" font-weight="${sel ? 700 : 400}">${b.label}</text></g>`;
+    out += `<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(h, 1)}" rx="8" fill="url(#${sel ? 'barsel' : 'barg'})"><title>${b.label}: ${money(b.value, cur)}</title></rect>`;
+    if (b.value) out += `<text x="${x + bw / 2}" y="${y - 7}" text-anchor="middle" font-size="12" font-weight="700" fill="${sel ? '#e0f2fe' : '#c7cdea'}">${money(b.value, cur)}</text>`;
+    out += `<text x="${x + bw / 2}" y="${H - 9}" text-anchor="middle" font-size="12" fill="${sel ? '#7dd3fc' : '#7e88aa'}" font-weight="${sel ? 800 : 500}">${b.label}</text></g>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Money received per month">${out}</svg>`;
 }
