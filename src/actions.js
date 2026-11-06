@@ -234,9 +234,30 @@ const executors = {
 };
 
 /** Approve (optionally with user edits) and execute against PayPal. */
+const INVOICE_ACTIONS = new Set(['send_reminder', 'cancel_invoice', 'add_late_fee']);
+const gone = (a) => INVOICE_ACTIONS.has(a.type) && !findInvoice(a.payload?.invoiceId);
+
+/**
+ * Drafts whose invoice no longer exists (e.g. demo invoices removed when PayPal was
+ * connected, or after "Reset demo") are closed so they can't fail on approve.
+ */
+export function dropStaleActions() {
+  let n = 0;
+  for (const a of dbListActions({ status: 'pending' })) {
+    if (!gone(a)) continue;
+    updateAction(a.id, { status: 'rejected', error: 'Closed automatically: this invoice no longer exists.', decidedAt: new Date().toISOString() });
+    n++;
+  }
+  return n;
+}
+
 export async function approveAction(id, edits) {
   const a = getAction(id);
   if (!a) throw Object.assign(new Error('Action not found'), { status: 404 });
+  if (a.status === 'pending' && gone(a)) {
+    dropStaleActions();
+    throw Object.assign(new Error('This invoice no longer exists, so the draft was closed. Refresh the page.'), { status: 410 });
+  }
   // atomic claim: a double-click can never execute the same action twice
   if (!transitionAction(id, 'pending', 'executing')) throw Object.assign(new Error(`Action already ${a.status}`), { status: 409 });
   const payload = edits && typeof edits === 'object' ? { ...a.payload, ...edits } : a.payload;

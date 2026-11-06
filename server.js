@@ -5,7 +5,7 @@ import express from 'express';
 import { config, isoDate, envFile } from './src/config.js';
 import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb, listSchedules, getSchedule, updateSchedule, deleteSchedule, getClient, logActivity } from './src/db.js';
 import { chatWithTranscript, getTranscript, resetSession } from './src/agent.js';
-import { listActions, approveAction, rejectAction, normaliseInvoiceDraft } from './src/actions.js';
+import { listActions, approveAction, rejectAction, normaliseInvoiceDraft, dropStaleActions } from './src/actions.js';
 import { earningsSummary, forecastCashflow, chartSeries, clientStats, clientName, isOverdue } from './src/analytics.js';
 import { syncInvoices, applyWebhookEvent, importFromPaypal } from './src/sync.js';
 import { scanFollowups } from './src/followups.js';
@@ -175,6 +175,7 @@ export function createApp() {
         removed++;
       }
     }
+    dropStaleActions();
     const imp = await importFromPaypal().catch(() => ({ imported: 0 }));
     if (req.body?.sampleHistory !== false && !listInvoices().some((i) => i.source === 'seed')) seedDemo();
     logActivity('paypal_connected', 'Connected to PayPal sandbox');
@@ -221,6 +222,7 @@ export function createApp() {
 
   // ---- approvals ----
   api.get('/actions', (req, res) => {
+    dropStaleActions();
     const { status, origin, type } = req.query;
     res.json({ actions: listActions({ status, origin, type }).slice(0, 100) });
   });

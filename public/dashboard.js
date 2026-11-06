@@ -47,7 +47,7 @@ function setFilter(f) {
 
 // ---------------- chart (months clickable) ----------------
 function chartSvg({ months }) {
-  const W = 640, H = 240, padL = 8, padB = 28, padT = 22, gap = 22;
+  const W = 640, H = 300, padL = 8, padB = 28, padT = 24, gap = 22;
   const max = Math.max(1, ...months.map((b) => b.value));
   const bw = (W - padL * 2 - gap * (months.length - 1)) / months.length;
   let out = `<defs><linearGradient id="barg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#6366f1" stop-opacity=".75"/></linearGradient>
@@ -68,6 +68,26 @@ function chartSvg({ months }) {
     out += `<text x="${x + bw / 2}" y="${H - 9}" text-anchor="middle" font-size="12" fill="${sel ? '#7dd3fc' : '#7e88aa'}" font-weight="${sel ? 800 : 500}">${b.label}</text></g>`;
   });
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Money received per month">${out}</svg>`;
+}
+
+// three plain facts under the chart: best month, monthly average, this month vs last
+function chartStats({ months }) {
+  if (!months.length) return '';
+  const best = months.reduce((a, b) => (b.value > a.value ? b : a));
+  const done = months.slice(0, -1); // the current month isn't over yet
+  const avg = done.length ? done.reduce((t, m) => t + m.value, 0) / done.length : 0;
+  const cur0 = months.at(-1), prev = months.at(-2);
+  let trend = 'No payments last month';
+  if (prev?.value) {
+    const pct = Math.round(((cur0.value - prev.value) / prev.value) * 100);
+    trend = pct === 0 ? `Same as ${prev.label}` : `${pct > 0 ? '+' : '−'}${Math.abs(pct)}% vs ${prev.label}`;
+  }
+  const stat = (label, value, sub) => `<div class="cstat"><span class="muted">${label}</span><b>${value}</b><span class="muted">${sub}</span></div>`;
+  return `<div class="chart-stats">
+    ${stat('Best month', money(best.value, cur), best.label)}
+    ${stat('Monthly average', money(Math.round(avg * 100) / 100, cur), `last ${done.length} full months`)}
+    ${stat(`${cur0.label} so far`, money(cur0.value, cur), trend)}
+  </div>`;
 }
 
 async function showMonth(key) {
@@ -300,6 +320,7 @@ async function load() {
   $('asof').textContent = `As of ${fmtDate(dash.today)}${dash.pendingApprovals ? ` · ${dash.pendingApprovals} draft${dash.pendingApprovals > 1 ? 's' : ''} waiting for your approval` : ''}`;
   renderFigures();
   $('chart').innerHTML = chartSvg(dash.chart);
+  $('chartStats').innerHTML = chartStats(dash.chart);
   $('feed').innerHTML = dash.activity.length
     ? dash.activity.map((a) => `<li><time datetime="${a.at}">${timeAgo(a.at)}</time><span>${esc(a.text)}</span></li>`).join('')
     : '<li class="muted">Nothing yet. Send your first invoice from the Assistant.</li>';

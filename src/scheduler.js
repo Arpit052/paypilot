@@ -2,6 +2,7 @@
 // reminders for overdue invoices. Everything it creates still waits for human approval.
 import { config } from './config.js';
 import { isMock } from './paypal.js';
+import { setupDone } from './settings.js';
 import { syncInvoices, importFromPaypal, importIfStale } from './sync.js';
 import { runRecurring } from './recurring.js';
 import { scanFollowups } from './followups.js';
@@ -12,6 +13,7 @@ let running = false;
 export const lastRun = { at: null, result: null };
 
 export async function runJobs() {
+  if (!setupDone()) return { skipped: 'waiting for the welcome screen' }; // nothing to do before PayPal/demo is chosen
   if (running) return { skipped: 'already running' };
   running = true;
   try {

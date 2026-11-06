@@ -1,51 +1,51 @@
 // Demo data so the dashboard, risk labels and forecast have history to work with.
-// It's modelled on a small US design studio's real-world mix of clients: one who is
-// always on time, one who pays a couple of days late like clockwork, one chronic late
-// payer, one who pays in instalments, and a brand-new client.
-// Historical (paid) invoices are marked source:"seed". In demo mode we also add
-// open/overdue invoices so the follow-up flow can be shown straight away.
+// Modelled on a small design studio's real client mix: a chronic late payer, a dental
+// office that pays like clockwork, an architecture firm whose accounts team always pays
+// two days after the due date, a gym owner who pays in parts, and a one-off private client.
+// Historical invoices are marked source:"seed" (shown as "demo", never sent to PayPal).
+// In demo mode we also add open/overdue invoices so follow-ups can be shown straight away.
 import { config, isoDate, addDays } from './config.js';
-import { upsertClient, logActivity, insertInvoice, findClient, transaction } from './db.js';
-import { isMock, mockNextNumber, mockPut } from './paypal.js';
+import { upsertClient, logActivity, insertInvoice, findClient, transaction, kvSet } from './db.js';
+import { isMock, mockPut } from './paypal.js';
 import { invoiceTotal } from './analytics.js';
 
-// lateBy: days late for each past invoice (0 = on time). work: what they were billed for.
 const CLIENTS = [
-  {
-    name: 'Ryan Castillo',
-    company: 'Castillo Coffee Roasters',
-    email: 'ryan@castillocoffee.example',
-    lateBy: [11, 16, 9, 19],
-    work: [['Logo refresh', 1, 640], ['Bag label design, 3 blends', 3, 145], ['Packaging revisions, round 3', 1, 312.5], ['Café menu board', 1, 535]],
-  },
-  {
-    name: 'Priya Raman',
-    company: 'Brightline Dental',
-    email: 'priya@brightlinedental.example',
-    lateBy: [0, 0, 0, 1, 0],
-    work: [['Monthly design retainer', 1, 725], ['Monthly design retainer', 1, 725], ['Patient welcome kit', 1, 418], ['Monthly design retainer', 1, 725], ['Appointment card reprint layout', 1, 95]],
-  },
-  {
-    name: 'Marcus Hollis',
-    company: 'Hollis & Grant Architects',
-    email: 'billing@hollisgrant.example',
-    lateBy: [2, 2, 2, 2, 2],
-    work: [['Project case-study layouts', 4, 162.5], ['Brand guidelines v2', 1, 1180], ['Award submission boards', 2, 240], ['Website copy & layout, about page', 1, 387.5], ['Holiday card design', 1, 210]],
-  },
-  {
-    name: 'Danielle Okafor',
-    company: 'Okafor Fitness',
-    email: 'dani@okaforfitness.example',
-    lateBy: [0, 4, 1],
-    work: [['Social media templates', 8, 42.5], ['Class schedule poster', 1, 185], ['Photo retouching', 14, 18.75]],
-  },
-  {
-    name: 'Ben Whitaker',
-    company: '',
-    email: 'ben.whitaker@example.com',
-    lateBy: [0],
-    work: [['Wedding invitation suite', 1, 460]],
-  },
+  { key: 'ryan', name: 'Ryan Castillo', company: 'Castillo Coffee Roasters', email: 'ryan@castillocoffee.co', net: 15 },
+  { key: 'priya', name: 'Priya Raman', company: 'Brightline Dental', email: 'office@brightlinedental.com', net: 15 },
+  { key: 'marcus', name: 'Marcus Hollis', company: 'Hollis & Grant Architects', email: 'ap@hollisgrant.com', net: 30 },
+  { key: 'dani', name: 'Danielle Okafor', company: 'Okafor Fitness', email: 'dani@okaforfitness.com', net: 15 },
+  { key: 'ben', name: 'Ben Whitaker', company: '', email: 'ben.whitaker@fastmail.com', net: 15 },
+];
+
+const RETAINER = ['Monthly design retainer (social + print)', 1, 725];
+
+// [client, issued N days ago, days late when paid, line items, extra]
+const HISTORY = [
+  ['marcus', 176, 2, [['Project case-study layouts', 4, 162.5]]],
+  ['ryan', 168, 11, [['Logo refresh', 1, 640], ['Brand colour and type sheet', 1, 180]]],
+  ['priya', 161, 0, [RETAINER]],
+  ['dani', 151, 0, [['Social media templates', 8, 42.5]]],
+  ['marcus', 141, 2, [['Brand guidelines v2', 1, 1180]]],
+  ['ryan', 131, 16, [['Bag label design, 3 blends', 3, 145]]],
+  ['priya', 130, 0, [RETAINER]],
+  ['priya', 113, 0, [['Patient welcome kit', 1, 418], ['Appointment card layout', 1, 95]]],
+  ['marcus', 105, 2, [['Award submission boards', 2, 240], ['Print-ready file prep', 2, 45]]],
+  ['priya', 99, 1, [RETAINER]],
+  ['ryan', 96, 9, [['Packaging revisions, round 1', 1, 312.5]]],
+  ['dani', 86, 4, [['Class schedule poster', 1, 185], ['Poster printing, 24 × 36 in', 3, 28]]],
+  ['ryan', 72, null, [['Café menu board', 1, 535]], { cancelled: true, note: 'Duplicate - replaced by the next invoice' }],
+  ['marcus', 70, 2, [['Website copy and layout, about page', 1, 387.5]]],
+  ['priya', 68, 0, [RETAINER]],
+  ['ryan', 63, 19, [['Café menu board', 1, 535], ['Menu photo retouching', 6, 22.5]]],
+  ['ben', 58, 0, [['Save-the-date cards', 1, 285]]],
+  ['dani', 51, 1, [['Photo retouching', 14, 18.75]]],
+  ['priya', 38, 0, [RETAINER]],
+];
+
+// Paid inside the current month, so "Earned this month" is never empty (e.g. on the 1st).
+const THIS_MONTH = [
+  ['priya', [RETAINER]],
+  ['ben', [['Wedding invitation suite', 1, 460], ['Envelope addressing', 120, 1.5]]],
 ];
 
 export function seedDemo() {
@@ -55,56 +55,51 @@ export function seedDemo() {
 
 function seedInner() {
   const today = isoDate();
-  let seq = 900;
+  const byKey = {};
+  for (const c of CLIENTS) byKey[c.key] = { ...c, row: upsertClient({ name: c.name, email: c.email, company: c.company }) };
+  const lines = (arr) => arr.map(([name, quantity, unitPrice]) => ({ name, quantity, unitPrice }));
 
-  CLIENTS.forEach((c, ci) => {
-    const client = upsertClient({ name: c.name, email: c.email, company: c.company });
-    c.lateBy.forEach((late, idx) => {
-      // spread over the last ~6 months, a little irregular like real work
-      const issue = addDays(today, -172 + idx * 33 + ((ci * 7 + idx * 5) % 11));
-      const due = addDays(issue, idx % 3 === 0 ? 14 : 30);
-      const [name, quantity, unitPrice] = c.work[idx % c.work.length];
-      const items = [{ name, quantity, unitPrice }];
-      const paid = addDays(due, late);
-      if (paid > today) return;
-      insertInvoice({
-        paypalId: null,
-        number: `D-${++seq}`,
-        clientId: client.id,
-        items,
-        currency: config.currency,
-        total: invoiceTotal(items),
-        status: 'PAID',
-        issueDate: issue,
-        dueDate: due,
-        paidDate: paid,
-        note: '',
-        payerUrl: null,
-        reminders: late > 7 ? [{ at: addDays(due, 5), subject: 'Friendly reminder', tone: 'friendly' }] : [],
-        source: 'seed',
-      });
-    });
-  });
+  // invoice numbers run in date order, like a real invoice book
+  let seq = 117;
+  const next = () => String(++seq).padStart(4, '0');
 
-  // Payments inside the current month, so "Earned this month" is never empty
-  // (e.g. when the demo runs on the 1st).
-  const recentPaid = [
-    { email: 'priya@brightlinedental.example', item: ['Monthly design retainer', 1, 725] },
-    { email: 'ben.whitaker@example.com', item: ['Save-the-date cards', 1, 285] },
-  ];
-  for (const r of recentPaid) {
-    const client = findClient(r.email);
-    const items = [{ name: r.item[0], quantity: r.item[1], unitPrice: r.item[2] }];
+  for (const [key, ago, late, work, extra = {}] of HISTORY) {
+    const c = byKey[key];
+    const issue = addDays(today, -ago);
+    const due = addDays(issue, c.net);
+    const items = lines(work);
+    const paid = late === null ? null : addDays(due, late);
     insertInvoice({
       paypalId: null,
-      number: `D-${++seq}`,
-      clientId: client.id,
+      number: next(),
+      clientId: c.row.id,
+      items,
+      currency: config.currency,
+      total: invoiceTotal(items),
+      status: extra.cancelled ? 'CANCELLED' : 'PAID',
+      issueDate: issue,
+      dueDate: due,
+      paidDate: paid && paid > today ? today : paid,
+      note: extra.note || '',
+      payerUrl: null,
+      reminders: late > 7 ? [{ at: addDays(due, 5), subject: 'Friendly reminder', tone: 'friendly' }] : [],
+      source: 'seed',
+    });
+  }
+
+  for (const [key, work] of THIS_MONTH) {
+    const c = byKey[key];
+    const items = lines(work);
+    insertInvoice({
+      paypalId: null,
+      number: next(),
+      clientId: c.row.id,
       items,
       currency: config.currency,
       total: invoiceTotal(items),
       status: 'PAID',
-      issueDate: addDays(today, -14),
-      dueDate: today,
+      issueDate: addDays(today, -12),
+      dueDate: addDays(today, -12 + c.net),
       paidDate: today,
       note: '',
       payerUrl: null,
@@ -116,31 +111,31 @@ function seedInner() {
   if (isMock()) {
     const open = [
       // chronic late payer: 12 days overdue, already nudged once
-      { email: 'ryan@castillocoffee.example', item: ['Packaging redesign, round 2', 1, 1240], issue: -42, due: -12, reminders: 1 },
-      // pays a couple of days late, every time
-      { email: 'billing@hollisgrant.example', item: ['Website copy & layout, services page', 1, 387.5], issue: -33, due: -3, reminders: 0 },
+      { key: 'ryan', work: [['Packaging redesign, round 2', 1, 1080], ['Dieline adjustments', 2, 80]], issue: -27, reminders: 1 },
+      // pays two days late, every time
+      { key: 'marcus', work: [['Website copy and layout, services page', 1, 387.5]], issue: -33 },
       // reliable retainer client
-      { email: 'priya@brightlinedental.example', item: ['Monthly design retainer', 1, 725], issue: -2, due: 12, reminders: 0 },
-      // pays in instalments: half already paid
-      { email: 'dani@okaforfitness.example', item: ['Instagram content pack', 12, 32.5], issue: -9, due: 6, reminders: 0, status: 'PARTIALLY_PAID', deposit: 195 },
+      { key: 'priya', work: [RETAINER], issue: -2 },
+      // pays in parts: half already paid
+      { key: 'dani', work: [['Instagram content pack', 12, 32.5]], issue: -9, status: 'PARTIALLY_PAID', deposit: 195 },
     ];
     for (const o of open) {
-      const client = findClient(o.email);
-      const number = mockNextNumber();
+      const c = byKey[o.key];
+      const number = next();
       const paypalId = `INV2-MOCK-${number}`;
-      const items = [{ name: o.item[0], quantity: o.item[1], unitPrice: o.item[2] }];
+      const items = lines(o.work);
       const status = o.status || 'SENT';
-      mockPut(paypalId, { status, reminders: o.reminders });
+      mockPut(paypalId, { status, reminders: o.reminders || 0 });
       insertInvoice({
         paypalId,
         number,
-        clientId: client.id,
+        clientId: c.row.id,
         items,
         currency: config.currency,
         total: invoiceTotal(items),
         status,
         issueDate: addDays(today, o.issue),
-        dueDate: addDays(today, o.due),
+        dueDate: addDays(today, o.issue + c.net),
         paidDate: null,
         note: '',
         payerUrl: `/mock-pay.html?id=${paypalId}`,
@@ -150,4 +145,6 @@ function seedInner() {
       });
     }
   }
+  // new demo invoices continue the same numbering
+  kvSet('mock:seq', seq);
 }

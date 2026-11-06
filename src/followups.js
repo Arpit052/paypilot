@@ -16,11 +16,13 @@ function toneFor(remindersSent, daysOverdue) {
 
 function templateReminder(inv, tone, daysOverdue) {
   const name = clientName(inv.clientId).split(' ')[0];
-  const amt = `${inv.currency} ${inv.total.toFixed(2)}`;
+  const amt = new Intl.NumberFormat('en-US', { style: 'currency', currency: inv.currency }).format(inv.total);
+  const due = new Date(`${inv.dueDate}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  const sign = config.businessName ? `\n${config.businessName}` : '';
   const body = {
-    friendly: `Hi ${name},\n\nHope you're doing well! Just a quick nudge that invoice #${inv.number} for ${amt} was due on ${inv.dueDate}. You can pay it securely via the PayPal link in this email.\n\nThanks so much!\n${config.businessName}`,
-    firm: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} is now ${daysOverdue} days past its due date (${inv.dueDate}). Could you please arrange payment this week, or let me know if anything is holding it up?\n\nThank you,\n${config.businessName}`,
-    final: `Hi ${name},\n\nThis is a final reminder that invoice #${inv.number} for ${amt} is ${daysOverdue} days overdue. Please settle it within 3 business days. If there's an issue with the invoice, reply and I'll be glad to help resolve it.\n\nRegards,\n${config.businessName}`,
+    friendly: `Hi ${name},\n\nHope you're doing well! Just a quick nudge that invoice #${inv.number} for ${amt} was due on ${due}. You can pay it securely with the PayPal link in this email.\n\nThanks so much!${sign}`,
+    firm: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} is now ${daysOverdue} days past its due date (${due}). Could you please arrange payment this week, or let me know if anything is holding it up?\n\nThank you,${sign}`,
+    final: `Hi ${name},\n\nThis is a final reminder that invoice #${inv.number} for ${amt} is ${daysOverdue} days overdue. Please settle it within 3 business days. If there's an issue with the invoice, reply and I'll be glad to help resolve it.\n\nRegards,${sign}`,
   }[tone];
   const subject = { friendly: 'Friendly reminder', firm: 'Payment overdue', final: 'Final reminder' }[tone] + `: invoice #${inv.number}`;
   return { subject, message: body };

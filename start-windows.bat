@@ -15,7 +15,6 @@ if not exist node_modules\express (
   echo  First run: installing required packages...
   call npm install --omit=dev
 )
-if not exist data\paypilot.db node scripts\seed.js
 echo.
 echo  Starting PayPilot... your browser will open automatically.
 echo  Close this window to stop the app.

@@ -31,7 +31,7 @@ setLlmOverride(async ({ messages, tools }) => {
   const last = messages.at(-1);
   const userText = last.role === 'user' ? last.content.find((c) => c.type === 'text')?.text || '' : '';
   if (/HEADLINE:/.test(userText)) {
-    return { content: [{ type: 'text', text: 'HEADLINE: Ryan Castillo owes $1,240 and is 12 days late.\n- Send Jake a firm reminder for #1001.\n- Nudge Marcus Hollis on #1002.' }] };
+    return { content: [{ type: 'text', text: 'HEADLINE: Ryan Castillo owes $1,240 and is 12 days late.\n- Send Ryan a firm reminder for #1001.\n- Nudge Marcus Hollis on #1002.' }] };
   }
   if (last.role === 'user' && /bill/i.test(userText)) {
     return {
@@ -43,7 +43,7 @@ setLlmOverride(async ({ messages, tools }) => {
           name: 'propose_invoice',
           input: {
             client_name: 'Ryan Castillo',
-            client_email: 'ryan@castillocoffee.example',
+            client_email: 'ryan@castillocoffee.co',
             items: [{ name: 'Logo concept', quantity: 3, unit_price: 150 }],
             due_in_days: 10,
           },
@@ -52,10 +52,10 @@ setLlmOverride(async ({ messages, tools }) => {
     };
   }
   if (last.role === 'user' && /tax/i.test(userText)) {
-    return { content: [{ type: 'tool_call', id: 'tx', name: 'propose_invoice', input: { client_name: 'Danielle Okafor', client_email: 'dani@okaforfitness.example', items: [{ name: 'Instagram post', quantity: 10, unit_price: 25 }], tax_percent: 8, deposit_percent: 20 } }] };
+    return { content: [{ type: 'tool_call', id: 'tx', name: 'propose_invoice', input: { client_name: 'Danielle Okafor', client_email: 'dani@okaforfitness.com', items: [{ name: 'Instagram post', quantity: 10, unit_price: 25 }], tax_percent: 8, deposit_percent: 20 } }] };
   }
   if (last.role === 'user' && /every month/i.test(userText)) {
-    return { content: [{ type: 'tool_call', id: 'rc', name: 'propose_recurring', input: { client_name: 'Priya Raman', client_email: 'priya@brightlinedental.example', items: [{ name: 'Design retainer', quantity: 1, unit_price: 600 }], frequency: 'monthly' } }] };
+    return { content: [{ type: 'tool_call', id: 'rc', name: 'propose_recurring', input: { client_name: 'Priya Raman', client_email: 'office@brightlinedental.com', items: [{ name: 'Design retainer', quantity: 1, unit_price: 600 }], frequency: 'monthly' } }] };
   }
   if (last.role === 'user' && /owe/i.test(userText)) {
     return { content: [{ type: 'tool_call', id: 't3', name: 'list_invoices', input: { status: 'overdue' } }] };
@@ -281,7 +281,7 @@ test('recurring invoices: schedule → due draft → next month', async () => {
   assert.ok(sch[0].nextRun > ok.data.action.payload.startDate, 'next run advanced to next month');
   assert.equal((await call('/api/schedules/run', {})).data.created.length, 0, 'not due again yet');
   // manual form path (no AI)
-  const form = await call('/api/schedules', { clientName: 'Marcus Hollis', clientEmail: 'billing@hollisgrant.example', description: 'Weekly support', amount: 150, frequency: 'weekly' });
+  const form = await call('/api/schedules', { clientName: 'Marcus Hollis', clientEmail: 'ap@hollisgrant.com', description: 'Weekly support', amount: 150, frequency: 'weekly' });
   assert.equal(form.status, 200, JSON.stringify(form.data));
   assert.ok(form.data.action.result.firstDraftId);
   const bad = await call('/api/schedules', { clientName: 'X', clientEmail: 'nope', description: 'x', amount: 5, frequency: 'weekly' });

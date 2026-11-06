@@ -21,7 +21,7 @@ Freelancers lose time and money on getting paid:
 
 | Feature | How it works |
 |---|---|
-| **Text → invoice** | *"Bill Ryan (ryan@castillocoffee.example) for 3 logo concepts at $150 and an urgent revision for $60, due in 10 days."* The AI extracts the client, line items, rates and due date, and puts an editable **invoice slip** in the approval tray. |
+| **Text → invoice** | *"Bill Ryan (ryan@castillocoffee.co) for 3 logo concepts at $150 and an urgent revision for $60, due in 10 days."* The AI extracts the client, line items, rates and due date, and puts an editable **invoice slip** in the approval tray. |
 | **Screenshot → invoice** | Attach or paste a screenshot of a client email or chat. A vision model reads it and drafts the invoice. |
 | **Human-in-the-loop** | The AI can only *propose*. Nothing reaches PayPal or the client until you click **Approve & send via PayPal**. You can edit any field first. |
 | **Real PayPal invoices** | Approved drafts are created and sent with the **PayPal Invoicing v2 API**. The client gets PayPal's email and payment page. |
