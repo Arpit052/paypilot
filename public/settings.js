@@ -205,6 +205,60 @@ $('resetBtn').onclick = async (e) => {
   setTimeout(() => location.reload(), 700);
 };
 
+// ---------------- Security ----------------
+function renderSecurity() {
+  const on = cfg.loginEnabled;
+  const env = cfg.passcodeFromEnv;
+  $('secStatus').innerHTML = env
+    ? `<div class="set-status on"><i class="dot"></i><div><b>Locked with a passcode</b><span>It's set by APP_PASSWORD in the .env file, so it can only be changed there.</span></div></div>`
+    : on
+      ? `<div class="set-status on"><i class="dot"></i><div><b>Locked with a passcode</b><span>You'll be asked for it after signing out or on a new device.</span></div></div>`
+      : `<div class="set-status off"><i class="dot"></i><div><b>No passcode</b><span>Anyone who can open PayPilot can use it. Set one before you put it online.</span></div></div>`;
+  ['secCurRow', 'secNewRow', 'secNew2Row'].forEach((id) => $(id).classList.toggle('hidden', env));
+  $('secCurRow').classList.toggle('hidden', env || !on);
+  $('secRemove').classList.toggle('hidden', env || !on);
+  $('secSave').classList.toggle('hidden', env);
+  $('secSave').textContent = on ? 'Change passcode' : 'Set passcode';
+}
+$('security').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ok = $('secOk');
+  ok.classList.remove('err');
+  if ($('secNew').value !== $('secNew2').value) {
+    ok.textContent = "The two passcodes don't match";
+    return ok.classList.add('err');
+  }
+  try {
+    await api('/api/settings/passcode', { body: { current: $('secCur').value, passcode: $('secNew').value } });
+    cfg.loginEnabled = true;
+    ['secCur', 'secNew', 'secNew2'].forEach((id) => ($(id).value = ''));
+    ok.textContent = 'Passcode saved. You can sign out from the sidebar.';
+    renderSecurity();
+  } catch (err) {
+    ok.textContent = err.message;
+    ok.classList.add('err');
+  }
+});
+$('secRemove').onclick = async (e) => {
+  const b = e.currentTarget;
+  if (!b.dataset.confirm) {
+    b.dataset.confirm = '1';
+    b.textContent = 'Click again to remove';
+    return;
+  }
+  try {
+    await api('/api/settings/passcode', { body: { current: $('secCur').value, remove: true } });
+    cfg.loginEnabled = false;
+    $('secOk').textContent = 'Passcode removed';
+    renderSecurity();
+  } catch (err) {
+    $('secOk').textContent = err.message;
+    $('secOk').classList.add('err');
+  }
+  delete b.dataset.confirm;
+  b.textContent = 'Remove passcode';
+};
+
 // ---------------- section nav ----------------
 const links = [...document.querySelectorAll('#setNav a')];
 function markActive() {
@@ -218,5 +272,6 @@ function markActive() {
 window.addEventListener('scroll', markActive, { passive: true });
 
 fill();
+renderSecurity();
 markActive();
 if (location.hash) document.querySelector(location.hash)?.scrollIntoView();

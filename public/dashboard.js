@@ -327,7 +327,7 @@ async function load() {
 function renderLive(sync) {
   const el = $('livePill');
   if (!sync?.live) {
-    el.innerHTML = `<a class="lp demo" href="/settings" title="Connect PayPal to see real payments arrive automatically"><span class="lp-dot"></span>Demo mode · <b>Connect PayPal</b></a>`;
+    el.innerHTML = ''; // the top bar already says "Demo mode"
     return;
   }
   const when = sync.lastAt ? timeAgo(sync.lastAt) : 'starting…';

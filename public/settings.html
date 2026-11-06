@@ -26,6 +26,7 @@
       <a href="#latefees">Late fees</a>
       <a href="#notifications">Notifications</a>
       <a href="#writing">AI writing</a>
+      <a href="#security">Security</a>
       <a href="#data">Data</a>
     </nav>
 
@@ -102,6 +103,16 @@
         <div class="set-row top"><label for="aiInstructions">Extra instructions<span>Anything the AI should always do</span></label><textarea id="aiInstructions" name="aiInstructions" rows="2" maxlength="600" placeholder="e.g. Mention that bank transfer is also fine. Never use exclamation marks."></textarea></div>
         <div class="set-foot"><span class="set-ok" role="status"></span><button class="btn ghost" type="button" id="previewBtn">Preview a reminder</button><button class="btn" type="submit">Save changes</button></div>
         <div id="preview"></div>
+      </form>
+
+      <!-- Security -->
+      <form class="panel set-sec" id="security">
+        <div class="set-h"><h2>Security</h2><p>Lock PayPilot with a passcode. Anyone opening it, on this computer or a hosted link, has to enter it first. You can then sign out from the sidebar.</p></div>
+        <div id="secStatus" class="sec-status"></div>
+        <div class="set-row" id="secCurRow"><label for="secCur">Current passcode<span>Needed to change or remove it</span></label><input id="secCur" type="password" autocomplete="current-password"></div>
+        <div class="set-row" id="secNewRow"><label for="secNew">New passcode<span>At least 4 characters</span></label><input id="secNew" type="password" autocomplete="new-password"></div>
+        <div class="set-row" id="secNew2Row"><label for="secNew2">Repeat it</label><input id="secNew2" type="password" autocomplete="new-password"></div>
+        <div class="set-foot"><span class="set-ok" id="secOk" role="status"></span><button class="btn ghost hidden" type="button" id="secRemove">Remove passcode</button><button class="btn" type="submit" id="secSave">Set passcode</button></div>
       </form>
 
       <!-- Data -->

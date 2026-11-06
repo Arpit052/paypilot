@@ -277,7 +277,7 @@ test('recurring invoices: schedule → due draft → next month', async () => {
   const pend = (await call('/api/actions?status=pending&origin=schedule')).data.actions.find((x) => x.id === draftId);
   assert.equal(pend.payload.total, 600);
   let sch = (await call('/api/schedules')).data.schedules;
-  assert.equal(sch.length, 1);
+  assert.equal(sch.length, 2, "seeded retainer + the new one");
   assert.ok(sch[0].nextRun > ok.data.action.payload.startDate, 'next run advanced to next month');
   assert.equal((await call('/api/schedules/run', {})).data.created.length, 0, 'not due again yet');
   // manual form path (no AI)
@@ -287,7 +287,7 @@ test('recurring invoices: schedule → due draft → next month', async () => {
   const bad = await call('/api/schedules', { clientName: 'X', clientEmail: 'nope', description: 'x', amount: 5, frequency: 'weekly' });
   assert.equal(bad.status, 400);
   sch = (await call('/api/schedules')).data.schedules;
-  assert.equal(sch.length, 2);
+  assert.equal(sch.length, 3);
   await call(`/api/schedules/${sch[0].id}/pause`, {});
   assert.equal((await call('/api/schedules')).data.schedules.find((x) => x.id === sch[0].id).active, false);
 });
@@ -487,4 +487,18 @@ test('calendar, analytics, preferences and reminder preview', async () => {
   const backup = await fetch(base + '/api/export.json');
   assert.equal(backup.status, 200);
   assert.ok(Array.isArray((await backup.json()).invoices));
+});
+
+test('passcode set in the app locks PayPilot; sign in and remove it', async () => {
+  const set = await fetch(base + '/api/settings/passcode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ passcode: 'open-sesame' }) });
+  assert.equal(set.status, 200);
+  const cookie = set.headers.get('set-cookie').split(';')[0];
+  assert.equal((await fetch(base + '/api/invoices')).status, 401, 'locked without a session');
+  assert.equal((await fetch(base + '/api/invoices', { headers: { cookie } })).status, 200, 'the device that set it stays signed in');
+  assert.equal((await fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'nope' }) })).status, 401);
+  const login = await fetch(base + '/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: 'open-sesame' }) });
+  assert.equal(login.status, 200);
+  const rm = await fetch(base + '/api/settings/passcode', { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify({ current: 'open-sesame', remove: true }) });
+  assert.equal(rm.status, 200);
+  assert.equal((await fetch(base + '/api/invoices')).status, 200, 'unlocked again');
 });

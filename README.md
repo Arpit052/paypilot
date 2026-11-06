@@ -19,33 +19,56 @@ Freelancers lose time and money on getting paid:
 
 ## What PayPilot does
 
+**Bill**
+
 | Feature | How it works |
 |---|---|
-| **Text → invoice** | *"Bill Ryan (ryan@castillocoffee.co) for 3 logo concepts at $150 and an urgent revision for $60, due in 10 days."* The AI extracts the client, line items, rates and due date, and puts an editable **invoice slip** in the approval tray. |
-| **Screenshot → invoice** | Attach or paste a screenshot of a client email or chat. A vision model reads it and drafts the invoice. |
-| **Human-in-the-loop** | The AI can only *propose*. Nothing reaches PayPal or the client until you click **Approve & send via PayPal**. You can edit any field first. |
-| **Real PayPal invoices** | Approved drafts are created and sent with the **PayPal Invoicing v2 API**. The client gets PayPal's email and payment page. |
-| **Live payment status** | **PayPal webhooks** (`INVOICING.INVOICE.PAID`, with signature verification) and on-demand polling update the dashboard as soon as a client pays. |
-| **Client risk** | Each client is rated **No risk / Low / Medium / High** from their payment history (average days late, share of late payments, current overdue). The agent warns you before you invoice a risky client. |
-| **Escalating follow-ups** | PayPilot scans for overdue invoices, and the AI drafts a reminder for each whose tone moves from *friendly* to *firm* to *final*, based on reminders already sent and days overdue. Approve, and it goes out through PayPal's **remind** endpoint. This can run on a schedule. |
-| **Deposits for risky clients** | When a client usually pays late, the agent automatically adds a **50% upfront deposit** using PayPal's **partial-payment** option, and tells you why. You can change or remove it on the slip. |
-| **Sales tax** | Add a sales-tax % to any invoice ("plus 8% sales tax"). It's sent to PayPal as per-line tax, so the client sees a proper breakdown. |
-| **Recurring invoices** | Set up from a simple form on the Clients page or by asking *"Bill Priya $725 every month"*. On each due date a ready-made draft lands in your approval tray (the first one immediately if it starts today), so nothing auto-sends. Pause, resume or delete any time. |
-| **Money brief** | One click gives a step-by-step report: total earned so far, this month vs last month, top customers, overdue amount by customer, what's still to collect, and clients to watch. It ends with AI-written recommendations. The numbers are computed in code; the AI only writes the headline and actions. |
-| **New invoice form** | Bill a new or existing customer without the chat: name, email, company, multiple services (qty × rate), issue date, payment terms or due date, currency, sales tax, deposit, reference/PO number and a note. A live paper-invoice preview updates as you type. Send through PayPal right away, or save as a draft. The customer is stored and payment status is tracked. |
-| **Live payment notifications** | When a client pays (PayPal webhook, or the automatic PayPal check every 2 minutes), the invoice flips to **Paid** in the database, a 🔔 notification is stored, and every open tab gets a pop-up instantly over **Server-Sent Events**. The dashboard refreshes itself. |
-| **Live clock** | The current date and time in your business time zone, ticking in the top bar. || **Interactive dashboard** | Click a summary card to filter invoices, click a month in the chart to see every payment received that month, sort any column (including invoice status), search, and export everything to CSV for your accountant. |
-| **Top customers** | Clients ranked by money actually received, with their share of revenue, on the dashboard and Clients page. Ask the agent *"Who is my best customer?"* |
-| **Cash-flow forecast** | Expected incoming money over the next 30 days, weighted by each client's real payment behaviour. |
-| **Ask anything** | *"Who owes me money?"*, *"How much did I earn this month?"*, *"Cancel Danielle's invoice."* The agent answers from your real PayPal data, never from guesses. |
+| **Text → invoice** | *"Bill Ryan (ryan@castillocoffee.co) for 3 bag label designs at $145 plus a $60 rush fee, due in 10 days."* The AI extracts client, line items, rates and due date and puts an editable **invoice slip** in the approval tray. |
+| **Screenshot → invoice** | Paste a screenshot of a client's email or chat; a vision model reads it and drafts the invoice. |
+| **Human-in-the-loop** | The AI can only *propose*. Nothing reaches PayPal or a client until you click **Approve & send via PayPal**, and you can edit any field first. |
+| **Real PayPal invoices** | Approved drafts are created and sent with the **PayPal Invoicing v2 API**, with clean numbers (#1042), per-line sales tax, reference/PO and notes. The client gets PayPal's email and payment page. |
+| **Deposits for risky clients** | If a client usually pays late, a **50% deposit** is added with PayPal's partial-payment option. Where PayPal doesn't offer split payments (e.g. India), the invoice still goes out and the deposit is requested in the note. |
+| **New invoice form** | Bill without the chat, with a live paper-invoice preview. Defaults (currency, terms, tax, note) come from Settings. |
+| **Retainers** | Bill a client the same amount every week or month. Each date drafts the invoice for your approval; cards show next date, billed so far and yearly value. |
 
-| Dashboard + live payment notification | New invoice form | Clients and recurring invoices |
+**Get paid**
+
+| Feature | How it works |
+|---|---|
+| **Autopilot** | Every unpaid invoice gets a follow-up plan: friendly heads-up before the due date, firm reminder after, final reminder (+ optional late fee) later. On each date the AI writes the email in your style and asks for approval. Tone never softens after a firmer reminder. Off = nothing is drafted unless you ask. |
+| **Collections** | One list of every unpaid invoice with status, the three-step progress, and the next action; a "Next 14 days" rail shows what Autopilot will do. |
+| **Late fees** | Suggested on very late invoices and added to the PayPal invoice (full update) only after you approve. |
+| **Live payment status** | PayPal webhooks (signature-verified) plus an automatic check every 2 minutes flip invoices to **Paid** and push a notification to every open tab over Server-Sent Events. Invoices you create on paypal.com are imported automatically. |
+| **Mark as paid** | Paid by bank transfer or cash? Record it (two clicks to confirm) and PayPilot records the payment on the PayPal invoice too. |
+| **Copy pay link** | Copy PayPal's payment link to send by text or WhatsApp. |
+
+**Understand**
+
+| Feature | How it works |
+|---|---|
+| **Dashboard** | Earned this month, waiting, overdue, 30-day forecast, clickable monthly chart, top customers, searchable invoice table with CSV export. |
+| **Analytics** | Revenue trend with hover, KPIs vs the previous period (revenue, days to get paid, on-time rate, average invoice), when clients pay, unpaid by age, per-client behaviour with trends, best-earning work, and plain-English insights. |
+| **Calendar** | Due dates, payments received, reminders sent and Autopilot's planned reminders on a month grid, with actions per day. |
+| **Money brief** | A step-by-step report with AI recommendations; numbers are computed in code, the AI only writes the headline and actions. |
+| **Client risk** | No risk / Low / Medium / High / New, from real payment history. The agent warns you before invoicing a risky client. |
+| **Ask anything** | *"Who owes me money?"*, *"Who is my best customer?"*, *"Cancel Danielle's invoice."* Answers come from your data via tools, never from guesses. |
+
+**Run it**
+
+| Feature | How it works |
+|---|---|
+| **Search (Ctrl/⌘ K)** | Find any invoice, client, page or action, or send the query straight to the Assistant. |
+| **Settings** | Business, invoice defaults, PayPal connection, Autopilot plan, late fees, notification types, AI writing style (warm / neutral / brief) with a live preview, data export/backup, security. |
+| **Connect in the app** | First run asks for a business name and PayPal sandbox keys (checked with PayPal before saving), or opens demo mode. |
+| **Passcode + sign out** | Lock PayPilot with a passcode (scrypt-hashed) and sign out from the sidebar. |
+
+| Collections + Autopilot | Analytics | Calendar |
 |---|---|---|
-| ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/new-invoice.png) | ![](docs/screenshots/clients.png) |
+| ![](docs/screenshots/collections.png) | ![](docs/screenshots/analytics.png) | ![](docs/screenshots/calendar.png) |
 
-| Follow-ups |
-|---|
-| ![](docs/screenshots/followups.png) |
+| Dashboard | Clients + retainers | Settings |
+|---|---|---|
+| ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/clients.png) | ![](docs/screenshots/settings.png) |
 
 ---
 

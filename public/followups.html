@@ -6,40 +6,34 @@
   <title>PayPilot · Collections</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#060914">
+  <meta name="theme-color" content="#09090b">
 </head>
 <body>
-<main class="coll">
+<main class="col3">
   <div class="dash-top">
     <div>
       <h1>Collections</h1>
-      <p class="lede" style="margin:0">Get paid without the awkward follow-ups. Autopilot writes each reminder on the right day; you just approve.</p>
+      <p class="lede" style="margin:0">Every unpaid invoice, what's been sent, and what to do next.</p>
     </div>
-    <button class="ap-toggle" id="apToggle" role="switch" aria-checked="true"><span class="ap-knob"></span><span id="apLabel">Autopilot on</span></button>
+    <button class="btn ghost small" id="chaseAll" style="margin-left:auto">Draft reminders for all late</button>
   </div>
 
-  <section class="coll-stats" id="stats" aria-label="Money owed"></section>
+  <section class="stat-strip" id="stats" aria-label="Money owed"></section>
 
-  <div class="coll-grid">
-    <div>
-      <div class="sec-head"><h2>Needs your attention</h2><span class="muted" id="attnCount"></span><button class="btn ghost small" id="chaseAll" style="margin-left:auto">Draft reminders for all late</button></div>
-      <div id="attention" class="attn-list"></div>
-      <div class="sec-head" style="margin-top:28px"><h2>On track</h2><span class="muted" id="trackCount"></span></div>
-      <div id="ontrack" class="track-list"></div>
-    </div>
+  <div class="col3-grid">
+    <section class="panel list-panel">
+      <div class="tabs" role="tablist" id="tabs">
+        <button role="tab" data-t="attention" aria-selected="true">Needs attention <span></span></button>
+        <button role="tab" data-t="upcoming">Upcoming <span></span></button>
+        <button role="tab" data-t="all">All unpaid <span></span></button>
+        <button role="tab" data-t="sent">Sent <span></span></button>
+      </div>
+      <div id="list"></div>
+    </section>
 
-    <aside class="coll-side">
-      <a class="panel ap-mini" href="/settings#autopilot" id="planMini"></a>
-
-      <section class="panel">
-        <div class="sec-head"><h2>Coming up</h2><button class="btn ghost small hidden" id="runNow" style="margin-left:auto">Draft today's now</button></div>
-        <ul class="upcoming" id="upcoming"></ul>
-      </section>
-
-      <section class="panel">
-        <h2>Recently sent</h2>
-        <ul class="sent-list" id="recent"></ul>
-      </section>
+    <aside class="panel rail">
+      <div class="rail-h"><h2>Next 14 days</h2><span class="muted small" id="railSub"></span></div>
+      <ol class="rail-list" id="rail"></ol>
     </aside>
   </div>
 </main>

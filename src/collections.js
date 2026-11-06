@@ -82,7 +82,7 @@ export function collections(today = isoDate()) {
   cards.sort((a, b) => b.daysLate - a.daysLate || b.total - a.total);
   const recent = listActions({})
     .filter((a) => ['send_reminder', 'add_late_fee'].includes(a.type) && a.status === 'approved')
-    .slice(0, 8)
+    .slice(0, 40)
     .map((a) => ({ type: a.type, number: a.payload.number, client: a.payload.client, tone: a.payload.tone, fee: a.result?.fee ?? a.payload.fee, currency: a.payload.currency, at: isoDate(a.decidedAt || a.createdAt) }));
   const life = lifetimeStats(today);
   return {

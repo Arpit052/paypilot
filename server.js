@@ -2,7 +2,7 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
-import { config, isoDate, addDays, envFile } from './src/config.js';
+import { config, isoDate, addDays, addMonths, envFile } from './src/config.js';
 import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb, listSchedules, getSchedule, updateSchedule, deleteSchedule, getClient, logActivity } from './src/db.js';
 import { chatWithTranscript, getTranscript, resetSession } from './src/agent.js';
 import { listActions, approveAction, rejectAction, normaliseInvoiceDraft, dropStaleActions, markPaid } from './src/actions.js';
@@ -33,7 +33,25 @@ const startedAt = Date.now();
 
 // ---------- passcode login (optional, APP_PASSWORD) ----------
 const SESSION_COOKIE = 'pp_session';
-const sessionToken = () => crypto.createHmac('sha256', config.appPassword).update('paypilot-session-v1').digest('hex');
+// Passcode: from APP_PASSWORD in .env, or set by the user in the app (stored as a scrypt hash).
+const security = () => kvGet('settings:security') || null;
+const loginEnabled = () => Boolean(config.appPassword || security()?.hash);
+const sessionToken = () => {
+  const key = config.appPassword || security()?.secret || 'none';
+  return crypto.createHmac('sha256', key).update(`paypilot-session-v1:${security()?.updatedAt || ''}`).digest('hex');
+};
+function checkPasscode(pw) {
+  if (config.appPassword) return safeEqual(String(pw || ''), config.appPassword);
+  const s = security();
+  if (!s?.hash) return true;
+  const h = crypto.scryptSync(String(pw || ''), Buffer.from(s.salt, 'hex'), 32).toString('hex');
+  return safeEqual(h, s.hash);
+}
+function setPasscode(pw) {
+  const salt = crypto.randomBytes(16);
+  kvSet('settings:security', { salt: salt.toString('hex'), hash: crypto.scryptSync(pw, salt, 32).toString('hex'), secret: crypto.randomBytes(32).toString('hex'), updatedAt: new Date().toISOString() });
+}
+const sessionCookie = (req) => `${SESSION_COOKIE}=${sessionToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 14}${req.secure ? '; Secure' : ''}`;
 
 function readCookie(req, name) {
   const m = (req.headers.cookie || '').match(new RegExp('(?:^|;\\s*)' + name + '=([^;]+)'));
@@ -50,7 +68,7 @@ function safeEqual(a, b) {
 const PUBLIC_PATHS = [/^\/login(\.html)?$/, /^\/app\.css$/, /^\/common\.js$/, /^\/favicon\.svg$/, /^\/fonts\//, /^\/api\/login$/, /^\/api\/health$/, /^\/api\/webhooks\//, /^\/api\/cron\//];
 
 function requireLogin(req, res, next) {
-  if (!config.appPassword || PUBLIC_PATHS.some((re) => re.test(req.path))) return next();
+  if (!loginEnabled() || PUBLIC_PATHS.some((re) => re.test(req.path))) return next();
   const tok = readCookie(req, SESSION_COOKIE);
   if (tok && safeEqual(tok, sessionToken())) return next();
   if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Please sign in.' });
@@ -129,10 +147,9 @@ export function createApp() {
   );
 
   api.post('/login', (req, res) => {
-    if (!config.appPassword) return res.json({ ok: true });
-    if (!safeEqual(String(req.body?.password || ''), config.appPassword)) throw httpError(401, 'Wrong passcode.');
-    const secure = req.secure ? '; Secure' : '';
-    res.set('Set-Cookie', `${SESSION_COOKIE}=${sessionToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 14}${secure}`);
+    if (!loginEnabled()) return res.json({ ok: true });
+    if (!checkPasscode(req.body?.password)) throw httpError(401, 'That passcode is not right.');
+    res.set('Set-Cookie', sessionCookie(req));
     res.json({ ok: true });
   });
   api.post('/logout', (req, res) => {
@@ -155,7 +172,8 @@ export function createApp() {
       defaultTermsDays: config.defaultTermsDays ?? 7,
       defaultNote: config.defaultNote || '',
       ownerName: config.ownerName || '',
-      loginEnabled: Boolean(config.appPassword),
+      loginEnabled: loginEnabled(),
+      passcodeFromEnv: Boolean(config.appPassword),
       paypalSource: publicSettings().paypal.source,
       autopilot: (() => {
         const ap = autopilotSettings();
@@ -180,6 +198,10 @@ export function createApp() {
     if (!check.ok) throw httpError(400, check.error);
     connectPaypal({ clientId, clientSecret });
     if (bizName) saveBusinessSettings({ businessName: bizName });
+    if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
+      setPasscode(String(req.body.passcode));
+      res.set('Set-Cookie', sessionCookie(req));
+    }
     // demo invoices that were never on PayPal can't be chased on the real account
     let removed = 0;
     for (const inv of listInvoices()) {
@@ -198,6 +220,10 @@ export function createApp() {
   api.post('/settings/paypal/demo', (req, res) => {
     const bizName = String(req.body?.businessName || '').trim();
     if (bizName) saveBusinessSettings({ businessName: bizName });
+    if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
+      setPasscode(String(req.body.passcode));
+      res.set('Set-Cookie', sessionCookie(req));
+    }
     useDemoMode();
     if (!listInvoices().length) seedDemo();
     noteDueDates();
@@ -207,6 +233,21 @@ export function createApp() {
     disconnectPaypal();
     logActivity('paypal_disconnected', 'Disconnected PayPal - now in demo mode');
     res.json({ ok: true, settings: publicSettings() });
+  });
+  // passcode set/change/remove (when it isn't fixed by APP_PASSWORD in .env)
+  api.post('/settings/passcode', rateLimit({ perMinute: 8, message: 'Too many attempts. Please wait a minute.' }), (req, res) => {
+    if (config.appPassword) throw httpError(400, 'The passcode is set by APP_PASSWORD in the .env file.');
+    const { current, passcode, remove } = req.body || {};
+    if (security()?.hash && !checkPasscode(current)) throw httpError(401, 'Your current passcode is not right.');
+    if (remove) {
+      kvSet('settings:security', null);
+      res.set('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+      return res.json({ ok: true, loginEnabled: false });
+    }
+    if (String(passcode || '').length < 4) throw httpError(400, 'Use at least 4 characters.');
+    setPasscode(String(passcode));
+    res.set('Set-Cookie', sessionCookie(req)); // stay signed in on this device
+    res.json({ ok: true, loginEnabled: true });
   });
   api.post('/settings/business', (req, res) => res.json({ business: saveBusinessSettings(req.body || {}) }));
   // try the current writing style on a real open invoice (nothing is saved or sent)
@@ -384,11 +425,29 @@ export function createApp() {
   // ---- recurring invoices ----
   api.get('/schedules', (req, res) =>
     res.json({
-      schedules: listSchedules().map((sc) => ({
-        ...sc,
-        client: getClient(sc.clientId)?.name || 'Unknown',
-        total: invoiceTotals(sc.items, sc.taxPercent).total,
-      })),
+      schedules: listSchedules().map((sc) => {
+        const total = invoiceTotals(sc.items, sc.taxPercent).total;
+        const made = listActions({ type: 'create_invoice' }).filter((a) => a.payload?.scheduleId === sc.id);
+        const sent = made.filter((a) => a.status === 'approved');
+        const c = getClient(sc.clientId);
+        const upcoming = [];
+        for (let d = sc.nextRun, n = 0; n < 3 && d; n++) {
+          upcoming.push(d);
+          d = sc.frequency === 'weekly' ? addDays(d, 7) : addMonths(d, 1);
+        }
+        return {
+          ...sc,
+          client: c?.name || 'Unknown',
+          company: c?.company || '',
+          email: c?.email || '',
+          total,
+          perYear: Math.round(total * (sc.frequency === 'weekly' ? 52 : 12) * 100) / 100,
+          invoicesSent: sent.length,
+          billedSoFar: Math.round(sent.reduce((t, a) => t + (a.payload?.total || 0), 0) * 100) / 100,
+          draftWaiting: made.some((a) => a.status === 'pending'),
+          upcoming,
+        };
+      }),
     })
   );
   api.post('/schedules/run', (req, res) => res.json({ created: runRecurring() }));

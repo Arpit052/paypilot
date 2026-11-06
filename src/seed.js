@@ -5,7 +5,7 @@
 // Historical invoices are marked source:"seed" (shown as "demo", never sent to PayPal).
 // In demo mode we also add open/overdue invoices so follow-ups can be shown straight away.
 import { config, isoDate, addDays } from './config.js';
-import { upsertClient, logActivity, insertInvoice, findClient, transaction, kvSet } from './db.js';
+import { upsertClient, logActivity, insertInvoice, findClient, transaction, kvSet, insertSchedule } from './db.js';
 import { isMock, mockPut } from './paypal.js';
 import { invoiceTotal } from './analytics.js';
 
@@ -60,8 +60,8 @@ function seedInner() {
   const lines = (arr) => arr.map(([name, quantity, unitPrice]) => ({ name, quantity, unitPrice }));
 
   // invoice numbers run in date order, like a real invoice book
-  let seq = 117;
-  const next = () => String(++seq).padStart(4, '0');
+  let seq = 1017;
+  const next = () => String(++seq);
 
   for (const [key, ago, late, work, extra = {}] of HISTORY) {
     const c = byKey[key];
@@ -145,6 +145,10 @@ function seedInner() {
       });
     }
   }
+  // Priya's monthly retainer runs on a schedule (next one on the 1st of next month)
+  const [yy, mm] = today.split('-').map(Number);
+  const firstNext = new Date(Date.UTC(yy, mm, 1)).toISOString().slice(0, 10);
+  insertSchedule({ clientId: byKey.priya.row.id, items: lines([RETAINER]), currency: config.currency, frequency: 'monthly', nextRun: firstNext, dueInDays: 15 });
   // new demo invoices continue the same numbering
   kvSet('mock:seq', seq);
 }

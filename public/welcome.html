@@ -6,94 +6,61 @@
   <title>Welcome to PayPilot</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#060914">
-  <style>
-    .welcome { max-width: 1080px; margin: 0 auto; padding: 8vh 24px 60px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; }
-    .w-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 34px; }
-    .w-brand svg { width: 40px; height: 40px; }
-    .w-brand .wordmark { font-size: 24px; }
-    .w-hero h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4.2vw, 48px); line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 18px; }
-    .w-hero h1 em { font-style: normal; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-    .w-hero p.lead { color: var(--ink-2); font-size: 17px; max-width: 470px; margin: 0 0 28px; }
-    .w-points { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
-    .w-points li { display: flex; gap: 12px; align-items: flex-start; color: var(--ink-2); }
-    .w-points li b { color: var(--ink); display: block; }
-    .w-dot { flex: none; width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: rgba(139, 92, 246, 0.12); box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.28); color: #c4b5fd; }
-    .w-dot svg { width: 17px; height: 17px; }
-    .w-points li span b { font-size: 14px; }
-    .w-points li span { font-size: 13.5px; }
-    .w-card { border-radius: 22px; padding: 28px; background: linear-gradient(160deg, rgba(139, 92, 246, 0.12), rgba(56, 189, 248, 0.05) 60%), var(--glass); box-shadow: inset 0 0 0 1px var(--glass-line-2), 0 30px 80px -30px rgba(99, 102, 241, 0.55); backdrop-filter: blur(14px); }
-    .w-card h2 { font-family: var(--display); font-size: 19px; font-weight: 600; margin: 0 0 6px; }
-    .w-card .sub { color: var(--ink-2); margin: 0 0 20px; font-size: 14px; }
-    .w-card label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-3); margin: 0 0 6px; letter-spacing: .02em; }
-    .w-card input[type=text], .w-card input[type=password] { width: 100%; border: 1px solid var(--glass-line-2); border-radius: 11px; padding: 11px 13px; background: rgba(6, 9, 20, 0.55); color: var(--ink); font: inherit; font-size: 14px; margin-bottom: 14px; }
-    .w-card input:focus { outline: none; border-color: rgba(167, 139, 250, 0.85); box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.16); }
-    .w-check { display: flex !important; gap: 8px; align-items: center; font-weight: 600 !important; color: var(--ink-2) !important; font-size: 13px !important; margin: 0 0 18px !important; letter-spacing: 0 !important; }
-    .w-card .btn { width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
-    .w-or { display: flex; align-items: center; gap: 12px; color: var(--ink-3); font-size: 12px; margin: 20px 0; text-transform: uppercase; letter-spacing: .12em; }
-    .w-or::before, .w-or::after { content: ''; flex: 1; height: 1px; background: var(--glass-line-2); }
-    .w-help { margin: 0 0 18px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); box-shadow: inset 0 0 0 1px var(--glass-line); }
-    .w-help summary { cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 700; color: #c4b5fd; list-style: none; }
-    .w-help summary::-webkit-details-marker { display: none; }
-    .w-help summary::before { content: '＋ '; }
-    .w-help[open] summary::before { content: '－ '; }
-    .w-help ol { margin: 0; padding: 0 16px 12px 34px; font-size: 13px; color: var(--ink-2); }
-    .w-help li { margin: 4px 0; }
-    .w-note { font-size: 12px; color: var(--ink-3); margin: 12px 0 0; display: flex; gap: 6px; }
-    .w-hint { font-size: 12px; color: var(--ink-3); margin: -8px 0 16px; }
-    .w-err { color: var(--late); font-size: 13px; min-height: 18px; margin: 10px 0 0; }
-    .w-ok { text-align: center; padding: 20px 0 6px; }
-    .w-ok .tick { width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 14px; display: grid; place-items: center; font-size: 30px; background: var(--paid-bg); color: var(--paid); box-shadow: 0 0 40px -6px rgba(52, 211, 153, 0.7); }
-    @media (max-width: 860px) { .welcome { grid-template-columns: 1fr; gap: 34px; padding-top: 5vh; } }
-  </style>
+  <meta name="theme-color" content="#09090b">
 </head>
-<body>
-<main class="welcome">
-  <section class="w-hero">
-    <div class="w-brand" id="brand"></div>
-    <h1>Stop chasing<br><em>unpaid invoices.</em></h1>
-    <p class="lead">Describe the work in plain words. PayPilot drafts the PayPal invoice, follows up when a client is late, and tells you the moment you're paid. Nothing goes out until you approve it.</p>
-    <ul class="w-points">
-      <li><span class="w-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></svg></span><span><b>Describe the work, get an invoice</b>Type it, or paste a screenshot of the client's message.</span></li>
-      <li><span class="w-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3z"/><path d="m9 12 2 2 4-4"/></svg></span><span><b>You approve every step</b>The AI drafts. Nothing reaches a client without your click.</span></li>
-      <li><span class="w-dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></span><span><b>Know the moment you're paid</b>PayPilot watches PayPal and tells you right away.</span></li>
-    </ul>
+<body class="auth">
+<div class="auth-split">
+  <section class="auth-art">
+    <div class="auth-brand" id="brand"></div>
+    <div class="auth-copy">
+      <h1>Stop chasing<br><span>unpaid invoices.</span></h1>
+      <p>Describe the work in plain words. PayPilot drafts the PayPal invoice, follows up when a client is late, and tells you the moment you're paid. Nothing goes out until you approve it.</p>
+      <ul class="auth-points">
+        <li><span class="ap-ic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/></svg></span><span><b>Describe the work, get an invoice</b>Type it, or paste a screenshot of the client's message.</span></li>
+        <li><span class="ap-ic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><span><b>Autopilot follows up for you</b>Friendly, then firm, then final, on the right days.</span></li>
+        <li><span class="ap-ic"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3z"/><path d="m9 12 2 2 4-4"/></svg></span><span><b>You approve every step</b>The AI drafts. Nothing reaches a client without your click.</span></li>
+      </ul>
+    </div>
+    <div class="auth-foot">Sandbox mode · no real money moves</div>
   </section>
 
-  <section class="w-card" id="card">
-    <h2>Connect your PayPal</h2>
-    <p class="sub">Use your PayPal <b>sandbox</b> app keys to send real test invoices. No real money moves.</p>
-    <form id="connect" autocomplete="off">
-      <label for="biz">Your business name</label>
-      <input id="biz" type="text" maxlength="100" placeholder="e.g. Ortiz Design Studio" required>
-      <p class="w-hint">Shown on every invoice your clients receive. You can change it later in Settings.</p>
-      <label for="cid">Client ID</label>
-      <input id="cid" type="text" spellcheck="false" placeholder="Starts with A…" required>
-      <label for="sec">Secret</label>
-      <input id="sec" type="password" spellcheck="false" placeholder="Paste your sandbox Secret" required>
-      <details class="w-help">
-        <summary>Where do I find these?</summary>
-        <ol>
-          <li>Sign in at <b>developer.paypal.com</b>.</li>
-          <li>Open <b>Apps &amp; Credentials</b> and make sure <b>Sandbox</b> is selected.</li>
-          <li>Open your app (or click <b>Create App</b>).</li>
-          <li>Copy the <b>Client ID</b>, then click <b>Show</b> and copy the <b>Secret</b>.</li>
-        </ol>
-      </details>
-      <label class="w-check"><input type="checkbox" id="sample" checked> Add sample history so the dashboard isn't empty</label>
-      <button class="btn" type="submit" id="go">Connect PayPal</button>
-      <div class="w-err" id="err" role="alert"></div>
-    </form>
-    <div class="w-or">or</div>
-    <button class="btn ghost" id="demo" type="button">Explore with demo data</button>
-    <p class="w-note"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="flex:none;margin-top:2px"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Your Secret is checked with PayPal and stored only on this server. It's never shown again. You can disconnect any time in Settings.</span></p>
+  <section class="auth-form">
+    <div class="auth-card" id="card">
+      <h2>Set up PayPilot</h2>
+      <p class="sub">Connect your PayPal sandbox app, or look around with demo data first.</p>
+      <form id="connect" autocomplete="off">
+        <label for="biz">Business name</label>
+        <input id="biz" type="text" maxlength="100" placeholder="e.g. Ortiz Design Studio" required>
+        <p class="hint">Shown on every invoice your clients receive.</p>
+        <div class="two">
+          <div><label for="cid">PayPal Client ID</label><input id="cid" type="text" spellcheck="false" placeholder="Starts with A…"></div>
+          <div><label for="sec">Secret</label><input id="sec" type="password" spellcheck="false" placeholder="Sandbox secret"></div>
+        </div>
+        <details class="help">
+          <summary>Where do I find these?</summary>
+          <ol>
+            <li>Sign in at <b>developer.paypal.com</b>.</li>
+            <li>Open <b>Apps &amp; Credentials</b> with <b>Sandbox</b> selected.</li>
+            <li>Open your app (or <b>Create App</b>).</li>
+            <li>Copy the <b>Client ID</b>, click <b>Show</b> and copy the <b>Secret</b>.</li>
+          </ol>
+        </details>
+        <label for="pass">Passcode <span class="opt">optional</span></label>
+        <input id="pass" type="password" autocomplete="new-password" placeholder="Lock PayPilot with a passcode">
+        <label class="check"><input type="checkbox" id="sample" checked> Add sample history so the dashboard isn't empty</label>
+        <button class="btn wide" type="submit" id="go">Connect PayPal</button>
+        <div class="err" id="err" role="alert"></div>
+      </form>
+      <div class="or"><span>or</span></div>
+      <button class="btn ghost wide" id="demo" type="button">Explore with demo data</button>
+      <p class="note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Your Secret is checked with PayPal and stored only on this server. It's never shown again.</p>
+    </div>
   </section>
-</main>
+</div>
 <script type="module">
-  import { LOGO } from '/common.js';
-  document.getElementById('brand').innerHTML = `${LOGO}<span class="wordmark">PayPilot</span>`;
+  import { LOGO, WORDMARK } from '/common.js';
+  document.getElementById('brand').innerHTML = `${LOGO}${WORDMARK}`;
   const $ = (id) => document.getElementById(id);
-  // keep whatever name was set before (e.g. after "Disconnect")
   fetch('/api/settings').then((r) => r.json()).then((s) => { if (s?.business?.businessName && !$('biz').value) $('biz').value = s.business.businessName; }).catch(() => {});
 
   async function post(url, body) {
@@ -103,15 +70,22 @@
     if (!res.ok) throw new Error(json.error || 'Something went wrong.');
     return json;
   }
+  const passOk = () => {
+    const p = $('pass').value;
+    if (p && p.length < 4) { $('err').textContent = 'Use at least 4 characters for the passcode, or leave it empty.'; return false; }
+    return true;
+  };
 
   $('connect').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('err').textContent = '';
+    if (!$('cid').value.trim() || !$('sec').value.trim()) { $('err').textContent = 'Paste your PayPal Client ID and Secret, or choose demo data below.'; return; }
+    if (!passOk()) return;
     $('go').disabled = true;
     $('go').textContent = 'Checking with PayPal…';
     try {
-      await post('/api/settings/paypal/connect', { businessName: $('biz').value, clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked });
-      $('card').innerHTML = `<div class="w-ok"><div class="tick">✓</div><h2>Connected to PayPal</h2><p class="sub">Sandbox keys verified. Invoices you approve will now go out through PayPal.</p><a class="btn" href="/">Open PayPilot →</a></div>`;
+      const r = await post('/api/settings/paypal/connect', { businessName: $('biz').value, clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked, passcode: $('pass').value });
+      $('card').innerHTML = `<div class="ok"><div class="tick"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><h2>Connected to PayPal</h2><p class="sub">Sandbox keys verified${r.imported ? `, ${r.imported} invoice${r.imported > 1 ? 's' : ''} imported` : ''}. Invoices you approve now go out through PayPal.</p><a class="btn wide" href="/">Open PayPilot</a></div>`;
     } catch (err) {
       $('err').textContent = err.message;
       $('go').disabled = false;
@@ -120,14 +94,12 @@
   });
 
   $('demo').addEventListener('click', async () => {
-    if (!$('biz').value.trim()) {
-      $('err').textContent = 'Add your business name first. It appears on your invoices.';
-      $('biz').focus();
-      return;
-    }
+    $('err').textContent = '';
+    if (!$('biz').value.trim()) { $('err').textContent = 'Add your business name first. It appears on your invoices.'; $('biz').focus(); return; }
+    if (!passOk()) return;
     $('demo').disabled = true;
     try {
-      await post('/api/settings/paypal/demo', { businessName: $('biz').value });
+      await post('/api/settings/paypal/demo', { businessName: $('biz').value, passcode: $('pass').value });
       location.href = '/';
     } catch (err) {
       $('err').textContent = err.message;

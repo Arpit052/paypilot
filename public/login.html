@@ -6,32 +6,32 @@
   <title>PayPilot · Sign in</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#060914">
+  <meta name="theme-color" content="#09090b">
 </head>
-<body>
-<main class="login">
-  <div class="brand-big" id="brandBig"></div>
-  <form class="slip" id="form">
-    <div class="slip-kind" style="font-size:18px">Welcome back</div>
-    <p class="muted" style="margin:4px 0 14px">Enter the passcode to open this workspace.</p>
+<body class="auth">
+<main class="auth-center">
+  <div class="auth-brand" id="brand"></div>
+  <form class="auth-card narrow" id="form">
+    <h2>Welcome back</h2>
+    <p class="sub">Enter your passcode to open PayPilot.</p>
     <label for="pw">Passcode</label>
     <input id="pw" type="password" autocomplete="current-password" required autofocus>
-    <button class="btn" type="submit" style="width:100%;justify-content:center">Sign in</button>
-    <div class="slip-error" id="err" role="alert"></div>
+    <button class="btn wide" type="submit" id="go">Sign in</button>
+    <div class="err" id="err" role="alert"></div>
   </form>
+  <p class="auth-foot">Forgot it? On the computer running PayPilot, double-click <b>reset-passcode.bat</b>.</p>
 </main>
 <script type="module">
-  import { LOGO } from '/common.js';
-  document.getElementById('brandBig').innerHTML = `${LOGO}<span class="wordmark">PayPilot</span>`;
+  import { LOGO, WORDMARK } from '/common.js';
+  document.getElementById('brand').innerHTML = `${LOGO}${WORDMARK}`;
   document.getElementById('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const err = document.getElementById('err');
+    const go = document.getElementById('go');
     err.textContent = '';
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: document.getElementById('pw').value }),
-    });
+    go.disabled = true;
+    const res = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: document.getElementById('pw').value }) });
+    go.disabled = false;
     if (res.ok) location.href = '/';
     else err.textContent = (await res.json().catch(() => ({}))).error || 'Sign in failed.';
   });

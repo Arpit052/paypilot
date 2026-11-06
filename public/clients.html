@@ -6,167 +6,56 @@
   <title>PayPilot · Clients</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#060914">
+  <meta name="theme-color" content="#09090b">
 </head>
 <body>
 <main>
-  <h1>Clients</h1>
-  <p class="lede">Risk comes from each client's payment history: how late they usually pay, and what they owe right now. Riskiest clients are listed first.</p>
-  <section class="panel table-wrap" id="clients"></section>
+  <div class="dash-top">
+    <div>
+      <h1>Clients</h1>
+      <p class="lede" style="margin:0">Who you work with, how they pay, and the retainers that bill themselves.</p>
+    </div>
+  </div>
 
-  <h2 style="margin-top:36px">Recurring invoices</h2>
-  <p class="lede" style="margin-bottom:14px">For retainers and regular work. On each due date PayPilot puts a ready-made invoice draft in your <a href="/assistant">approval tray</a>. You check it and click Approve to send it through PayPal. If the first invoice is due today, the draft appears right away.</p>
-  <div class="grid2" style="align-items:start">
-    <section class="panel table-wrap" id="schedules"></section>
-    <form class="panel" id="recForm">
-      <h2>New recurring invoice</h2>
-      <div class="form-grid">
-        <div class="full"><label for="rClient">Client</label>
-          <select id="rClient"></select></div>
-        <div id="newClientFields" class="full hidden">
-          <div class="form-grid">
-            <div><label for="rName">Client name</label><input id="rName" placeholder="e.g. Priya Raman"></div>
-            <div><label for="rEmail">Client email</label><input id="rEmail" type="email" placeholder="name@company.com"></div>
-          </div>
-        </div>
-        <div class="full"><label for="rDesc">What it's for</label><input id="rDesc" required placeholder="e.g. Monthly design retainer"></div>
+  <section class="panel" style="padding:0!important">
+    <div class="sec-pad"><h2>All clients</h2><input id="q" type="search" placeholder="Search clients" aria-label="Search clients"></div>
+    <div class="table-wrap" id="clients"></div>
+  </section>
+
+  <div class="sec-head" style="margin-top:34px">
+    <div><h2 style="font-size:16px">Retainers</h2><p class="muted small" style="margin:2px 0 0">Regular work billed on a schedule. On each date the invoice is drafted for you to approve; nothing is sent on its own.</p></div>
+    <button class="btn small" id="newRet" style="margin-left:auto">New retainer</button>
+  </div>
+  <div class="ret-grid" id="retainers"></div>
+</main>
+
+<div class="cdrawer hidden" id="drawer" role="dialog" aria-modal="true" aria-label="New retainer">
+  <div class="cdrawer-scrim" data-close></div>
+  <div class="cdrawer-panel">
+    <div class="cdrawer-head"><b>New retainer</b><button class="btn ghost small" data-close type="button">Close</button></div>
+    <form id="recForm" class="ret-form">
+      <label for="rClient">Client</label>
+      <select id="rClient"></select>
+      <div id="newClientFields" class="hidden two">
+        <div><label for="rName">Name</label><input id="rName" placeholder="Priya Raman"></div>
+        <div><label for="rEmail">Email</label><input id="rEmail" type="email" placeholder="name@company.com"></div>
+      </div>
+      <label for="rDesc">What it's for</label>
+      <input id="rDesc" required placeholder="Monthly design retainer">
+      <div class="two">
         <div><label for="rAmount">Amount (<span class="cur"></span>)</label><input id="rAmount" type="number" min="1" step="0.01" required placeholder="725"></div>
         <div><label for="rFreq">Repeats</label><select id="rFreq"><option value="monthly">Every month</option><option value="weekly">Every week</option></select></div>
-        <div><label for="rStart">First invoice on</label><input id="rStart" type="date" required></div>
-        <div><label for="rDue">Client pays within (days)</label><input id="rDue" type="number" min="0" max="90" value="7"></div>
       </div>
-      <div class="slip-actions"><button class="btn" type="submit">Create recurring invoice</button><button class="btn ghost" type="button" id="runBtn">Create due drafts now</button></div>
+      <div class="two">
+        <div><label for="rStart">First invoice</label><input id="rStart" type="date" required></div>
+        <div><label for="rDue">Client pays within</label><select id="rDue"><option value="0">Due on receipt</option><option value="7">7 days</option><option value="15">15 days</option><option value="30">30 days</option></select></div>
+      </div>
+      <div class="ret-preview" id="retPreview"></div>
       <div class="slip-error" id="recErr" role="alert"></div>
+      <button class="btn" type="submit" style="width:100%">Create retainer</button>
     </form>
   </div>
-</main>
-<script type="module">
-  import { api, header, esc, money, fmtDate, toast, RISK_TEXT, daysLateText } from '/common.js';
-  const cfg = await header('clients');
-  const $ = (id) => document.getElementById(id);
-  document.querySelector('.cur').textContent = cfg.currency;
-  $('rStart').value = cfg.today;
-  let clients = [];
-
-  // two-step remove: first click asks, second click removes
-  document.getElementById('clients').addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-rm]');
-    if (!b) return;
-    if (!b.classList.contains('sure')) {
-      document.querySelectorAll('.rm-client.sure').forEach((x) => { x.classList.remove('sure'); x.textContent = 'Remove'; });
-      b.classList.add('sure');
-      b.textContent = 'Remove? Click again';
-      setTimeout(() => { if (b.isConnected) { b.classList.remove('sure'); b.textContent = 'Remove'; } }, 4000);
-      return;
-    }
-    b.disabled = true;
-    try {
-      await api(`/api/clients/${encodeURIComponent(b.dataset.rm)}`, { method: 'DELETE' });
-      toast('Client removed from PayPilot');
-      loadClients();
-    } catch (err) {
-      toast(err.message);
-      b.disabled = false;
-    }
-  });
-
-  async function loadClients() {
-    const [{ clients: list }, { customers }] = await Promise.all([api('/api/clients'), api('/api/insights/top-customers?limit=50')]);
-    clients = list;
-    const rank = Object.fromEntries(customers.map((c) => [c.clientId, c]));
-    $('clients').innerHTML = list.length
-      ? `<table class="data"><thead><tr><th>Client</th><th>Risk</th><th class="r">Usually pays</th><th class="r">Invoices</th><th class="r">Total paid</th><th class="r">Outstanding</th><th class="r">Overdue</th><th></th></tr></thead><tbody>${list
-          .map((c) => {
-            const r = rank[c.id];
-            return `<tr>
-              <td><b>${esc(c.name)}</b>${r?.rank === 1 ? ' <span class="pill top">Top customer</span>' : ''}<br><span class="muted">${c.company ? `${esc(c.company)} · ` : ''}${esc(c.email)}</span></td>
-              <td><span class="pill ${c.riskLabel}">${RISK_TEXT[c.riskLabel]}</span></td>
-              <td class="r">${daysLateText(c.avgDaysLate)}</td>
-              <td class="r num">${c.invoiceCount}</td>
-              <td class="r num">${money(c.totalPaid, c.currency)}${r ? `<br><span class="muted" style="font-size:12px">#${r.rank} · ${r.share}% of revenue</span>` : ''}</td>
-              <td class="r num">${money(c.outstanding, c.currency)}</td>
-              <td class="r num">${c.overdueCount ? `<span style="color:var(--late)">${money(c.overdueAmount, c.currency)}</span>` : '—'}</td>
-              <td class="r"><button class="rm-client" data-rm="${esc(c.id)}" title="Remove from PayPilot (PayPal isn't changed)">Remove</button></td>
-            </tr>`;
-          })
-          .join('')}</tbody></table>`
-      : '<div class="empty">No clients yet. They appear here after your first invoice.</div>';
-    $('rClient').innerHTML =
-      list.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('') + '<option value="__new">+ New client…</option>';
-    $('newClientFields').classList.toggle('hidden', list.length > 0);
-    if (!list.length) $('rClient').value = '__new';
-  }
-
-  async function loadSchedules() {
-    const { schedules } = await api('/api/schedules');
-    $('schedules').innerHTML = schedules.length
-      ? `<h2>Your schedules</h2><table class="data"><thead><tr><th>Client</th><th>For</th><th>Every</th><th>Next invoice</th><th class="r">Amount</th><th></th></tr></thead><tbody>${schedules
-          .map(
-            (s) => `<tr>
-              <td>${esc(s.client)}</td>
-              <td class="muted">${esc(s.items.map((i) => i.name).join(', '))}</td>
-              <td><span class="pill ${esc(s.frequency)}">${s.frequency === 'weekly' ? 'week' : 'month'}</span></td>
-              <td>${s.active ? fmtDate(s.nextRun) : '<span class="muted">Paused</span>'}</td>
-              <td class="r num">${money(s.total, s.currency)}</td>
-              <td class="r" style="white-space:nowrap">
-                <button class="btn ghost small" data-op="${s.active ? 'pause' : 'resume'}" data-id="${esc(s.id)}">${s.active ? 'Pause' : 'Resume'}</button>
-                <button class="btn ghost small" data-op="delete" data-id="${esc(s.id)}">Delete</button>
-              </td>
-            </tr>`
-          )
-          .join('')}</tbody></table>`
-      : '<h2>Your schedules</h2><div class="empty">No recurring invoices yet. Create one with the form, or tell the assistant something like "Bill Priya $725 every month".</div>';
-  }
-
-  $('rClient').addEventListener('change', () => $('newClientFields').classList.toggle('hidden', $('rClient').value !== '__new'));
-
-  $('recForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    $('recErr').textContent = '';
-    const isNew = $('rClient').value === '__new';
-    const c = clients.find((x) => x.id === $('rClient').value);
-    try {
-      const { action } = await api('/api/schedules', {
-        body: {
-          clientName: isNew ? $('rName').value : c.name,
-          clientEmail: isNew ? $('rEmail').value : c.email,
-          description: $('rDesc').value,
-          amount: Number($('rAmount').value),
-          frequency: $('rFreq').value,
-          startDate: $('rStart').value,
-          dueInDays: Number($('rDue').value),
-        },
-      });
-      toast(action.result.firstDraftId ? 'Created. The first invoice draft is waiting in your approval tray.' : `Created. First draft on ${fmtDate(action.payload.startDate)}.`);
-      e.target.reset();
-      $('rStart').value = cfg.today;
-      $('rDue').value = 7;
-      await Promise.all([loadClients(), loadSchedules()]);
-    } catch (err) {
-      $('recErr').textContent = err.message;
-    }
-  });
-
-  $('schedules').addEventListener('click', async (e) => {
-    const { op, id } = e.target.dataset || {};
-    if (!op) return;
-    if (op === 'delete' && !e.target.dataset.confirm) {
-      e.target.dataset.confirm = '1';
-      e.target.textContent = 'Click again to delete';
-      return;
-    }
-    await api(`/api/schedules/${id}/${op}`, { body: {} });
-    toast({ pause: 'Schedule paused', resume: 'Schedule resumed', delete: 'Schedule deleted' }[op]);
-    loadSchedules();
-  });
-
-  $('runBtn').onclick = async () => {
-    const { created } = await api('/api/schedules/run', { body: {} });
-    toast(created.length ? `${created.length} draft${created.length > 1 ? 's' : ''} added to your approval tray` : 'No recurring invoices are due yet');
-    loadSchedules();
-  };
-
-  await Promise.all([loadClients(), loadSchedules()]);
-</script>
+</div>
+<script type="module" src="/clients.js"></script>
 </body>
 </html>

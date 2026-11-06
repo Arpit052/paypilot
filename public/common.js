@@ -90,7 +90,9 @@ export function toast(msg) {
   setTimeout(() => t.remove(), 3200);
 }
 
-export const LOGO = `<svg viewBox="0 0 40 40" aria-hidden="true"><defs><linearGradient id="ppg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset=".55" stop-color="#6366f1"/><stop offset="1" stop-color="#38bdf8"/></linearGradient></defs><rect width="40" height="40" rx="11" fill="url(#ppg)"/><path d="M7.5 32.5C11 31 13.5 28 15.6 24.4" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="2.2" stroke-linecap="round" stroke-dasharray=".1 4.2"/><path d="M31.5 8.5 10 17.6l8.2 3.4 3.3 8.5z" fill="#fff"/><path d="M31.5 8.5 18.2 21l3.3 8.5z" fill="#c7d2fe"/></svg>`;
+export const LOGO = `<svg viewBox="0 0 40 40" aria-hidden="true"><defs><linearGradient id="pp-tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a2a2e"/><stop offset="1" stop-color="#0a0a0b"/></linearGradient><linearGradient id="pp-edge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".28"/><stop offset="1" stop-color="#fff" stop-opacity=".04"/></linearGradient><linearGradient id="pp-wing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d4d4d8"/></linearGradient></defs><rect x=".5" y=".5" width="39" height="39" rx="10.5" fill="url(#pp-tile)" stroke="url(#pp-edge)"/><path d="M29.5 10.5 10.5 18.4l7.4 2.9 3 7.6z" fill="url(#pp-wing)"/><path d="M29.5 10.5 17.9 21.3l3 7.6z" fill="#71717a"/><path d="M17.9 21.3 29.5 10.5" stroke="#0a0a0b" stroke-width=".8" opacity=".5"/></svg>`;
+/** The PayPilot wordmark: "Pay" bright, "Pilot" soft. */
+export const WORDMARK = `<span class="wordmark">Pay<span>Pilot</span></span>`;
 
 export let CONFIG = null;
 
@@ -144,7 +146,7 @@ export async function header(active) {
   side.id = 'sidebar';
   side.innerHTML = `
     <div class="sb-top">
-      <a class="brand" href="/" aria-label="PayPilot home">${LOGO}<span class="wordmark sb-text">PayPilot</span></a>
+      <a class="brand" href="/" aria-label="PayPilot home">${LOGO}<span class="sb-text">${WORDMARK}</span></a>
       <button class="sb-icon" id="sbToggle" aria-label="Toggle sidebar" title="Toggle sidebar">${icon('panel', 17)}</button>
     </div>
     <button class="sb-search" id="openSearch" aria-label="Search" data-tip="Search">${icon('search', 16)}<span class="sb-text">Search…</span><kbd class="sb-text">${/Mac/.test(navigator.platform) ? '⌘' : 'Ctrl'} K</kbd></button>
@@ -155,11 +157,13 @@ export async function header(active) {
       <span class="sb-card-h">${icon('bolt', 15)}<span class="sb-text">Autopilot ${ap.enabled ? 'on' : 'off'}</span><i class="${ap.enabled ? 'on' : ''}"></i></span>
       <span class="sb-text sb-card-b">${ap.enabled ? (ap.next ? `Next: ${esc(ap.next.label.toLowerCase())} to ${esc(ap.next.client)}, ${esc(fmtDate(ap.next.date))}` : 'Watching your unpaid invoices') : 'Reminders are only drafted when you ask'}</span>
     </a>` : ''}
-    ${CONFIG.loginEnabled ? `<button class="sb-link" id="logoutBtn" data-tip="Sign out">${icon('logout')}<span class="sb-text">Sign out</span></button>` : ''}
-    <a class="sb-user" href="/settings" title="Business settings" data-tip="${esc(biz)}">
-      <span class="sb-avatar">${esc(initials || 'P')}</span>
-      <span class="sb-text sb-user-t"><b>${esc(biz)}</b><span>${esc(pp)} · ${esc(ai)}</span></span>
-    </a>`;
+    <div class="sb-userrow">
+      <a class="sb-user" href="/settings" title="Business settings" data-tip="${esc(biz)}">
+        <span class="sb-avatar">${esc(initials || 'P')}</span>
+        <span class="sb-text sb-user-t"><b>${esc(biz)}</b><span>${esc(pp)} · ${esc(ai)}</span></span>
+      </a>
+      <button class="sb-icon sb-out" id="logoutBtn" title="Sign out" aria-label="Sign out">${icon('logout', 16)}</button>
+    </div>`;
   const bar = document.createElement('header');
   bar.className = 'topbar';
   const title = PAGES.find((p) => p.key === active)?.label || (active === 'new' ? 'New invoice' : '');
@@ -202,6 +206,10 @@ export async function header(active) {
   startLiveClock(CONFIG.timezone);
   startNotifications();
   side.querySelector('#logoutBtn')?.addEventListener('click', async () => {
+    if (!CONFIG.loginEnabled) {
+      toast('Set a passcode first, so PayPilot can lock when you sign out.');
+      return setTimeout(() => (location.href = '/settings#security'), 900);
+    }
     await api('/api/logout', { body: {} }).catch(() => {});
     location.href = '/login.html';
   });

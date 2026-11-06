@@ -2,7 +2,7 @@
 //  - "sandbox"/"live": real REST calls to PayPal
 //  - "mock": in-process simulation with the same interface (offline dev & tests)
 import { config, isoDate, now } from './config.js';
-import { kvGet, kvSet } from './db.js';
+import { kvGet, kvSet, listInvoices } from './db.js';
 
 export class PayPalError extends Error {
   constructor(message, status, details) {
@@ -171,7 +171,8 @@ const real = {
     const hdr = (step) => (requestId ? { 'PayPal-Request-Id': `${requestId}-${step}` } : {});
 
     if (!state.number) {
-      state.number = (await api('POST', '/v2/invoicing/generate-next-invoice-number', undefined, hdr('number'))).invoice_number;
+      state.number = String(nextInvoiceNumber());
+      kvSet('inv:seq', Number(state.number));
       save();
     }
     if (!state.id) {
@@ -186,12 +187,27 @@ const real = {
       };
       const body = depositAmount > 0 && kvGet(noSplitKey) ? asNote() : buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference });
       let created;
-      try {
-        created = await api('POST', '/v2/invoicing/invoices', body, { Prefer: 'return=representation', ...hdr('create') });
-      } catch (e) {
-        if (!(depositAmount > 0 && e.status === 400 && /partial/i.test(e.message))) throw e;
-        kvSet(noSplitKey, true);
-        created = await api('POST', '/v2/invoicing/invoices', asNote(), { Prefer: 'return=representation', ...hdr('create-nosplit') });
+      let payload = body;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          created = await api('POST', '/v2/invoicing/invoices', payload, { Prefer: 'return=representation', ...hdr(`create-${state.number}`) });
+          break;
+        } catch (e) {
+          if (depositAmount > 0 && e.status === 400 && /partial/i.test(e.message) && !state.depositAsNote) {
+            kvSet(noSplitKey, true);
+            payload = asNote();
+            continue;
+          }
+          // that number is already used on this PayPal account (e.g. made on paypal.com): take the next one
+          if (attempt < 8 && /duplicate|already exists|invoice_number/i.test(e.message)) {
+            state.number = String(Number(state.number) + 1);
+            kvSet('inv:seq', Number(state.number));
+            payload = { ...payload, detail: { ...payload.detail, invoice_number: state.number } };
+            save();
+            continue;
+          }
+          throw e;
+        }
       }
       state.id = created.id || String(created.href || '').split('/').pop();
       if (!state.id) throw new PayPalError('PayPal did not return an invoice id', 500, created);
@@ -302,9 +318,19 @@ const real = {
 const mockGet = (id) => kvGet(`mock:inv:${id}`);
 const mockPut = (id, v) => kvSet(`mock:inv:${id}`, v);
 export function mockNextNumber() {
-  const seq = kvGet('mock:seq', 1000) + 1;
+  const seq = nextInvoiceNumber();
   kvSet('mock:seq', seq);
-  return String(seq).padStart(4, '0');
+  return String(seq);
+}
+
+/**
+ * Clean, human invoice numbers: 1001, 1002, … (no leading zeros). Continues after the
+ * highest number PayPilot has seen, so imported and demo invoices never collide.
+ */
+export function nextInvoiceNumber() {
+  let max = Math.max(1000, Number(kvGet('mock:seq', 1000)) || 1000, Number(kvGet('inv:seq', 1000)) || 1000);
+  for (const i of listInvoices()) if (/^\d{4,7}$/.test(String(i.number))) max = Math.max(max, Number(i.number));
+  return max + 1;
 }
 export { mockPut };
 
