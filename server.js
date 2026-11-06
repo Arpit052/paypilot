@@ -403,7 +403,7 @@ export function createApp() {
 
 export function start(port = config.port) {
   return new Promise((resolve, reject) => {
-    const server = createApp().listen(port, () => resolve(server));
+    const server = createApp().listen(port, config.host, () => resolve(server));
     server.on('error', reject);
   });
 }

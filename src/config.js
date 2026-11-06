@@ -75,6 +75,9 @@ function validTimeZone(tz) {
 export const config = {
   root: ROOT,
   port: Number(env.PORT || 3000),
+  // Only this computer can open the app, unless HOST says otherwise. Hosting platforms
+  // (Render sets RENDER=true) need 0.0.0.0 so visitors can reach it.
+  host: env.HOST || (env.RENDER ? '0.0.0.0' : '127.0.0.1'),
   dataDir: env.DATA_DIR || path.join(ROOT, 'data'),
 
   businessName: env.BUSINESS_NAME || 'Northline Studio',
