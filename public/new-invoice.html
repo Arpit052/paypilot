@@ -79,7 +79,7 @@
   </div>
 </main>
 <script type="module">
-  import { api, header, esc, money, fmtDate, toast } from '/common.js';
+  import { api, header, esc, money, fmtDate, toast, copyPayLink } from '/common.js';
   const cfg = await header('new');
   const $ = (id) => document.getElementById(id);
   const r2 = (n) => Math.round(n * 100) / 100;
@@ -207,8 +207,9 @@
         const res = r.action.result;
         $('preview').insertAdjacentHTML('beforeend', '<div class="stamp">SENT</div>');
         $('done').innerHTML = `<div class="panel done-card"><b>Invoice #${esc(res.number)} sent through PayPal.</b><p class="muted">It's now on your dashboard as <b>Sent</b>. When ${esc($('name').value)} pays, it changes to <b>Paid</b> automatically and you'll get a notification.</p>
-          <div class="slip-actions"><a class="btn" href="/dashboard">Go to dashboard</a>${res.payerUrl ? `<a class="btn ghost" href="${esc(res.payerUrl)}" target="_blank" rel="noopener">Customer's payment page</a>` : ''}<a class="btn ghost" href="/new-invoice">New invoice</a></div></div>`;
+          <div class="slip-actions"><a class="btn" href="/dashboard">Go to dashboard</a>${res.payerUrl ? `<button class="btn ghost" type="button" id="copyPay">Copy pay link</button>` : ''}<a class="btn ghost" href="/new-invoice">New invoice</a></div></div>`;
         $('form').querySelectorAll('input,select,textarea,button').forEach((x) => (x.disabled = true));
+        document.getElementById('copyPay')?.addEventListener('click', () => copyPayLink(res.payerUrl));
       } else {
         toast('Saved as a draft in your approval tray');
         setTimeout(() => (location.href = '/'), 900);

@@ -66,6 +66,21 @@ export function md(text) {
   return html;
 }
 
+/** Copy the PayPal link a client pays from (to paste in a text, email or WhatsApp). */
+export async function copyPayLink(url) {
+  const full = new URL(url, location.origin).href;
+  try {
+    await navigator.clipboard.writeText(full);
+  } catch {
+    const t = Object.assign(document.createElement('textarea'), { value: full });
+    document.body.append(t);
+    t.select();
+    document.execCommand('copy');
+    t.remove();
+  }
+  toast('Pay link copied. Paste it in a text, email or WhatsApp to your client.');
+}
+
 export function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast';
@@ -481,7 +496,7 @@ export function renderSlip(action, { onDone, onGone } = {}) {
       a.type === 'create_schedule'
         ? `Recurring ${esc(r.frequency)} invoice scheduled. First draft on <b>${esc(fmtDate(r.nextRun))}</b>.`
         : a.type === 'create_invoice'
-        ? `Invoice <b>#${esc(r.number)}</b> sent through PayPal.${r.payerUrl ? ` <a href="${esc(r.payerUrl)}" target="_blank" rel="noopener" title="This is the page your client gets in their email. To test paying, open it while signed in to your sandbox *personal* account.">Preview what your client sees</a>` : ''}`
+        ? `Invoice <b>#${esc(r.number)}</b> sent through PayPal.${r.payerUrl ? ` <button class="linkbtn" data-copylink="${esc(r.payerUrl)}" title="Paste it in a text or WhatsApp. Clients pay faster from a direct link.">Copy pay link</button>` : ''}`
         : a.type === 'send_reminder'
           ? `Reminder sent for invoice <b>#${esc(r.number)}</b>.`
           : a.type === 'add_late_fee'
@@ -503,6 +518,10 @@ export function renderSlip(action, { onDone, onGone } = {}) {
     }, 1500);
   };
 
+  el.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-copylink]');
+    if (b) copyPayLink(b.dataset.copylink);
+  });
   if (action.status !== 'pending') markDone(action);
 
   el.querySelector('[data-approve]')?.addEventListener('click', async (e) => {
@@ -602,7 +621,7 @@ export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = 
     <div class="dr-who">${esc(inv.client || '')}${inv.clientEmail ? ` · ${esc(inv.clientEmail)}` : ''}${inv.reference ? ` · Ref ${esc(inv.reference)}` : ''}</div>
     <table class="dr-lines"><tbody>${lines}${inv.taxPercent ? `<tr><td>Sales tax (${esc(inv.taxPercent)}%)</td><td>${money(Math.round(taxable * inv.taxPercent) / 100, cur)}</td></tr>` : ''}</tbody></table>
     <div class="dr-actions">
-      ${isOpen && inv.payerUrl ? (mock ? `<button class="btn small" data-sim>Simulate client payment</button>` : `<a class="btn small" href="${esc(inv.payerUrl)}" target="_blank" rel="noopener">Open PayPal payment page</a>`) : ''}
+      ${isOpen && inv.payerUrl ? (mock ? `<button class="btn small" data-sim>Simulate client payment</button>` : `<button class="btn small" data-copylink="${esc(inv.payerUrl)}">Copy pay link</button>`) : ''}
       ${isOpen ? `<a class="btn ghost small" href="${ask(`Draft a reminder for invoice #${inv.number}`)}">Draft a reminder</a>` : ''}
       ${isOpen && status === 'OVERDUE' && !(inv.items || []).some((i) => i.lateFee) ? `<a class="btn ghost small" href="${ask(`Add a late fee to invoice #${inv.number}`)}">Add late fee</a>` : ''}
     </div>
@@ -616,6 +635,7 @@ export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = 
   back.onclick = closeInvoiceDrawer;
   dr.querySelector('.x').onclick = closeInvoiceDrawer;
   dr.querySelector('.x').focus();
+  dr.querySelector('[data-copylink]')?.addEventListener('click', (e) => copyPayLink(e.currentTarget.dataset.copylink));
   dr.querySelector('[data-sim]')?.addEventListener('click', async (e) => {
     e.currentTarget.disabled = true;
     await onSimulatePay?.(inv.paypalId);

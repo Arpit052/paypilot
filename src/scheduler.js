@@ -8,6 +8,7 @@ import { runRecurring } from './recurring.js';
 import { scanFollowups } from './followups.js';
 import { notify } from './notify.js';
 import { noteDueDates } from './alerts.js';
+import { runAutopilot } from './autopilot.js';
 import { listInvoices } from './db.js';
 
 let running = false;
@@ -25,7 +26,8 @@ export async function runJobs() {
     }
     result.recurringDrafts = runRecurring().length;
     result.alerts = noteDueDates();
-    const fu = await scanFollowups({ sync: false }).catch((e) => ({ error: e.message }));
+    // Autopilot drafts the reminders that are due today (each still needs your approval)
+    const fu = await runAutopilot().catch((e) => ({ error: e.message }));
     result.reminderDrafts = Array.isArray(fu) ? fu.filter((a) => a.type === 'send_reminder').length : fu;
     result.lateFeeDrafts = Array.isArray(fu) ? fu.filter((a) => a.type === 'add_late_fee').length : 0;
     const drafts = (Number(result.recurringDrafts) || 0) + (Number(result.reminderDrafts) || 0) + result.lateFeeDrafts;
@@ -68,7 +70,11 @@ function startPaymentWatcher() {
 export function startScheduler() {
   startPaymentWatcher();
   // due-date alerts for the bell: soon after start, then every 30 minutes
-  const alerts = () => setupDone() && noteDueDates();
+  const alerts = () => {
+    if (!setupDone()) return;
+    noteDueDates();
+    runAutopilot().catch(() => {});
+  };
   setTimeout(alerts, 8000).unref();
   setInterval(alerts, 30 * 60 * 1000).unref();
   const minutes = config.schedulerMinutes;

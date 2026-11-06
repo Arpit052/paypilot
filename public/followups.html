@@ -9,22 +9,43 @@
   <meta name="theme-color" content="#060914">
 </head>
 <body>
-<main>
+<main class="coll">
   <div class="dash-top">
     <div>
       <h1>Collections</h1>
-      <p class="lede" style="margin:0">Everything your clients owe you, sorted by how late it is. Draft a reminder or a late fee in one click. Nothing reaches a client until you approve it.</p>
+      <p class="lede" style="margin:0">Get paid without the awkward follow-ups. Autopilot writes each reminder on the right day; you just approve.</p>
     </div>
-    <button class="btn" id="chaseAll">Chase all late invoices</button>
+    <button class="ap-toggle" id="apToggle" role="switch" aria-checked="true"><span class="ap-knob"></span><span id="apLabel">Autopilot on</span></button>
   </div>
 
-  <section class="col-hero" id="hero" aria-live="polite"></section>
-  <section class="board" id="board" aria-label="Unpaid invoices by how late they are"></section>
+  <section class="coll-stats" id="stats" aria-label="Money owed"></section>
 
-  <section class="panel" style="margin-top:26px">
-    <h2>Recently sent</h2>
-    <ul class="sent-list" id="recent"></ul>
-  </section>
+  <div class="coll-grid">
+    <div>
+      <div class="sec-head"><h2>Needs your attention</h2><span class="muted" id="attnCount"></span><button class="btn ghost small" id="chaseAll" style="margin-left:auto">Draft reminders for all late</button></div>
+      <div id="attention" class="attn-list"></div>
+      <div class="sec-head" style="margin-top:28px"><h2>On track</h2><span class="muted" id="trackCount"></span></div>
+      <div id="ontrack" class="track-list"></div>
+    </div>
+
+    <aside class="coll-side">
+      <section class="panel ap-plan">
+        <div class="sec-head"><h2>Autopilot plan</h2><span class="saved muted" id="planSaved"></span></div>
+        <p class="muted small" style="margin:-4px 0 14px">Applied to every unpaid invoice. Change a number and it saves.</p>
+        <ol class="ap-steps" id="planSteps"></ol>
+      </section>
+
+      <section class="panel">
+        <div class="sec-head"><h2>Coming up</h2><button class="btn ghost small hidden" id="runNow" style="margin-left:auto">Draft today's now</button></div>
+        <ul class="upcoming" id="upcoming"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>Recently sent</h2>
+        <ul class="sent-list" id="recent"></ul>
+      </section>
+    </aside>
+  </div>
 </main>
 
 <div class="cdrawer hidden" id="drawer" role="dialog" aria-modal="true" aria-label="Review draft">

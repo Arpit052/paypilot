@@ -437,3 +437,20 @@ test('removing a client hides them (PayPal untouched)', async () => {
   assert.equal(after.length, before.length - 1);
   assert.ok(!after.some((c) => c.id === ben.id));
 });
+
+test('autopilot plans every unpaid invoice and never softens the tone', async () => {
+  const { data } = await call('/api/collections');
+  assert.ok(data.autopilot.enabled);
+  assert.ok(data.cards.every((c) => !c.actionable || c.plan.steps.length === 3));
+  assert.ok(Array.isArray(data.comingUp));
+  const bad = await call('/api/autopilot', { firmAfter: 10, finalAfter: 5 });
+  assert.equal(bad.status, 400, 'final must come after firm');
+  // after a final reminder, the next one is final too
+  const { toneFor } = await import('../src/followups.js');
+  assert.equal(toneFor({ reminders: [{ tone: 'final' }] }, 0), 'final');
+  assert.equal(toneFor({ reminders: [] }, 0), 'friendly');
+  // two runs at once create each draft only once
+  const [a, b] = await Promise.all([call('/api/autopilot/run', {}), call('/api/autopilot/run', {})]);
+  const ids = [...a.data.created, ...b.data.created].map((x) => x.id);
+  assert.equal(new Set(ids).size, a.data.created.length);
+});

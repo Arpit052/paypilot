@@ -11,6 +11,7 @@ import { syncInvoices, applyWebhookEvent, importFromPaypal, syncState } from './
 import { scanFollowups } from './src/followups.js';
 import { collections, draftFor } from './src/collections.js';
 import { noteDueDates } from './src/alerts.js';
+import { runAutopilot, saveAutopilotSettings } from './src/autopilot.js';
 import { paypal, isMock } from './src/paypal.js';
 import { llmAvailable } from './src/llm.js';
 import { seedDemo } from './src/seed.js';
@@ -395,6 +396,8 @@ export function createApp() {
     dropStaleActions();
     res.json(collections());
   });
+  api.post('/autopilot', (req, res) => res.json({ autopilot: saveAutopilotSettings(req.body || {}) }));
+  api.post('/autopilot/run', async (req, res) => res.json({ created: await runAutopilot() }));
   api.post('/followups/draft', async (req, res) => {
     const kind = req.body?.kind === 'late_fee' ? 'late_fee' : 'reminder';
     res.json({ action: await draftFor(String(req.body?.invoiceId || ''), kind) });

@@ -7,6 +7,9 @@ import { notOnCurrentPaypal } from './paypal.js';
 import { hasLateFee } from './actions.js';
 import { draftReminder, draftLateFees } from './followups.js';
 import { createAction, lateFeeDraft } from './actions.js';
+import { planFor, comingUp, autopilotSettings } from './autopilot.js';
+import { lifetimeStats } from './analytics.js';
+import { addDays } from './config.js';
 
 export const STAGES = [
   { key: 'upcoming', label: 'Not due yet', hint: 'Due soon. A friendly heads-up can help.' },
@@ -30,6 +33,10 @@ export function collections(today = isoDate()) {
   const totals = { owed: {}, upcoming: {}, late: {}, later: {}, critical: {} };
   const counts = { upcoming: 0, late: 0, later: 0, critical: 0 };
   const cards = [];
+  const settings = autopilotSettings();
+  const allActions = listActions({});
+  const weekEnd = addDays(today, 7);
+  const dueThisWeek = {};
   for (const inv of listInvoices()) {
     if (!isOpen(inv) || !inv.paypalId) continue;
     const c = getClient(inv.clientId) || {};
@@ -39,6 +46,9 @@ export function collections(today = isoDate()) {
     const drafts = pending.filter((a) => a.payload.invoiceId === inv.id).map((a) => ({ id: a.id, type: a.type, tone: a.payload.tone }));
     const actionable = !notOnCurrentPaypal(inv);
     add(totals.owed, inv.currency, inv.total);
+    if (daysLate <= 0 && inv.dueDate <= weekEnd) add(dueThisWeek, inv.currency, inv.total);
+    const plan = actionable ? planFor(inv, { settings, actions: allActions, today }) : { steps: [], next: null };
+    const last = (inv.reminders || []).at(-1) || null;
     add(totals[stage], inv.currency, inv.total);
     counts[stage]++;
     cards.push({
@@ -65,6 +75,8 @@ export function collections(today = isoDate()) {
       lateFeeEligible:
         actionable && config.lateFeePercent > 0 && daysLate >= config.lateFeeAfterDays && !hasLateFee(inv) && !decidedFee.has(inv.id),
       hasLateFee: hasLateFee(inv),
+      plan,
+      lastContact: last ? { at: last.at, tone: last.tone || 'friendly' } : null,
     });
   }
   cards.sort((a, b) => b.daysLate - a.daysLate || b.total - a.total);
@@ -72,7 +84,21 @@ export function collections(today = isoDate()) {
     .filter((a) => ['send_reminder', 'add_late_fee'].includes(a.type) && a.status === 'approved')
     .slice(0, 8)
     .map((a) => ({ type: a.type, number: a.payload.number, client: a.payload.client, tone: a.payload.tone, fee: a.result?.fee ?? a.payload.fee, currency: a.payload.currency, at: isoDate(a.decidedAt || a.createdAt) }));
-  return { today, stages: STAGES, totals, counts, cards, recent, lateFee: { percent: config.lateFeePercent, afterDays: config.lateFeeAfterDays } };
+  const life = lifetimeStats(today);
+  return {
+    today,
+    stages: STAGES,
+    totals,
+    counts,
+    cards,
+    recent,
+    dueThisWeek,
+    speed: { avgDaysToGetPaid: life.avgDaysToGetPaid, onTimeRate: life.onTimeRate },
+    autopilot: settings,
+    comingUp: comingUp(21, today),
+    waiting: allActions.filter((a) => a.status === 'pending' && ['send_reminder', 'add_late_fee'].includes(a.type)).length,
+    lateFee: { percent: config.lateFeePercent, afterDays: config.lateFeeAfterDays },
+  };
 }
 
 /** One-click "Draft reminder" / "Add late fee" on a card. Returns the pending draft. */

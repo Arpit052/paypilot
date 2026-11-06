@@ -1,124 +1,184 @@
-import { api, header, esc, renderSlip, toast, fmtDate, money, RISK_TEXT } from './common.js';
+import { api, header, esc, renderSlip, toast, fmtDate, money, RISK_TEXT, copyPayLink } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 await header('followups');
 
-const STAGE_COLOR = { upcoming: 'var(--paid)', late: '#fbbf24', later: '#fb923c', critical: 'var(--late)' };
 let data = null;
+const TONE_LABEL = { friendly: 'Friendly', firm: 'Firm', final: 'Final' };
 
-const sumMap = (m) => Object.entries(m || {});
-const moneyMap = (m, fallback = 'USD') => {
-  const e = sumMap(m);
-  if (!e.length) return money(0, fallback);
-  return e.map(([cur, v]) => money(v, cur)).join(' + ');
+const entries = (m) => Object.entries(m || {});
+const moneyMap = (m) => (entries(m).length ? entries(m).map(([cur, v]) => money(v, cur)).join(' + ') : money(0, 'USD'));
+const sumMaps = (...ms) => {
+  const out = {};
+  for (const m of ms) for (const [c, v] of entries(m)) out[c] = Math.round(((out[c] || 0) + v) * 100) / 100;
+  return out;
 };
-const primary = (m) => sumMap(m).reduce((t, [, v]) => t + v, 0);
-const initials = (name) => name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+const initials = (n) => n.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+const dayLabel = (iso) => (iso === data.today ? 'Today' : fmtDate(iso));
 
 function lateText(d) {
-  if (d < 0) return `due in ${-d} day${-d === 1 ? '' : 's'}`;
-  if (d === 0) return 'due today';
+  if (d < 0) return `Due in ${-d} day${-d === 1 ? '' : 's'}`;
+  if (d === 0) return 'Due today';
   return `${d} day${d === 1 ? '' : 's'} late`;
 }
 
-function renderHero() {
-  const { totals, counts } = data;
-  const owed = primary(totals.owed);
-  const lateMap = {};
-  for (const k of ['late', 'later', 'critical']) for (const [cur, v] of sumMap(totals[k])) lateMap[cur] = Math.round(((lateMap[cur] || 0) + v) * 100) / 100;
-  const lateCount = counts.late + counts.later + counts.critical;
-  const seg = data.stages
-    .map((s) => {
-      const v = primary(totals[s.key]);
-      return v ? `<span class="seg-part" style="flex:${v};background:${STAGE_COLOR[s.key]}" title="${esc(s.label)}: ${esc(moneyMap(totals[s.key]))}"></span>` : '';
+// ---------------- stats ----------------
+function renderStats() {
+  const t = data.totals;
+  const late = sumMaps(t.late, t.later, t.critical);
+  const lateCount = data.counts.late + data.counts.later + data.counts.critical;
+  const openCount = data.cards.length;
+  const total = entries(t.owed).reduce((a, [, v]) => a + v, 0) || 1;
+  const bar = ['upcoming', 'late', 'later', 'critical']
+    .map((k) => {
+      const v = entries(t[k]).reduce((a, [, x]) => a + x, 0);
+      return v ? `<span class="sb-${k}" style="width:${(v / total) * 100}%" title="${esc(data.stages.find((s) => s.key === k).label)}: ${esc(moneyMap(t[k]))}"></span>` : '';
     })
     .join('');
-  $('hero').innerHTML = owed
-    ? `<div class="ch-main">
-        <span class="muted">Clients owe you</span>
-        <div class="ch-big">${esc(moneyMap(totals.owed))}</div>
-        <span class="${lateCount ? 'ch-late' : 'muted'}">${lateCount ? `${esc(moneyMap(lateMap))} of it is late, across ${lateCount} invoice${lateCount > 1 ? 's' : ''}` : 'Nothing is late. Nice.'}</span>
-      </div>
-      <div class="ch-bar">
-        <div class="seg-bar">${seg}</div>
-        <div class="seg-legend">${data.stages
-          .map((s) => `<span><i style="background:${STAGE_COLOR[s.key]}"></i>${esc(s.label)} <b>${esc(moneyMap(totals[s.key]))}</b></span>`)
-          .join('')}</div>
-      </div>`
-    : `<div class="ch-main"><span class="muted">Clients owe you</span><div class="ch-big">${money(0)}</div><span class="muted">Every invoice is paid. When you send new ones, they show up here until the money arrives.</span></div>`;
-  $('chaseAll').disabled = !lateCount;
+  const sp = data.speed;
+  $('stats').innerHTML = `
+    <div class="cs"><span class="cs-l">Clients owe you</span><b class="cs-v">${esc(moneyMap(t.owed))}</b><span class="cs-s">${openCount} unpaid invoice${openCount === 1 ? '' : 's'}</span></div>
+    <div class="cs ${lateCount ? 'bad' : ''}"><span class="cs-l">Late</span><b class="cs-v">${esc(moneyMap(late))}</b><span class="cs-s">${lateCount ? `${lateCount} invoice${lateCount > 1 ? 's' : ''} past due` : 'Nothing late'}</span></div>
+    <div class="cs"><span class="cs-l">Due this week</span><b class="cs-v">${esc(moneyMap(data.dueThisWeek))}</b><span class="cs-s">not late yet</span></div>
+    <div class="cs"><span class="cs-l">You get paid in</span><b class="cs-v">${sp.avgDaysToGetPaid != null ? `${sp.avgDaysToGetPaid} days` : '—'}</b><span class="cs-s">${sp.onTimeRate != null ? `${sp.onTimeRate}% of invoices paid on time` : 'on average, once you have history'}</span></div>
+    <div class="cs-bar" aria-hidden="true">${bar}</div>`;
 }
 
-function timeline(c) {
-  const steps = [`<span class="tl-step"><i></i>Sent ${esc(fmtDate(c.issueDate))}</span>`];
-  for (const r of c.reminders.slice(-3)) steps.push(`<span class="tl-step"><i class="${esc(r.tone || 'friendly')}"></i>${esc(r.tone ? r.tone[0].toUpperCase() + r.tone.slice(1) : 'Reminder')} reminder ${esc(fmtDate(r.at))}</span>`);
-  if (c.hasLateFee) steps.push('<span class="tl-step"><i class="final"></i>Late fee added</span>');
-  return `<div class="tl">${steps.join('')}</div>`;
+// ---------------- plan tracker on each invoice ----------------
+function tracker(c) {
+  const st = c.plan.steps;
+  if (!st.length) return '';
+  const icon = { done: '✓', waiting: '•', due: '!', planned: '', skipped: '–' };
+  return `<ol class="trk">${st
+    .map(
+      (s) => `<li class="t-${esc(s.state)}" title="${esc(s.label)} · ${esc(s.state === 'done' ? 'sent' : s.state === 'waiting' ? 'draft ready' : s.state === 'skipped' ? 'skipped' : s.state === 'due' ? 'due now' : 'planned')}">
+        <span class="t-dot">${icon[s.state] || ''}</span><span class="t-name">${esc(TONE_LABEL[s.tone])}</span><span class="t-date">${esc(s.state === 'done' ? 'sent' : s.state === 'skipped' ? 'skipped' : dayLabel(s.date))}</span></li>`
+    )
+    .join('')}</ol>`;
 }
 
-function card(c) {
-  const draft = c.drafts[0];
-  let actions = '';
-  if (!c.actionable) actions = `<span class="muted small">Not on the PayPal account you're connected to.</span>`;
-  else if (draft)
-    actions = `<button class="btn small" data-review="${esc(draft.id)}">Review ${draft.type === 'add_late_fee' ? 'late fee' : `${esc(draft.tone || '')} reminder`}</button>${c.drafts.length > 1 ? `<span class="muted small">+${c.drafts.length - 1} more draft</span>` : ''}`;
-  else
-    actions = `<button class="btn ghost small" data-draft="${esc(c.id)}" data-kind="reminder">${c.daysLate > 0 ? 'Draft reminder' : 'Draft heads-up'}</button>${
-      c.lateFeeEligible ? `<button class="btn ghost small" data-draft="${esc(c.id)}" data-kind="late_fee">Add ${data.lateFee.percent}% late fee</button>` : ''
-    }`;
-  return `<article class="ccard ${esc(c.stage)}">
-    <div class="cc-top">
+function primaryAction(c) {
+  if (!c.actionable) return `<span class="muted small">Not on the PayPal account you're connected to.</span>`;
+  const draft = c.drafts.find((d) => d.type === 'send_reminder') || c.drafts[0];
+  if (draft) return `<button class="btn small" data-review="${esc(draft.id)}">Review ${draft.type === 'add_late_fee' ? 'late fee' : `${esc((draft.tone || '').toLowerCase())} reminder`}</button>`;
+  const next = c.plan.next;
+  const tone = next?.tone || 'friendly';
+  const label = c.daysLate > 0 ? `Write ${tone} reminder` : 'Send a heads-up';
+  return `<button class="btn small ${c.daysLate > 0 ? '' : 'ghost'}" data-draft="${esc(c.id)}" data-kind="reminder">${label}</button>`;
+}
+
+function attnCard(c) {
+  const extraFee = c.lateFeeEligible && !c.drafts.some((d) => d.type === 'add_late_fee') ? `<button class="btn ghost small" data-draft="${esc(c.id)}" data-kind="late_fee">+ ${data.lateFee.percent}% late fee</button>` : '';
+  const more = c.drafts.length > 1 ? `<span class="muted small">${c.drafts.length} drafts ready</span>` : '';
+  return `<article class="acard s-${esc(c.stage)}">
+    <div class="ac-who">
       <span class="avatar" aria-hidden="true">${esc(initials(c.client))}</span>
-      <div class="cc-who"><b>${esc(c.client)}</b><span class="muted">${esc(c.company || c.email)}</span></div>
-      <div class="cc-amt">${esc(money(c.total, c.currency))}</div>
+      <div><b>${esc(c.client)}</b><span class="muted">${esc(c.company || c.email)}</span></div>
     </div>
-    <div class="cc-work"><span class="num">#${esc(c.number)}</span> ${esc(c.work)}</div>
-    <div class="cc-tags">
-      <span class="chip-late ${esc(c.stage)}">${esc(lateText(c.daysLate))}</span>
-      ${c.status === 'PARTIALLY_PAID' ? '<span class="chip-soft">Part paid</span>' : ''}
-      ${c.risk && c.risk !== 'none' && c.risk !== 'new' ? `<span class="chip-soft risk-${esc(c.risk)}">${esc(RISK_TEXT[c.risk] || c.risk)} risk</span>` : ''}
-      ${c.usuallyLate ? `<span class="chip-soft">usually ${esc(c.usuallyLate)}d late</span>` : ''}
+    <div class="ac-mid">
+      <div class="ac-line"><span class="chip-late ${esc(c.stage)}">${esc(lateText(c.daysLate))}</span>${c.status === 'PARTIALLY_PAID' ? '<span class="chip-soft">Part paid</span>' : ''}${
+        c.risk === 'high' || c.risk === 'medium' ? `<span class="chip-soft risk-${esc(c.risk)}">${esc(RISK_TEXT[c.risk])} risk · usually ${esc(c.usuallyLate)}d late</span>` : ''
+      }</div>
+      <div class="ac-work"><span class="num">#${esc(c.number)}</span> ${esc(c.work)}</div>
+      <div class="ac-last">${c.lastContact ? `Last contact: ${esc(TONE_LABEL[c.lastContact.tone] || 'Reminder')} reminder, ${esc(fmtDate(c.lastContact.at))}` : `Sent ${esc(fmtDate(c.issueDate))}, no reminders yet`}</div>
+      ${tracker(c)}
     </div>
-    ${timeline(c)}
-    <div class="cc-actions">${actions}${c.payerUrl ? `<a class="cc-link" href="${esc(c.payerUrl)}" target="_blank" rel="noopener" title="The page your client gets in their email">Client's view ↗</a>` : ''}</div>
+    <div class="ac-right">
+      <div class="ac-amt">${esc(money(c.total, c.currency))}</div>
+      <div class="ac-acts">${primaryAction(c)}${extraFee}${more}</div>
+      ${c.payerUrl ? `<button class="linkbtn small" data-copy="${esc(c.payerUrl)}" title="Paste it in a text or WhatsApp message. Clients pay faster from a direct link.">Copy pay link</button>` : ''}
+    </div>
   </article>`;
 }
 
-function renderBoard() {
-  $('board').innerHTML = data.stages
-    .map((s) => {
-      const cards = data.cards.filter((c) => c.stage === s.key);
-      return `<div class="bcol">
-        <div class="bcol-head"><span class="dot" style="background:${STAGE_COLOR[s.key]}"></span><b>${esc(s.label)}</b><span class="muted">${cards.length}</span><span class="bcol-sum">${esc(moneyMap(data.totals[s.key]))}</span></div>
-        <p class="bcol-hint">${esc(s.hint)}</p>
-        <div class="bcol-cards">${cards.length ? cards.map(card).join('') : '<div class="bcol-empty">Nothing here.</div>'}</div>
-      </div>`;
-    })
-    .join('');
+function trackRow(c) {
+  const n = c.plan.next;
+  return `<div class="trow">
+    <span class="avatar sm" aria-hidden="true">${esc(initials(c.client))}</span>
+    <span class="tr-who"><b>${esc(c.client)}</b><span class="muted">#${esc(c.number)} · ${esc(c.work)}</span></span>
+    <span class="tr-due">${esc(lateText(c.daysLate))}</span>
+    <span class="tr-next muted">${n ? `${esc(n.label)} · ${esc(dayLabel(n.date))}` : '—'}</span>
+    <span class="tr-amt">${esc(money(c.total, c.currency))}</span>
+    ${c.payerUrl ? `<button class="linkbtn small" data-copy="${esc(c.payerUrl)}" title="Copy the PayPal link your client pays from">Copy link</button>` : ''}
+  </div>`;
+}
+
+function renderLists() {
+  const needs = (c) => c.daysLate >= -1 || c.drafts.length || c.plan.next?.state === 'due';
+  const attn = data.cards.filter(needs);
+  const track = data.cards.filter((c) => !needs(c));
+  $('attnCount').textContent = attn.length ? `${attn.length}` : '';
+  $('trackCount').textContent = track.length ? `${track.length}` : '';
+  const nextUp = data.comingUp.find((x) => x.state === 'planned');
+  $('attention').innerHTML = attn.length
+    ? attn.map(attnCard).join('')
+    : `<div class="all-clear"><div class="ac-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <div><b>You're all caught up.</b><br><span class="muted">${
+          nextUp ? `Autopilot's next step: ${esc(nextUp.label.toLowerCase())} to ${esc(nextUp.client)} on ${esc(dayLabel(nextUp.date))}.` : data.cards.length ? 'Nothing needs you right now.' : 'No unpaid invoices. Send one from New invoice or the Assistant.'
+        }</span></div></div>`;
+  $('ontrack').innerHTML = track.length ? track.map(trackRow).join('') : `<div class="muted small" style="padding:6px 2px">Nothing else open.</div>`;
+  const anyLate = data.cards.some((c) => c.daysLate > 0 && c.actionable);
+  $('chaseAll').classList.toggle('hidden', !anyLate);
+}
+
+// ---------------- autopilot plan + coming up ----------------
+function renderPlan() {
+  const a = data.autopilot;
+  $('apToggle').setAttribute('aria-checked', String(a.enabled));
+  $('apToggle').classList.toggle('off', !a.enabled);
+  $('apLabel').textContent = a.enabled ? 'Autopilot on' : 'Autopilot off';
+  const num = (k, v, max) => `<input type="number" min="0" max="${max}" value="${v}" data-plan="${k}" aria-label="${k}">`;
+  $('planSteps').innerHTML = `
+    <li class="ps friendly"><span class="ps-dot"></span><div><b>Friendly heads-up</b><span>${num('beforeDays', a.beforeDays, 14)} days <em>before</em> the due date</span></div></li>
+    <li class="ps firm"><span class="ps-dot"></span><div><b>Firm reminder</b><span>${num('firmAfter', a.firmAfter, 30)} days <em>after</em> the due date</span></div></li>
+    <li class="ps final"><span class="ps-dot"></span><div><b>Final reminder</b><span>${num('finalAfter', a.finalAfter, 90)} days <em>after</em> the due date</span>
+      <label class="ps-fee"><input type="checkbox" data-plan="feeWithFinal" ${a.feeWithFinal ? 'checked' : ''}> add a ${data.lateFee.percent}% late fee</label></div></li>`;
+  renderUpcoming();
+}
+
+function renderUpcoming() {
+  const a = data.autopilot;
+  const up = data.comingUp.slice(0, 10);
+  const groups = [];
+  for (const x of up) {
+    const g = groups.at(-1);
+    g && g.date === x.date ? g.items.push(x) : groups.push({ date: x.date, items: [x] });
+  }
+  $('upcoming').innerHTML = up.length
+    ? groups
+        .map(
+          (g) => `<li class="up-day"><span class="up-date">${esc(dayLabel(g.date))}</span><ul>${g.items
+            .map((x) => `<li class="up-item ${esc(x.tone)}"><span class="ps-dot"></span><span><b>${esc(x.label)}</b> · ${esc(x.client)}<br><span class="muted">#${esc(x.number)} · ${esc(x.amount)}${x.state === 'waiting' ? ' · draft ready' : ''}</span></span></li>`)
+            .join('')}</ul></li>`
+        )
+        .join('')
+    : `<li class="muted small">${a.enabled ? 'Nothing planned. Unpaid invoices get a plan automatically.' : 'Autopilot is off. Turn it on to plan reminders for every unpaid invoice.'}</li>`;
+  $('runNow').classList.toggle('hidden', !(a.enabled && data.comingUp.some((x) => x.state === 'due')));
 }
 
 function renderRecent() {
   $('recent').innerHTML = data.recent.length
     ? data.recent
+        .slice(0, 6)
         .map(
           (r) => `<li><span class="pill ${r.type === 'add_late_fee' ? 'final' : esc(r.tone)}">${r.type === 'add_late_fee' ? 'late fee' : esc(r.tone)}</span>
-            <span>${r.type === 'add_late_fee' ? `Added ${esc(money(r.fee, r.currency))} late fee to` : 'Reminder sent for'} <b>#${esc(r.number)}</b> · ${esc(r.client)}</span>
-            <span class="muted">${esc(fmtDate(String(r.at).slice(0, 10)))}</span></li>`
+          <span>${r.type === 'add_late_fee' ? `${esc(money(r.fee, r.currency))} fee on` : 'Reminder for'} <b>#${esc(r.number)}</b> · ${esc(r.client)}</span><span class="muted">${esc(fmtDate(r.at))}</span></li>`
         )
         .join('')
-    : '<li class="muted">Nothing sent yet. Reminders and late fees you approve show up here.</li>';
+    : '<li class="muted small">Nothing sent yet.</li>';
 }
 
 async function load() {
   data = await api('/api/collections');
-  renderHero();
-  renderBoard();
+  renderStats();
+  renderLists();
+  renderPlan();
   renderRecent();
 }
 
-// ---- review drawer ----
+// ---------------- interactions ----------------
 function openDrawer(action) {
-  $('drawerTitle').textContent = action.type === 'add_late_fee' ? `Late fee · invoice #${action.payload.number}` : `Reminder · invoice #${action.payload.number}`;
+  $('drawerTitle').textContent = action.type === 'add_late_fee' ? `Late fee · invoice #${action.payload.number}` : `${TONE_LABEL[action.payload.tone] || ''} reminder · invoice #${action.payload.number}`;
   $('drawerBody').innerHTML = '';
   $('drawerBody').append(
     renderSlip(action, {
@@ -138,7 +198,9 @@ function closeDrawer() {
 $('drawer').addEventListener('click', (e) => e.target.closest('[data-close]') && closeDrawer());
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closeDrawer());
 
-$('board').addEventListener('click', async (e) => {
+document.querySelector('.coll').addEventListener('click', async (e) => {
+  const cp = e.target.closest('[data-copy]');
+  if (cp) return copyPayLink(cp.dataset.copy);
   const rev = e.target.closest('[data-review]');
   if (rev) {
     const { actions } = await api('/api/actions?status=pending');
@@ -161,28 +223,67 @@ $('board').addEventListener('click', async (e) => {
   }
 });
 
+let saveTimer;
+$('planSteps').addEventListener('input', () => {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(savePlan, 600);
+});
+async function savePlan() {
+  const body = {};
+  document.querySelectorAll('[data-plan]').forEach((el) => (body[el.dataset.plan] = el.type === 'checkbox' ? el.checked : Number(el.value)));
+  try {
+    await api('/api/autopilot', { body });
+    $('planSaved').textContent = 'Saved';
+    setTimeout(() => ($('planSaved').textContent = ''), 1500);
+    data = await api('/api/collections');
+    // leave the plan inputs as typed; refresh everything that depends on them
+    renderStats();
+    renderLists();
+    renderUpcoming();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+$('apToggle').onclick = async () => {
+  const enabled = !data.autopilot.enabled;
+  await api('/api/autopilot', { body: { enabled } });
+  toast(enabled ? 'Autopilot is on. It drafts reminders on the right days; you approve them.' : 'Autopilot is off. Nothing will be drafted automatically.');
+  if (enabled) await api('/api/autopilot/run', { body: {} }).catch(() => {});
+  load();
+};
+
+$('runNow').onclick = async (e) => {
+  const b = e.currentTarget;
+  b.disabled = true;
+  b.textContent = 'Writing…';
+  try {
+    const { created } = await api('/api/autopilot/run', { body: {} });
+    toast(created.length ? `${created.length} draft${created.length > 1 ? 's' : ''} ready for your OK` : 'Nothing new to draft');
+    await load();
+  } catch (err) {
+    toast(err.message);
+  } finally {
+    b.disabled = false;
+    b.textContent = "Draft today's now";
+  }
+};
+
 $('chaseAll').onclick = async (e) => {
   const b = e.currentTarget;
   b.disabled = true;
   b.textContent = 'Writing reminders…';
   try {
     const { created } = await api('/api/followups/scan', { body: {} });
-    const nRem = created.filter((a) => a.type === 'send_reminder').length;
-    const nFee = created.length - nRem;
-    toast(
-      created.length
-        ? `${[nRem ? `${nRem} reminder${nRem > 1 ? 's' : ''}` : '', nFee ? `${nFee} late fee${nFee > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ')} ready to review`
-        : 'Every late invoice already has a draft or a recent reminder'
-    );
+    toast(created.length ? `${created.length} draft${created.length > 1 ? 's' : ''} ready to review` : 'Every late invoice already has a draft or a recent reminder');
     await load();
   } catch (err) {
     toast(err.message);
   } finally {
-    b.textContent = 'Chase all late invoices';
     b.disabled = false;
+    b.textContent = 'Draft reminders for all late';
   }
 };
 
-// live: refresh when a payment or new draft arrives
 window.addEventListener('pp:notification', () => load());
 await load();

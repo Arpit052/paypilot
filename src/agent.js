@@ -5,6 +5,7 @@ import { runToolLoop } from './llm.js';
 import { createAction, normaliseInvoiceDraft, normaliseScheduleDraft, lateFeeDraft, hasLateFee, cleanText } from './actions.js';
 import { clientStats, earningsSummary, forecastCashflow, isOpen, isOverdue, clientName, topCustomers } from './analytics.js';
 import { isMock } from './paypal.js';
+import { toneFor, lastTone } from './followups.js';
 
 function systemPrompt() {
   const today = isoDate();
@@ -279,6 +280,9 @@ function makeHandlers(created) {
       const inv = findInvoice(invoice);
       if (!inv) return { error: `Invoice "${invoice}" not found` };
       if (!isOpen(inv)) return { error: `Invoice #${inv.number} is ${inv.status}; no reminder needed` };
+      const asked = tone;
+      tone = toneFor(inv, Math.max(0, daysBetween(inv.dueDate, today)), asked);
+      if (tone !== asked) return { error: `A ${lastTone(inv) || tone} reminder was already sent for #${inv.number}, so the next one can't be softer. Rewrite it with tone "${tone}" and call propose_reminder again.` };
       const a = createAction(
         'send_reminder',
         { invoiceId: inv.id, number: inv.number, client: clientName(inv.clientId), amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, tone, subject: cleanText(subject), message: cleanText(message) },

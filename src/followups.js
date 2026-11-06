@@ -8,10 +8,18 @@ import { notOnCurrentPaypal } from './paypal.js';
 import { isOverdue, clientStats, clientName } from './analytics.js';
 import { syncInvoices } from './sync.js';
 
-function toneFor(remindersSent, daysOverdue) {
-  if (remindersSent >= 2 || daysOverdue > 30) return 'final';
-  if (remindersSent === 1 || daysOverdue > 10) return 'firm';
-  return 'friendly';
+export const TONES = ['friendly', 'firm', 'final'];
+const rank = (t) => Math.max(0, TONES.indexOf(t));
+/** The firmest tone already used on this invoice (null if no reminder yet). */
+export const lastTone = (inv) => (inv.reminders || []).reduce((best, r) => (best === null || rank(r.tone) > rank(best) ? r.tone || 'friendly' : best), null);
+
+/** Tone escalates with lateness and reminders sent, and never drops below the last one used. */
+export function toneFor(inv, daysOverdue, wanted = null) {
+  const sent = (inv.reminders || []).length;
+  let t = sent >= 2 || daysOverdue > 30 ? 'final' : sent === 1 || daysOverdue > 10 ? 'firm' : 'friendly';
+  if (daysOverdue <= 0 && !sent) t = 'friendly';
+  for (const other of [lastTone(inv), wanted]) if (other && rank(other) > rank(t)) t = other;
+  return t;
 }
 
 function templateReminder(inv, tone, daysOverdue) {
@@ -21,10 +29,10 @@ function templateReminder(inv, tone, daysOverdue) {
   const sign = config.businessName ? `\n${config.businessName}` : '';
   const body = {
     friendly: `Hi ${name},\n\nHope you're doing well! Just a quick nudge that invoice #${inv.number} for ${amt} ${inv.dueDate >= isoDate() ? 'is due on' : 'was due on'} ${due}. You can pay it securely with the PayPal link in this email.\n\nThanks so much!${sign}`,
-    firm: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} is now ${daysOverdue} days past its due date (${due}). Could you please arrange payment this week, or let me know if anything is holding it up?\n\nThank you,${sign}`,
-    final: `Hi ${name},\n\nThis is a final reminder that invoice #${inv.number} for ${amt} is ${daysOverdue} days overdue. Please settle it within 3 business days. If there's an issue with the invoice, reply and I'll be glad to help resolve it.\n\nRegards,${sign}`,
+    firm: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} ${daysOverdue > 0 ? `is now ${daysOverdue} days past its due date (${due})` : `is due on ${due}`}. Could you please arrange payment this week, or let me know if anything is holding it up?\n\nThank you,${sign}`,
+    final: `Hi ${name},\n\nThis is a final reminder that invoice #${inv.number} for ${amt} ${daysOverdue > 0 ? `is ${daysOverdue} days overdue` : `is due on ${due}`}. Please settle it within 3 business days. If there's an issue with the invoice, reply and I'll be glad to help resolve it.\n\nRegards,${sign}`,
   }[tone];
-  const subject = { friendly: 'Friendly reminder', firm: 'Payment overdue', final: 'Final reminder' }[tone] + `: invoice #${inv.number}`;
+  const subject = { friendly: 'Friendly reminder', firm: daysOverdue > 0 ? 'Payment overdue' : 'Payment reminder', final: 'Final reminder' }[tone] + `: invoice #${inv.number}`;
   return { subject, message: body };
 }
 
@@ -34,7 +42,7 @@ async function aiReminder(inv, tone, daysOverdue) {
 Freelancer business: ${config.businessName || '(not set - sign off without a business name)'}
 Client: ${clientName(inv.clientId)}
 Invoice #${inv.number}: ${inv.currency} ${inv.total} for ${inv.items.map((i) => i.name).join(', ')}
-Due date: ${inv.dueDate} (${inv.dueDate >= isoDate() ? 'not overdue yet - write a light, friendly heads-up before the due date' : `${daysOverdue} days overdue`}). Reminders already sent: ${inv.reminders.length}.
+Due date: ${inv.dueDate} (${inv.dueDate >= isoDate() ? 'not overdue yet - write a light, friendly heads-up before the due date' : `${daysOverdue} days overdue`}). Reminders already sent: ${inv.reminders.length}${lastTone(inv) ? ` (the last one was ${lastTone(inv)}, so don't sound softer than that)` : ''}.
 Client history: ${st.paidCount} paid invoices, average ${st.avgDaysLate ?? 'n/a'} days late, risk ${st.riskLabel}.
 Mention that they can pay via the PayPal link in the email. Max 90 words. Warm but professional; never threatening.
 Respond with ONLY JSON: {"subject": "...", "message": "..."}`;
@@ -61,9 +69,9 @@ export async function scanFollowups({ sync = true } = {}) {
 }
 
 /** Draft one reminder for one invoice (AI first, template if the AI is unavailable). */
-export async function draftReminder(inv, today = isoDate()) {
+export async function draftReminder(inv, today = isoDate(), { tone: wanted = null, origin = 'followup' } = {}) {
   const daysOverdue = Math.max(0, daysBetween(inv.dueDate, today));
-  const tone = daysOverdue === 0 ? 'friendly' : toneFor(inv.reminders.length, daysOverdue);
+  const tone = toneFor(inv, daysOverdue, wanted);
   let draft;
   let draftedBy = 'ai';
   try {
@@ -76,7 +84,7 @@ export async function draftReminder(inv, today = isoDate()) {
   return createAction(
     'send_reminder',
     { invoiceId: inv.id, number: inv.number, client: clientName(inv.clientId), amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, daysOverdue, tone, draftedBy, ...draft },
-    { origin: 'followup', summary: `Reminder #${inv.number} (${tone})` }
+    { origin, summary: `Reminder #${inv.number} (${tone})` }
   );
 }
 
