@@ -263,6 +263,14 @@ function update(table, cols, id, patch) {
   if (sets.length) sql().prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
 }
 
+/** Remove a client and their invoices from PayPilot (PayPal is not touched). */
+export function deleteClient(id) {
+  const d = sql();
+  d.prepare('DELETE FROM invoices WHERE client_id = ?').run(id);
+  d.prepare('DELETE FROM schedules WHERE client_id = ?').run(id);
+  d.prepare('DELETE FROM clients WHERE id = ?').run(id);
+}
+
 export function deleteInvoice(id) {
   sql().prepare('DELETE FROM invoices WHERE id = ?').run(id);
 }

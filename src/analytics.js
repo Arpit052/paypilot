@@ -46,7 +46,9 @@ export function clientStats(clientId, today = isoDate()) {
   if (!paid.length && !overdue.length) risk = 20; // new client: unknown
   risk = Math.round(Math.min(100, risk));
   // none = proven reliable payer; low = small/unknown risk (incl. brand-new clients)
-  const riskLabel = risk >= 60 ? 'high' : risk >= 30 ? 'medium' : paid.length && !overdue.length && risk < 10 ? 'none' : 'low';
+  // new = no payment history yet, so there's nothing to judge
+  const riskLabel =
+    !paid.length && !overdue.length ? 'new' : risk >= 60 ? 'high' : risk >= 30 ? 'medium' : paid.length && !overdue.length && risk < 10 ? 'none' : 'low';
 
   const sumBy = (arr) => arr.reduce((s, i) => s + i.total, 0);
   return {

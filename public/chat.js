@@ -54,6 +54,7 @@ function updateTrayCount() {
 
 function addSlip(action, prepend = true) {
   const el = renderSlip(action, {
+    onGone: () => updateTrayCount(),
     onDone: (a) => {
       updateTrayCount();
       if (a.status === 'approved')

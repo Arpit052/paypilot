@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PayPilot · Follow-ups</title>
+  <title>PayPilot · Collections</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <meta name="theme-color" content="#060914">
@@ -12,15 +12,28 @@
 <main>
   <div class="dash-top">
     <div>
-      <h1>Follow-ups</h1>
-      <p class="lede" style="margin:0">PayPilot checks PayPal for overdue invoices and drafts a reminder for each one. The tone gets firmer with each reminder, and very late invoices get a suggested late fee (set it in <a href="/settings">Settings</a>). You approve everything before it goes out.</p>
+      <h1>Collections</h1>
+      <p class="lede" style="margin:0">Everything your clients owe you, sorted by how late it is. Draft a reminder or a late fee in one click. Nothing reaches a client until you approve it.</p>
     </div>
-    <button class="btn" id="scanBtn">Find overdue invoices</button>
+    <button class="btn" id="chaseAll">Chase all late invoices</button>
   </div>
-  <div class="fu-grid" id="pending"></div>
-  <h2 style="margin-top:36px">Sent and discarded</h2>
-  <div class="panel table-wrap" id="history"></div>
+
+  <section class="col-hero" id="hero" aria-live="polite"></section>
+  <section class="board" id="board" aria-label="Unpaid invoices by how late they are"></section>
+
+  <section class="panel" style="margin-top:26px">
+    <h2>Recently sent</h2>
+    <ul class="sent-list" id="recent"></ul>
+  </section>
 </main>
+
+<div class="cdrawer hidden" id="drawer" role="dialog" aria-modal="true" aria-label="Review draft">
+  <div class="cdrawer-scrim" data-close></div>
+  <div class="cdrawer-panel">
+    <div class="cdrawer-head"><b id="drawerTitle">Review draft</b><button class="btn ghost small" data-close>Close</button></div>
+    <div id="drawerBody"></div>
+  </div>
+</div>
 <script type="module" src="/followups.js"></script>
 </body>
 </html>

@@ -402,3 +402,38 @@ test('PayPal invoice body shape', () => {
   assert.deepEqual(b.items[0].unit_amount, { currency_code: 'USD', value: '600.00' });
   assert.equal(b.items[0].quantity, '1');
 });
+
+test('collections board groups unpaid invoices and drafts in one click', async () => {
+  const { data } = await call('/api/collections');
+  assert.equal(data.stages.length, 4);
+  assert.ok(data.cards.every((c) => ['upcoming', 'late', 'later', 'critical'].includes(c.stage)));
+  const open = data.cards.find((c) => c.actionable && !c.drafts.length);
+  if (open) {
+    const r = await call('/api/followups/draft', { invoiceId: open.id, kind: 'reminder' });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+    assert.equal(r.data.action.type, 'send_reminder');
+    // asking again returns the same draft instead of a duplicate
+    assert.equal((await call('/api/followups/draft', { invoiceId: open.id, kind: 'reminder' })).data.action.id, r.data.action.id);
+  }
+});
+
+test('PayPal-unsupported currencies are refused with a clear message', async () => {
+  const r = await call('/api/invoices', { clientName: 'Asha Rao', clientEmail: 'asha@example.com', items: [{ name: 'Logo', quantity: 1, unitPrice: 5000 }], currency: 'INR', sendNow: true });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /can't be in INR/);
+});
+
+test('AI text with literal \\n is turned into real line breaks', async () => {
+  const { cleanText } = await import('../src/actions.js');
+  assert.equal(cleanText('Hi,\\n\\nThanks\\nAna'), 'Hi,\n\nThanks\nAna');
+});
+
+test('removing a client hides them (PayPal untouched)', async () => {
+  const before = (await call('/api/clients')).data.clients;
+  const ben = before.find((c) => c.name === 'Ben Whitaker');
+  const r = await fetch(`${base}/api/clients/${ben.id}`, { method: 'DELETE' });
+  assert.equal(r.status, 200);
+  const after = (await call('/api/clients')).data.clients;
+  assert.equal(after.length, before.length - 1);
+  assert.ok(!after.some((c) => c.id === ben.id));
+});

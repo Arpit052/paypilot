@@ -48,12 +48,34 @@
   $('rStart').value = cfg.today;
   let clients = [];
 
+  // two-step remove: first click asks, second click removes
+  document.getElementById('clients').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-rm]');
+    if (!b) return;
+    if (!b.classList.contains('sure')) {
+      document.querySelectorAll('.rm-client.sure').forEach((x) => { x.classList.remove('sure'); x.textContent = 'Remove'; });
+      b.classList.add('sure');
+      b.textContent = 'Remove? Click again';
+      setTimeout(() => { if (b.isConnected) { b.classList.remove('sure'); b.textContent = 'Remove'; } }, 4000);
+      return;
+    }
+    b.disabled = true;
+    try {
+      await api(`/api/clients/${encodeURIComponent(b.dataset.rm)}`, { method: 'DELETE' });
+      toast('Client removed from PayPilot');
+      loadClients();
+    } catch (err) {
+      toast(err.message);
+      b.disabled = false;
+    }
+  });
+
   async function loadClients() {
     const [{ clients: list }, { customers }] = await Promise.all([api('/api/clients'), api('/api/insights/top-customers?limit=50')]);
     clients = list;
     const rank = Object.fromEntries(customers.map((c) => [c.clientId, c]));
     $('clients').innerHTML = list.length
-      ? `<table class="data"><thead><tr><th>Client</th><th>Risk</th><th class="r">Usually pays</th><th class="r">Invoices</th><th class="r">Total paid</th><th class="r">Outstanding</th><th class="r">Overdue</th></tr></thead><tbody>${list
+      ? `<table class="data"><thead><tr><th>Client</th><th>Risk</th><th class="r">Usually pays</th><th class="r">Invoices</th><th class="r">Total paid</th><th class="r">Outstanding</th><th class="r">Overdue</th><th></th></tr></thead><tbody>${list
           .map((c) => {
             const r = rank[c.id];
             return `<tr>
@@ -64,6 +86,7 @@
               <td class="r num">${money(c.totalPaid, c.currency)}${r ? `<br><span class="muted" style="font-size:12px">#${r.rank} · ${r.share}% of revenue</span>` : ''}</td>
               <td class="r num">${money(c.outstanding, c.currency)}</td>
               <td class="r num">${c.overdueCount ? `<span style="color:var(--late)">${money(c.overdueAmount, c.currency)}</span>` : '—'}</td>
+              <td class="r"><button class="rm-client" data-rm="${esc(c.id)}" title="Remove from PayPilot (PayPal isn't changed)">Remove</button></td>
             </tr>`;
           })
           .join('')}</tbody></table>`

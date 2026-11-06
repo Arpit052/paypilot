@@ -205,6 +205,9 @@ const real = {
           ? sent.href
           : (sent?.links || []).find((l) => l.rel === 'payer-view')?.href || null;
       state.sent = true;
+      // the exact link PayPal emails to the client
+      const fresh = await api('GET', `/v2/invoicing/invoices/${state.id}`).catch(() => null);
+      state.payerUrl = fresh?.detail?.metadata?.recipient_view_url || state.payerUrl;
       save();
     }
     return { paypalId: state.id, number: state.number, status: 'SENT', payerUrl: state.payerUrl, issueDate: isoDate(), total: state.total, depositAsNote: Boolean(state.depositAsNote) };
@@ -212,7 +215,7 @@ const real = {
 
   async getInvoice(paypalId) {
     const inv = await api('GET', `/v2/invoicing/invoices/${paypalId}`);
-    const payerUrl = (inv.links || []).find((l) => l.rel === 'payer-view')?.href || null;
+    const payerUrl = inv.detail?.metadata?.recipient_view_url || (inv.links || []).find((l) => l.rel === 'payer-view')?.href || null;
     return { status: inv.status, paidDate: paidDateFrom(inv), payerUrl, raw: inv };
   },
 

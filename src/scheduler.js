@@ -7,6 +7,7 @@ import { syncInvoices, importFromPaypal, importIfStale } from './sync.js';
 import { runRecurring } from './recurring.js';
 import { scanFollowups } from './followups.js';
 import { notify } from './notify.js';
+import { noteDueDates } from './alerts.js';
 import { listInvoices } from './db.js';
 
 let running = false;
@@ -23,6 +24,7 @@ export async function runJobs() {
       result.sync = await syncInvoices().catch((e) => ({ error: e.message }));
     }
     result.recurringDrafts = runRecurring().length;
+    result.alerts = noteDueDates();
     const fu = await scanFollowups({ sync: false }).catch((e) => ({ error: e.message }));
     result.reminderDrafts = Array.isArray(fu) ? fu.filter((a) => a.type === 'send_reminder').length : fu;
     result.lateFeeDrafts = Array.isArray(fu) ? fu.filter((a) => a.type === 'add_late_fee').length : 0;
@@ -51,20 +53,24 @@ export async function runJobs() {
 function startPaymentWatcher() {
   const secs = Number(process.env.PAYPAL_SYNC_SECONDS ?? 120);
   if (!(secs > 0)) return;
-  setInterval(() => {
-    if (isMock()) return;
+  const tick = () => {
+    if (isMock() || !setupDone()) return;
     importIfStale(10)
       .catch(() => {})
-      .then(() => {
-        if (listInvoices().some((i) => i.paypalId && ['SENT', 'UNPAID', 'PARTIALLY_PAID'].includes(i.status))) return syncInvoices();
-      })
+      .then(() => syncInvoices())
       .catch(() => {});
-  }, secs * 1000).unref();
+  };
+  setTimeout(tick, 5000).unref();
+  setInterval(tick, secs * 1000).unref();
 }
 
 /** Start the periodic scheduler (SCHEDULER_INTERVAL_MIN, default 6h; 0 disables it). */
 export function startScheduler() {
   startPaymentWatcher();
+  // due-date alerts for the bell: soon after start, then every 30 minutes
+  const alerts = () => setupDone() && noteDueDates();
+  setTimeout(alerts, 8000).unref();
+  setInterval(alerts, 30 * 60 * 1000).unref();
   const minutes = config.schedulerMinutes;
   if (!(minutes > 0)) return false;
   // first pass shortly after start-up, then on the interval

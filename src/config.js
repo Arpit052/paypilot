@@ -82,6 +82,8 @@ export const config = {
 
   businessName: env.BUSINESS_NAME || '', // set on the welcome screen or in Settings
   currency: (env.DEFAULT_CURRENCY || 'USD').toUpperCase(),
+  // Currencies PayPal accepts on invoices (INR, for example, is not one of them).
+  paypalCurrencies: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'JPY', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'ILS', 'MXN', 'BRL', 'SGD', 'HKD', 'TWD', 'THB', 'PHP', 'MYR', 'CNY'],
   // Shift the app's clock forward for demos ("what happens in 10 days?").
   demoTimeOffsetDays: Number(env.DEMO_TIME_OFFSET_DAYS || 0),
   reminderCooldownDays: Number(env.REMINDER_COOLDOWN_DAYS || 3),

@@ -33,7 +33,7 @@ export function moneyMap(map, primary) {
   return entries.map(([c, v]) => money(v, c)).join(' + ');
 }
 
-export const RISK_TEXT = { none: 'No risk', low: 'Low', medium: 'Medium', high: 'High' };
+export const RISK_TEXT = { none: 'No risk', low: 'Low', medium: 'Medium', high: 'High', new: 'New client' };
 
 export function daysLateText(d) {
   if (d === null || d === undefined) return 'No history yet';
@@ -93,7 +93,7 @@ export async function header(active) {
     <nav class="nav" aria-label="Main">
       ${link('/', 'Assistant', 'chat')}
       ${link('/dashboard', 'Dashboard', 'dashboard')}
-      ${link('/followups', 'Follow-ups', 'followups', pending ? `<span class="badge" title="${pending} waiting for approval">${pending}</span>` : '')}
+      ${link('/followups', 'Collections', 'followups', pending ? `<span class="badge" title="${pending} waiting for approval">${pending}</span>` : '')}
       ${link('/clients', 'Clients', 'clients')}
       <a href="/new-invoice" class="nav-cta" ${active === 'new' ? 'aria-current="page"' : ''}>+ New invoice</a>
     </nav>
@@ -106,6 +106,7 @@ export async function header(active) {
         </button>
         <div class="bell-panel hidden" id="bellPanel" role="dialog" aria-label="Notifications">
           <div class="bell-head"><b>Notifications</b><button class="linkbtn" id="markRead">Mark all as read</button></div>
+          <div class="bell-summary" id="bellSummary"></div>
           <ul id="bellList"></ul>
         </div>
       </div>
@@ -141,40 +142,67 @@ function ago(iso) {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
-const NOTE_ICON = { payment: '💰', approval: '📝', import: '📥', latefee: '⏰' };
+const svg = (d) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const NOTE_ICON = {
+  payment: svg('<path d="M12 2v20"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+  approval: svg('<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>'),
+  import: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>'),
+  overdue: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  due: svg('<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'),
+};
+const NOTE_CTA = { payment: 'View', approval: 'Review', import: 'See invoices', overdue: 'Chase it', due: 'Open' };
+const noteIcon = (k) => NOTE_ICON[k] || svg('<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>');
 let notes = [];
 let unread = 0;
+let summary = null;
+
+function isToday(iso) {
+  const d = new Date(iso), n = new Date();
+  return d.toDateString() === n.toDateString();
+}
 
 function renderBell() {
   const count = document.getElementById('bellCount');
   count.textContent = unread > 9 ? '9+' : String(unread);
   count.classList.toggle('hidden', !unread);
+  const paid = Object.entries(summary?.paidThisWeek || {});
+  document.getElementById('bellSummary').innerHTML = summary
+    ? `<a class="bs" href="/dashboard"><span>Paid this week</span><b>${paid.length ? paid.map(([c, v]) => esc(money(v, c))).join(' + ') : esc(money(0, CONFIG?.currency || 'USD'))}</b></a>
+       <a class="bs" href="/followups"><span>Overdue</span><b class="${summary.overdue ? 'bad' : ''}">${summary.overdue}</b></a>
+       <a class="bs" href="/followups"><span>To approve</span><b class="${summary.waiting ? 'warn' : ''}">${summary.waiting}</b></a>`
+    : '';
+  const item = (n) => `<li class="${n.read ? '' : 'unread'} k-${esc(n.kind)}"><a href="${esc(n.link || '#')}" data-note="${n.id}">
+      <span class="ni">${noteIcon(n.kind)}</span>
+      <span class="nt"><b>${esc(n.title)}</b><span>${esc(n.body || '')}</span><time>${ago(n.at)}</time></span>
+      <span class="ncta">${esc(NOTE_CTA[n.kind] || 'Open')}</span></a></li>`;
+  const today = notes.filter((n) => isToday(n.at));
+  const earlier = notes.filter((n) => !isToday(n.at));
   document.getElementById('bellList').innerHTML = notes.length
-    ? notes
-        .map(
-          (n) => `<li class="${n.read ? '' : 'unread'}"><a href="${esc(n.link || '#')}" data-note="${n.id}">
-            <span class="ni">${NOTE_ICON[n.kind] || '🔔'}</span>
-            <span class="nt"><b>${esc(n.title)}</b><span>${esc(n.body || '')}</span><time>${ago(n.at)}</time></span></a></li>`
-        )
-        .join('')
-    : '<li class="empty-note">No notifications yet. You\'ll be told here the moment a client pays.</li>';
+    ? (today.length ? `<li class="ngroup">Today</li>${today.map(item).join('')}` : '') + (earlier.length ? `<li class="ngroup">Earlier</li>${earlier.map(item).join('')}` : '')
+    : `<li class="empty-note"><b>You're all caught up.</b><br>Payments, late invoices and drafts waiting for you will show up here.</li>`;
+}
+
+async function refreshBell() {
+  try {
+    const r = await api('/api/notifications');
+    notes = r.notifications;
+    unread = r.unread;
+    summary = r.summary;
+  } catch {
+    /* ignore */
+  }
+  renderBell();
 }
 
 async function startNotifications() {
   const btn = document.getElementById('bellBtn');
   const panel = document.getElementById('bellPanel');
-  try {
-    const r = await api('/api/notifications');
-    notes = r.notifications;
-    unread = r.unread;
-  } catch {
-    /* ignore */
-  }
-  renderBell();
+  await refreshBell();
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     const open = panel.classList.toggle('hidden') === false;
     btn.setAttribute('aria-expanded', String(open));
+    if (open) refreshBell();
   });
   document.addEventListener('click', (e) => {
     if (!panel.contains(e.target) && e.target !== btn) {
@@ -197,14 +225,14 @@ async function startNotifications() {
   const es = new EventSource('/api/events');
   es.addEventListener('notification', (ev) => {
     const n = JSON.parse(ev.data);
-    notes = [n, ...notes.filter((x) => x.id !== n.id)].slice(0, 30);
+    notes = [n, ...notes.filter((x) => x.id !== n.id)].slice(0, 40);
     unread += 1;
     renderBell();
     popToast(n);
-    if (n.kind === 'payment') {
-      chaChing();
-      confetti();
-    }
+    btn.classList.remove('ring');
+    void btn.offsetWidth;
+    btn.classList.add('ring');
+    refreshBell();
     window.dispatchEvent(new CustomEvent('pp:notification', { detail: n }));
   });
 }
@@ -213,7 +241,7 @@ function popToast(n) {
   const t = document.createElement('div');
   t.className = `note-toast ${n.kind}`;
   t.setAttribute('role', 'status');
-  t.innerHTML = `<span class="ni">${NOTE_ICON[n.kind] || '🔔'}</span><span><b>${esc(n.title)}</b><br>${esc(n.body || '')}</span>`;
+  t.innerHTML = `<span class="ni k-${esc(n.kind)}">${noteIcon(n.kind)}</span><span><b>${esc(n.title)}</b><br>${esc(n.body || '')}</span>${n.link ? `<a class="ncta" href="${esc(n.link)}">${esc(NOTE_CTA[n.kind] || 'Open')}</a>` : ''}`;
   document.body.append(t);
   setTimeout(() => t.classList.add('out'), 5200);
   setTimeout(() => t.remove(), 5600);
@@ -259,7 +287,7 @@ const STAMP = { create_invoice: 'SENT', send_reminder: 'REMINDED', cancel_invoic
 /**
  * Render an approval card for an action. `onDone(action)` fires after approve/reject.
  */
-export function renderSlip(action, { onDone } = {}) {
+export function renderSlip(action, { onDone, onGone } = {}) {
   const el = document.createElement('article');
   el.className = 'slip';
   el.dataset.id = action.id;
@@ -384,7 +412,7 @@ export function renderSlip(action, { onDone } = {}) {
         <span class="pill ${esc(p.tone)}">${esc(p.tone)}</span>
       </div>
       <label>Subject</label><input data-f="subject" value="${esc(p.subject)}">
-      <label>Message</label><textarea data-f="message">${esc(p.message)}</textarea>
+      <label>Message</label><textarea data-f="message">${esc(String(p.message || "").replace(/\\n/g, "\n"))}</textarea>
       ${p.draftedBy === 'template' ? '<div class="slip-meta muted">Drafted from a template because the AI was unavailable. Edit it as you like.</div>' : ''}
       <div class="slip-actions">
         <button class="btn" data-approve>Send reminder via PayPal</button>
@@ -453,13 +481,26 @@ export function renderSlip(action, { onDone } = {}) {
       a.type === 'create_schedule'
         ? `Recurring ${esc(r.frequency)} invoice scheduled. First draft on <b>${esc(fmtDate(r.nextRun))}</b>.`
         : a.type === 'create_invoice'
-        ? `Invoice <b>#${esc(r.number)}</b> sent through PayPal.${r.payerUrl ? ` <a href="${esc(r.payerUrl)}" target="_blank" rel="noopener">Open client's payment page</a>` : ''}`
+        ? `Invoice <b>#${esc(r.number)}</b> sent through PayPal.${r.payerUrl ? ` <a href="${esc(r.payerUrl)}" target="_blank" rel="noopener" title="This is the page your client gets in their email. To test paying, open it while signed in to your sandbox *personal* account.">Preview what your client sees</a>` : ''}`
         : a.type === 'send_reminder'
           ? `Reminder sent for invoice <b>#${esc(r.number)}</b>.`
           : a.type === 'add_late_fee'
           ? `Late fee of <b>${money(r.fee, cur)}</b> added. Invoice <b>#${esc(r.number)}</b> is now ${money(r.newTotal, cur)}.`
           : `Invoice <b>#${esc(r.number)}</b> cancelled.`;
     if (r.notice) el.querySelector('.slip-result').insertAdjacentHTML('beforeend', `<div class="slip-notice">${esc(r.notice)}</div>`);
+  };
+
+  // after Send/Discard: show the result for a moment, then fold the slip away
+  const leave = () => {
+    setTimeout(() => {
+      el.style.height = el.offsetHeight + 'px';
+      el.classList.add('leaving');
+      requestAnimationFrame(() => (el.style.height = '0px'));
+      setTimeout(() => {
+        el.remove();
+        onGone?.(action);
+      }, 520);
+    }, 1500);
   };
 
   if (action.status !== 'pending') markDone(action);
@@ -472,9 +513,11 @@ export function renderSlip(action, { onDone } = {}) {
       const { action: a } = await api(`/api/actions/${action.id}/approve`, { body: { edits: el._edits() } });
       markDone(a);
       onDone?.(a);
+      leave();
     } catch (err) {
       errBox.textContent = err.message;
       btn.disabled = false;
+      if (/no longer exists/.test(err.message)) leave();
     }
   });
   el.querySelector('[data-reject]')?.addEventListener('click', async () => {
@@ -482,6 +525,7 @@ export function renderSlip(action, { onDone } = {}) {
       const { action: a } = await api(`/api/actions/${action.id}/reject`, { body: {} });
       markDone(a);
       onDone?.(a);
+      leave();
     } catch (err) {
       errBox.textContent = err.message;
     }
@@ -580,61 +624,3 @@ export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = 
 }
 document.addEventListener('keydown', (e) => e.key === 'Escape' && closeInvoiceDrawer());
 
-// ------------------------------------------------------------------
-// Payment celebration: a soft "cha-ching" + a burst of confetti
-// ------------------------------------------------------------------
-let audioCtx = null;
-// browsers only allow sound after the user has interacted with the page once
-document.addEventListener('pointerdown', () => {
-  try {
-    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-  } catch {
-    /* no audio */
-  }
-}, { once: true });
-
-export function chaChing() {
-  if (!audioCtx || localStorage.getItem('pp-sound') === 'off') return;
-  try {
-    const t0 = audioCtx.currentTime;
-    const out = audioCtx.createGain();
-    out.gain.value = 0.18;
-    out.connect(audioCtx.destination);
-    // two bright bell tones ("cha-CHING")
-    [[1318.5, 0, 0.22], [1975.5, 0.11, 0.6], [2637, 0.11, 0.45]].forEach(([f, start, dur]) => {
-      const o = audioCtx.createOscillator();
-      const g = audioCtx.createGain();
-      o.type = 'triangle';
-      o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t0 + start);
-      g.gain.exponentialRampToValueAtTime(1, t0 + start + 0.01);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
-      o.connect(g).connect(out);
-      o.start(t0 + start);
-      o.stop(t0 + start + dur + 0.05);
-    });
-  } catch {
-    /* ignore */
-  }
-}
-
-export function confetti() {
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-  const box = document.createElement('div');
-  box.className = 'confetti';
-  const colors = ['#8b5cf6', '#6366f1', '#38bdf8', '#34d399', '#fbbf24', '#f472b6', '#ffffff'];
-  for (let i = 0; i < 90; i++) {
-    const p = document.createElement('i');
-    p.style.left = Math.random() * 100 + 'vw';
-    p.style.background = colors[i % colors.length];
-    p.style.setProperty('--dx', (Math.random() - 0.5) * 220 + 'px');
-    p.style.setProperty('--rot', Math.random() * 900 - 450 + 'deg');
-    p.style.animationDuration = 1.8 + Math.random() * 1.6 + 's';
-    p.style.animationDelay = Math.random() * 0.35 + 's';
-    if (i % 3 === 0) { p.style.width = '7px'; p.style.height = '7px'; p.style.borderRadius = '50%'; }
-    box.append(p);
-  }
-  document.body.append(box);
-  setTimeout(() => box.remove(), 4200);
-}

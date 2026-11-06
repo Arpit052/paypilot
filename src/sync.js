@@ -1,6 +1,6 @@
 // Keeps local invoice state in sync with PayPal: polling + webhooks.
 import { isoDate } from './config.js';
-import { listInvoices, getInvoiceByPaypalId, updateInvoice, logActivity, upsertClient, findClient, insertInvoice } from './db.js';
+import { listInvoices, getInvoiceByPaypalId, updateInvoice, logActivity, upsertClient, findClient, insertInvoice, kvGet } from './db.js';
 import { paypal, notOnCurrentPaypal, isMock } from './paypal.js';
 import { isOpen, clientName } from './analytics.js';
 import { notify } from './notify.js';
@@ -25,7 +25,7 @@ function applyStatus(inv, status, paidDate) {
   return true;
 }
 
-const SKIP_ON_IMPORT = new Set(['DRAFT', 'SCHEDULED']);
+const SKIP_ON_IMPORT = new Set(['DRAFT', 'SCHEDULED', 'CANCELLED']);
 const num = (m) => Math.round(Number(m?.value || 0) * 100) / 100;
 
 /** Turn a full PayPal invoice into PayPilot's shape (plus the recipient for the client record). */
@@ -59,7 +59,7 @@ export function fromPaypalInvoice(raw) {
       dueDate: d.payment_term?.due_date || issueDate,
       paidDate: ['PAID', 'MARKED_AS_PAID'].includes(raw.status) ? paidDate || issueDate : null,
       note: d.note || '',
-      payerUrl: (raw.links || []).find((l) => l.rel === 'payer-view')?.href || null,
+      payerUrl: d.metadata?.recipient_view_url || (raw.links || []).find((l) => l.rel === 'payer-view')?.href || null,
       taxPercent,
       depositAmount: num(raw.configuration?.partial_payment?.minimum_amount_due),
       reference: d.reference || '',
@@ -78,7 +78,10 @@ export async function importFromPaypal({ max = 300 } = {}) {
   if (isMock()) return { imported: 0 };
   lastImportAt = Date.now();
   const list = await paypal.listInvoices({ max });
-  const fresh = list.filter((x) => x.id && !SKIP_ON_IMPORT.has(x.status) && !getInvoiceByPaypalId(x.id));
+  const hidden = new Set((kvGet('hidden:emails') || []).map((e) => e.toLowerCase()));
+  const fresh = list.filter(
+    (x) => x.id && !SKIP_ON_IMPORT.has(x.status) && !getInvoiceByPaypalId(x.id) && !hidden.has(String(x.primary_recipients?.[0]?.billing_info?.email_address || '').toLowerCase())
+  );
   let imported = 0;
   const errors = [];
   for (const entry of fresh.slice(0, 50)) {
@@ -106,8 +109,11 @@ export function importIfStale(minutes = 10) {
   return importFromPaypal();
 }
 
+export const syncState = { lastAt: null };
+
 /** Poll PayPal for every open invoice. Returns number of invoices that changed. */
 export async function syncInvoices() {
+  syncState.lastAt = new Date().toISOString();
   const open = listInvoices().filter((i) => i.paypalId && i.source !== 'seed' && !notOnCurrentPaypal(i) && isOpen(i)).slice(0, 50);
   let changed = 0;
   const errors = [];

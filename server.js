@@ -2,13 +2,15 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
-import { config, isoDate, envFile } from './src/config.js';
+import { config, isoDate, addDays, envFile } from './src/config.js';
 import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb, listSchedules, getSchedule, updateSchedule, deleteSchedule, getClient, logActivity } from './src/db.js';
 import { chatWithTranscript, getTranscript, resetSession } from './src/agent.js';
 import { listActions, approveAction, rejectAction, normaliseInvoiceDraft, dropStaleActions } from './src/actions.js';
 import { earningsSummary, forecastCashflow, chartSeries, clientStats, clientName, isOverdue } from './src/analytics.js';
-import { syncInvoices, applyWebhookEvent, importFromPaypal } from './src/sync.js';
+import { syncInvoices, applyWebhookEvent, importFromPaypal, syncState } from './src/sync.js';
 import { scanFollowups } from './src/followups.js';
+import { collections, draftFor } from './src/collections.js';
+import { noteDueDates } from './src/alerts.js';
 import { paypal, isMock } from './src/paypal.js';
 import { llmAvailable } from './src/llm.js';
 import { seedDemo } from './src/seed.js';
@@ -18,7 +20,7 @@ import { startScheduler, runJobs, lastRun } from './src/scheduler.js';
 import { invoiceTotals, topCustomers, paymentsInMonth, invoicesCsv } from './src/analytics.js';
 import { createAction } from './src/actions.js';
 import { eventStream } from './src/notify.js';
-import { listNotifications, unreadNotificationCount, markNotificationsRead, deleteInvoice } from './src/db.js';
+import { listNotifications, unreadNotificationCount, markNotificationsRead, deleteInvoice, deleteClient, kvGet, kvSet } from './src/db.js';
 import { applySettings, setupDone, publicSettings, connectPaypal, useDemoMode, disconnectPaypal, saveBusinessSettings } from './src/settings.js';
 import { verifyCredentials } from './src/paypal.js';
 import { isOpen } from './src/analytics.js';
@@ -178,6 +180,7 @@ export function createApp() {
     dropStaleActions();
     const imp = await importFromPaypal().catch(() => ({ imported: 0 }));
     if (req.body?.sampleHistory !== false && !listInvoices().some((i) => i.source === 'seed')) seedDemo();
+    noteDueDates();
     logActivity('paypal_connected', 'Connected to PayPal sandbox');
     res.json({ ok: true, removedDemoInvoices: removed, imported: imp.imported, settings: publicSettings() });
   });
@@ -186,6 +189,7 @@ export function createApp() {
     if (bizName) saveBusinessSettings({ businessName: bizName });
     useDemoMode();
     if (!listInvoices().length) seedDemo();
+    noteDueDates();
     res.json({ ok: true, settings: publicSettings() });
   });
   api.post('/settings/paypal/disconnect', (req, res) => {
@@ -269,20 +273,49 @@ export function createApp() {
       chart: chartSeries(today),
       activity: listActivity(15),
       pendingApprovals: listActions({ status: 'pending' }).length,
+      sync: { live: !isMock(), lastAt: syncState.lastAt, everySeconds: Number(process.env.PAYPAL_SYNC_SECONDS ?? 120) },
     });
   });
   api.get('/clients', (req, res) => {
     const today = isoDate();
+    const scheduled = new Set(listSchedules().map((s) => s.clientId));
+    // only people you've actually billed (cancelled-only test entries are left out)
+    const billed = new Set(listInvoices().filter((i) => i.status !== 'CANCELLED').map((i) => i.clientId));
     res.json({
       clients: listClients()
+        .filter((c) => billed.has(c.id) || scheduled.has(c.id))
         .map((c) => ({ ...c, ...clientStats(c.id, today) }))
         .sort((a, b) => b.riskScore - a.riskScore),
     });
   });
 
+  // Remove from PayPilot only. Their invoices stay on PayPal and won't be imported again.
+  api.delete('/clients/:id', (req, res) => {
+    const c = getClient(req.params.id);
+    if (!c) throw httpError(404, 'Client not found');
+    const hidden = new Set(kvGet('hidden:emails') || []);
+    hidden.add(c.email.toLowerCase());
+    kvSet('hidden:emails', [...hidden]);
+    deleteClient(c.id);
+    dropStaleActions();
+    logActivity('client_removed', `Removed ${c.name} from PayPilot`);
+    res.json({ ok: true });
+  });
+
   // ---- notifications (live via Server-Sent Events) ----
   api.get('/events', eventStream);
-  api.get('/notifications', (req, res) => res.json({ unread: unreadNotificationCount(), notifications: listNotifications(30) }));
+  api.get('/notifications', (req, res) => {
+    const today = isoDate();
+    const weekAgo = addDays(today, -6);
+    const paidWeek = {};
+    for (const i of listInvoices()) if (['PAID', 'MARKED_AS_PAID'].includes(i.status) && i.paidDate >= weekAgo && i.paidDate <= today) paidWeek[i.currency] = Math.round(((paidWeek[i.currency] || 0) + i.total) * 100) / 100;
+    const open = listInvoices().filter((i) => isOpen(i));
+    res.json({
+      unread: unreadNotificationCount(),
+      notifications: listNotifications(40),
+      summary: { paidThisWeek: paidWeek, waiting: listActions({ status: 'pending' }).length, overdue: open.filter((i) => isOverdue(i, today)).length },
+    });
+  });
   api.post('/notifications/read', (req, res) => {
     markNotificationsRead(req.body?.id ? Number(req.body.id) : null);
     res.json({ unread: unreadNotificationCount() });
@@ -357,6 +390,15 @@ export function createApp() {
 
   // ---- follow-ups ----
   api.post('/followups/scan', async (req, res) => res.json({ created: await scanFollowups() }));
+  // Collections board
+  api.get('/collections', (req, res) => {
+    dropStaleActions();
+    res.json(collections());
+  });
+  api.post('/followups/draft', async (req, res) => {
+    const kind = req.body?.kind === 'late_fee' ? 'late_fee' : 'reminder';
+    res.json({ action: await draftFor(String(req.body?.invoiceId || ''), kind) });
+  });
   // For a scheduled job (e.g. Render Cron): GET /api/cron/followups?key=CRON_SECRET
   api.get('/cron/followups', async (req, res) => {
     if (!config.cronSecret || req.query.key !== config.cronSecret) throw httpError(403, 'Forbidden');

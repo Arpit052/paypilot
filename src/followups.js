@@ -3,7 +3,7 @@
 import { config, isoDate, daysBetween } from './config.js';
 import { listInvoices } from './db.js';
 import { complete, llmAvailable } from './llm.js';
-import { createAction, listActions, lateFeeDraft, hasLateFee } from './actions.js';
+import { createAction, listActions, lateFeeDraft, hasLateFee, cleanText } from './actions.js';
 import { notOnCurrentPaypal } from './paypal.js';
 import { isOverdue, clientStats, clientName } from './analytics.js';
 import { syncInvoices } from './sync.js';
@@ -20,7 +20,7 @@ function templateReminder(inv, tone, daysOverdue) {
   const due = new Date(`${inv.dueDate}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
   const sign = config.businessName ? `\n${config.businessName}` : '';
   const body = {
-    friendly: `Hi ${name},\n\nHope you're doing well! Just a quick nudge that invoice #${inv.number} for ${amt} was due on ${due}. You can pay it securely with the PayPal link in this email.\n\nThanks so much!${sign}`,
+    friendly: `Hi ${name},\n\nHope you're doing well! Just a quick nudge that invoice #${inv.number} for ${amt} ${inv.dueDate >= isoDate() ? 'is due on' : 'was due on'} ${due}. You can pay it securely with the PayPal link in this email.\n\nThanks so much!${sign}`,
     firm: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} is now ${daysOverdue} days past its due date (${due}). Could you please arrange payment this week, or let me know if anything is holding it up?\n\nThank you,${sign}`,
     final: `Hi ${name},\n\nThis is a final reminder that invoice #${inv.number} for ${amt} is ${daysOverdue} days overdue. Please settle it within 3 business days. If there's an issue with the invoice, reply and I'll be glad to help resolve it.\n\nRegards,${sign}`,
   }[tone];
@@ -34,7 +34,7 @@ async function aiReminder(inv, tone, daysOverdue) {
 Freelancer business: ${config.businessName || '(not set - sign off without a business name)'}
 Client: ${clientName(inv.clientId)}
 Invoice #${inv.number}: ${inv.currency} ${inv.total} for ${inv.items.map((i) => i.name).join(', ')}
-Due date: ${inv.dueDate} (${daysOverdue} days overdue). Reminders already sent: ${inv.reminders.length}.
+Due date: ${inv.dueDate} (${inv.dueDate >= isoDate() ? 'not overdue yet - write a light, friendly heads-up before the due date' : `${daysOverdue} days overdue`}). Reminders already sent: ${inv.reminders.length}.
 Client history: ${st.paidCount} paid invoices, average ${st.avgDaysLate ?? 'n/a'} days late, risk ${st.riskLabel}.
 Mention that they can pay via the PayPal link in the email. Max 90 words. Warm but professional; never threatening.
 Respond with ONLY JSON: {"subject": "...", "message": "..."}`;
@@ -42,7 +42,7 @@ Respond with ONLY JSON: {"subject": "...", "message": "..."}`;
   const text = content.filter((c) => c.type === 'text').map((c) => c.text).join('');
   const json = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
   if (!json.subject || !json.message) throw new Error('bad AI output');
-  return json;
+  return { subject: cleanText(json.subject), message: cleanText(json.message) };
 }
 
 /** Scan for overdue invoices and create reminder drafts. Returns created actions. */
@@ -55,37 +55,29 @@ export async function scanFollowups({ sync = true } = {}) {
     if (!isOverdue(inv, today) || pendingFor.has(inv.id) || !inv.paypalId || notOnCurrentPaypal(inv)) continue;
     const last = inv.reminders.at(-1)?.at;
     if (last && daysBetween(last, today) < config.reminderCooldownDays) continue;
-    const daysOverdue = daysBetween(inv.dueDate, today);
-    const tone = toneFor(inv.reminders.length, daysOverdue);
-    let draft;
-    let draftedBy = 'ai';
-    try {
-      if (!llmAvailable()) throw new Error('no llm');
-      draft = await aiReminder(inv, tone, daysOverdue);
-    } catch {
-      draft = templateReminder(inv, tone, daysOverdue);
-      draftedBy = 'template';
-    }
-    created.push(
-      createAction(
-        'send_reminder',
-        {
-          invoiceId: inv.id,
-          number: inv.number,
-          client: clientName(inv.clientId),
-          amount: inv.total,
-          currency: inv.currency,
-          dueDate: inv.dueDate,
-          daysOverdue,
-          tone,
-          draftedBy,
-          ...draft,
-        },
-        { origin: 'followup', summary: `Reminder #${inv.number} (${tone})` }
-      )
-    );
+    created.push(await draftReminder(inv, today));
   }
   return [...created, ...draftLateFees(today)];
+}
+
+/** Draft one reminder for one invoice (AI first, template if the AI is unavailable). */
+export async function draftReminder(inv, today = isoDate()) {
+  const daysOverdue = Math.max(0, daysBetween(inv.dueDate, today));
+  const tone = daysOverdue === 0 ? 'friendly' : toneFor(inv.reminders.length, daysOverdue);
+  let draft;
+  let draftedBy = 'ai';
+  try {
+    if (!llmAvailable()) throw new Error('no llm');
+    draft = await aiReminder(inv, tone, daysOverdue);
+  } catch {
+    draft = templateReminder(inv, tone, daysOverdue);
+    draftedBy = 'template';
+  }
+  return createAction(
+    'send_reminder',
+    { invoiceId: inv.id, number: inv.number, client: clientName(inv.clientId), amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, daysOverdue, tone, draftedBy, ...draft },
+    { origin: 'followup', summary: `Reminder #${inv.number} (${tone})` }
+  );
 }
 
 /** Late-fee drafts for invoices overdue past the policy threshold (Settings → Late fees). */

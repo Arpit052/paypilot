@@ -21,6 +21,15 @@ export function getAction(id) {
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+/** AI models sometimes return "\\n" as text instead of a line break. Turn those into real breaks. */
+export function cleanText(t) {
+  return String(t || '')
+    .replace(/\\r\\n|\\n/g, '\n')
+    .replace(/\\t/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 const invalid = (message) => Object.assign(new Error(message), { status: 400 });
 
 /** Shared validation for client + line items (invoices and recurring schedules). */
@@ -52,6 +61,8 @@ function normaliseLines(d) {
   if (taxPercent < 0 || taxPercent > 50) throw invalid('Sales tax must be between 0% and 50%');
   const currency = String(d.currency || config.currency).toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) throw invalid('Currency must be a 3-letter code like USD');
+  if (!config.paypalCurrencies.includes(currency))
+    throw invalid(`PayPal invoices can't be in ${currency}. Choose a currency PayPal supports, such as USD, EUR or GBP. Your client still pays from their own account.`);
   const company = String(d.company || '').trim().slice(0, 120);
   return { clientName, clientEmail, company, items, taxPercent, currency, note: String(d.note || '').trim().slice(0, 4000) };
 }
@@ -166,8 +177,8 @@ const executors = {
     if (!inv) throw new Error('Invoice not found');
     if (!isOpen(inv)) throw new Error(`Invoice #${inv.number} is ${inv.status}; no reminder needed`);
     if (notOnCurrentPaypal(inv)) throw invalid(notOnPaypalMessage(inv));
-    const subject = String(payload.subject || '').trim() || `Reminder: invoice #${inv.number}`;
-    const message = String(payload.message || '').trim();
+    const subject = cleanText(payload.subject) || `Reminder: invoice #${inv.number}`;
+    const message = cleanText(payload.message);
     if (!message) throw new Error('Reminder message is empty');
     await paypal.remind(inv.paypalId, { subject, note: message, requestId });
     const reminders = [...inv.reminders, { at: isoDate(), subject, tone: payload.tone || 'friendly' }];

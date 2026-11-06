@@ -319,6 +319,7 @@ async function load() {
   data = { dash, invoices: inv.invoices };
   $('asof').textContent = `As of ${fmtDate(dash.today)}${dash.pendingApprovals ? ` · ${dash.pendingApprovals} draft${dash.pendingApprovals > 1 ? 's' : ''} waiting for your approval` : ''}`;
   renderFigures();
+  renderLive(dash.sync);
   $('chart').innerHTML = chartSvg(dash.chart);
   $('chartStats').innerHTML = chartStats(dash.chart);
   $('feed').innerHTML = dash.activity.length
@@ -328,21 +329,36 @@ async function load() {
   renderLeaders();
 }
 
-$('syncBtn').onclick = async (e) => {
-  e.target.disabled = true;
-  try {
-    const r = await api('/api/sync', { body: {} });
-    const parts = [];
-    if (r.imported) parts.push(`${r.imported} new invoice${r.imported > 1 ? 's' : ''} imported from PayPal`);
-    if (r.changed) parts.push(`${r.changed} invoice${r.changed > 1 ? 's' : ''} updated`);
-    toast(parts.length ? parts.join(' · ') : `Checked ${r.checked} open invoice${r.checked === 1 ? '' : 's'}. No new payments.`);
-    load();
-  } catch (err) {
-    toast(err.message);
-  } finally {
-    e.target.disabled = false;
+// Live status: PayPilot checks PayPal by itself every couple of minutes.
+// The small button forces a check right now (e.g. a client says "I just paid").
+function renderLive(sync) {
+  const el = $('livePill');
+  if (!sync?.live) {
+    el.innerHTML = `<a class="lp demo" href="/settings" title="Connect PayPal to see real payments arrive automatically"><span class="lp-dot"></span>Demo mode · <b>Connect PayPal</b></a>`;
+    return;
   }
-};
+  const when = sync.lastAt ? timeAgo(sync.lastAt) : 'starting…';
+  el.innerHTML = `<span class="lp" title="PayPilot checks PayPal for payments every ${Math.round(sync.everySeconds / 60) || 1} min and imports invoices you create on paypal.com"><span class="lp-dot on"></span>Live with PayPal · checked ${esc(when)}</span>
+    <button class="lp-btn" id="checkNow" title="Check PayPal now" aria-label="Check PayPal now"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>`;
+  $('checkNow').onclick = async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    b.classList.add('spin');
+    try {
+      const r = await api('/api/sync', { body: {} });
+      const parts = [];
+      if (r.changed) parts.push(`${r.changed} invoice${r.changed > 1 ? 's' : ''} updated`);
+      if (r.imported) parts.push(`${r.imported} new from PayPal`);
+      toast(parts.length ? parts.join(' · ') : 'Up to date. No new payments.');
+      await load();
+    } catch (err) {
+      toast(err.message);
+      b.disabled = false;
+      b.classList.remove('spin');
+    }
+  };
+}
+setInterval(() => data?.dash?.sync && renderLive(data.dash.sync), 30000);
 
 await load();
 // a payment arrived (pushed live from the server): refresh the numbers right away
