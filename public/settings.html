@@ -6,139 +6,118 @@
   <title>PayPilot · Settings</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#060914">
+  <meta name="theme-color" content="#09090b">
 </head>
 <body>
 <main>
-  <h1>Settings</h1>
-  <p class="lede">Connect PayPal, name your business, and set how PayPilot handles late payments.</p>
+  <div class="dash-top">
+    <div>
+      <h1>Settings</h1>
+      <p class="lede" style="margin:0">How PayPilot bills, follows up and writes for you. Every change applies to new invoices and reminders straight away.</p>
+    </div>
+  </div>
 
-  <div class="set-grid">
-    <section class="panel" id="ppPanel">
-      <h2>PayPal connection</h2>
-      <div id="ppStatus"></div>
-      <form id="ppForm" class="hidden" autocomplete="off">
-        <p class="set-help">Paste your <b>sandbox</b> app keys from developer.paypal.com → Apps &amp; Credentials. PayPilot checks them with PayPal before saving.</p>
-        <div class="form-grid">
-          <div class="full"><label for="cid">Client ID</label><input id="cid" spellcheck="false" required></div>
-          <div class="full"><label for="sec">Secret</label><input id="sec" type="password" spellcheck="false" required></div>
-        </div>
-        <div class="slip-actions"><button class="btn" type="submit" id="ppGo">Connect PayPal</button></div>
+  <div class="set-layout">
+    <nav class="set-nav" id="setNav" aria-label="Settings sections">
+      <a href="#business">Business</a>
+      <a href="#invoices">Invoices</a>
+      <a href="#paypal">PayPal</a>
+      <a href="#autopilot">Autopilot</a>
+      <a href="#latefees">Late fees</a>
+      <a href="#notifications">Notifications</a>
+      <a href="#writing">AI writing</a>
+      <a href="#data">Data</a>
+    </nav>
+
+    <div class="set-body">
+      <!-- Business -->
+      <form class="panel set-sec" id="business" data-sec>
+        <div class="set-h"><h2>Business</h2><p>Who your invoices and reminders come from.</p></div>
+        <div class="set-row"><label for="businessName">Business name<span>On every PayPal invoice</span></label><input id="businessName" name="businessName" maxlength="100" required></div>
+        <div class="set-row"><label for="ownerName">Your name<span>Used to sign reminders</span></label><input id="ownerName" name="ownerName" maxlength="80" placeholder="e.g. Ana Ortiz"></div>
+        <div class="set-row"><label for="businessEmail">Business email<span>Where clients can reply with questions</span></label><input id="businessEmail" name="businessEmail" type="email" maxlength="120" placeholder="hello@yourstudio.com"></div>
+        <div class="set-row"><label for="website">Website<span>Optional</span></label><input id="website" name="website" maxlength="120" placeholder="yourstudio.com"></div>
+        <div class="set-foot"><span class="set-ok" role="status"></span><button class="btn" type="submit">Save changes</button></div>
       </form>
-      <div class="slip-actions" id="ppActions"></div>
-      <div class="slip-error" id="ppErr" role="alert"></div>
-    </section>
 
-    <form class="panel" id="bizForm">
-      <h2>Your business</h2>
-      <p class="set-help">Shown on every invoice your clients receive.</p>
-      <div class="form-grid">
-        <div class="full"><label for="bizName">Business name</label><input id="bizName" maxlength="100" required></div>
-        <div><label for="bizTax">Default sales tax (%)</label><input id="bizTax" type="number" min="0" max="50" step="0.01"></div>
-        <div></div>
-      </div>
-      <h2 style="margin-top:22px">Late fees <span class="tag">AI suggests, you approve</span></h2>
-      <p class="set-help">When an invoice is this many days overdue, PayPilot drafts a late fee for you to approve. It's added to the PayPal invoice only after you click Approve. Set the fee to 0 to turn this off.</p>
-      <div class="form-grid">
-        <div><label for="feePct">Late fee (% of invoice)</label><input id="feePct" type="number" min="0" max="25" step="0.5"></div>
-        <div><label for="feeDays">After (days overdue)</label><input id="feeDays" type="number" min="1" max="90" step="1"></div>
-      </div>
-      <div class="slip-actions"><button class="btn" type="submit">Save</button></div>
-      <div class="ok-text" id="bizOk" role="status"></div>
-      <div class="slip-error" id="bizErr" role="alert"></div>
-    </form>
+      <!-- Invoices -->
+      <form class="panel set-sec" id="invoices" data-sec>
+        <div class="set-h"><h2>Invoices</h2><p>Defaults for new invoices, from the form or the Assistant. You can still change them on each invoice.</p></div>
+        <div class="set-row"><label for="currency">Default currency<span>Only currencies PayPal can invoice in</span></label><select id="currency" name="currency"></select></div>
+        <div class="set-row"><label for="defaultTermsDays">Payment terms<span>When invoices are due</span></label>
+          <select id="defaultTermsDays" name="defaultTermsDays">
+            <option value="0">Due on receipt</option><option value="7">Net 7</option><option value="15">Net 15</option><option value="30">Net 30</option><option value="45">Net 45</option><option value="60">Net 60</option>
+          </select></div>
+        <div class="set-row"><label for="defaultTaxPercent">Default sales tax<span>Percent, 0 for none</span></label><div class="with-unit"><input id="defaultTaxPercent" name="defaultTaxPercent" type="number" min="0" max="50" step="0.01"><span>%</span></div></div>
+        <div class="set-row top"><label for="defaultNote">Note to clients<span>Added to new invoices unless you write another</span></label><textarea id="defaultNote" name="defaultNote" rows="3" maxlength="600" placeholder="Thanks for your business! Payment is due by the date above."></textarea></div>
+        <div class="set-foot"><span class="set-ok" role="status"></span><button class="btn" type="submit">Save changes</button></div>
+      </form>
 
-    <section class="panel">
-      <h2>Demo data</h2>
-      <p class="set-help">Start over with fresh sample clients and invoices. Your PayPal connection and settings are kept.</p>
-      <div class="slip-actions"><button class="btn ghost" id="resetBtn" type="button">Reset demo data</button></div>
-    </section>
+      <!-- PayPal -->
+      <section class="panel set-sec" id="paypal">
+        <div class="set-h"><h2>PayPal</h2><p>Invoices, reminders, late fees and payments all go through this account.</p></div>
+        <div id="ppStatus"></div>
+        <form id="ppForm" class="hidden" autocomplete="off">
+          <div class="set-row"><label for="cid">Client ID<span>developer.paypal.com → Apps &amp; Credentials (Sandbox)</span></label><input id="cid" spellcheck="false" required></div>
+          <div class="set-row"><label for="sec">Secret<span>Checked with PayPal, then stored on this server only</span></label><input id="sec" type="password" spellcheck="false" required></div>
+          <div class="set-foot"><span class="slip-error" id="ppErr" role="alert"></span><button class="btn" type="submit" id="ppGo">Connect PayPal</button></div>
+        </form>
+        <dl class="set-facts" id="ppFacts"></dl>
+        <div class="set-foot" id="ppActions"></div>
+      </section>
+
+      <!-- Autopilot -->
+      <section class="panel set-sec" id="autopilot">
+        <div class="set-h with-toggle"><div><h2>Autopilot</h2><p>When it's on, PayPilot writes each reminder on the right day and asks for your OK. When it's off, nothing is drafted unless you ask, so no surprise notifications.</p></div>
+          <button class="ap-toggle" id="apToggle" role="switch" aria-checked="true" type="button"><span class="ap-knob"></span><span id="apLabel">On</span></button></div>
+        <ol class="ap-steps" id="planSteps"></ol>
+        <div class="set-foot"><span class="set-ok" id="planSaved" role="status"></span><a class="btn ghost small" href="/followups">See what's coming up →</a></div>
+      </section>
+
+      <!-- Late fees -->
+      <form class="panel set-sec" id="latefees" data-sec>
+        <div class="set-h"><h2>Late fees</h2><p>PayPilot suggests a late fee on very late invoices. It's only added to the PayPal invoice after you approve it.</p></div>
+        <div class="set-row"><label for="lateFeePercent">Fee<span>Percent of the invoice, 0 turns fees off</span></label><div class="with-unit"><input id="lateFeePercent" name="lateFeePercent" type="number" min="0" max="25" step="0.5"><span>%</span></div></div>
+        <div class="set-row"><label for="lateFeeAfterDays">Suggest after<span>Days overdue before a fee is suggested</span></label><div class="with-unit"><input id="lateFeeAfterDays" name="lateFeeAfterDays" type="number" min="1" max="90" step="1"><span>days</span></div></div>
+        <div class="set-foot"><span class="set-ok" role="status"></span><button class="btn" type="submit">Save changes</button></div>
+      </form>
+
+      <!-- Notifications -->
+      <form class="panel set-sec" id="notifications" data-sec>
+        <div class="set-h"><h2>Notifications</h2><p>What shows up in the bell and as pop-ups.</p></div>
+        <div id="notifyRows"></div>
+        <div class="set-foot"><span class="set-ok" role="status"></span><button class="btn" type="submit">Save changes</button></div>
+      </form>
+
+      <!-- AI writing -->
+      <form class="panel set-sec" id="writing" data-sec>
+        <div class="set-h"><h2>AI writing</h2><p>How the AI sounds when it writes reminders for you.</p></div>
+        <div class="set-row top"><label>Style<span>Tone still gets firmer as an invoice gets later</span></label>
+          <div class="style-cards" id="styleCards">
+            <label class="sc"><input type="radio" name="reminderStyle" value="warm"><b>Warm</b><span>“Hope the project launch went well! Just a quick nudge…”</span></label>
+            <label class="sc"><input type="radio" name="reminderStyle" value="neutral"><b>Neutral</b><span>“This is a reminder that invoice #0142 is due on Nov 13.”</span></label>
+            <label class="sc"><input type="radio" name="reminderStyle" value="brief"><b>Brief</b><span>“Invoice #0142, $390, due Friday. Pay link below. Thanks!”</span></label>
+          </div></div>
+        <div class="set-row top"><label for="signOff">Sign-off<span>Leave empty to use your name and business</span></label><textarea id="signOff" name="signOff" rows="2" maxlength="200" placeholder="Ana Ortiz&#10;Ortiz Design Studio"></textarea></div>
+        <div class="set-row top"><label for="aiInstructions">Extra instructions<span>Anything the AI should always do</span></label><textarea id="aiInstructions" name="aiInstructions" rows="2" maxlength="600" placeholder="e.g. Mention that bank transfer is also fine. Never use exclamation marks."></textarea></div>
+        <div class="set-foot"><span class="set-ok" role="status"></span><button class="btn ghost" type="button" id="previewBtn">Preview a reminder</button><button class="btn" type="submit">Save changes</button></div>
+        <div id="preview"></div>
+      </form>
+
+      <!-- Data -->
+      <section class="panel set-sec" id="data">
+        <div class="set-h"><h2>Data</h2><p>Your data lives in a database file on this computer or server. Take it with you any time.</p></div>
+        <dl class="set-facts" id="dataFacts"></dl>
+        <div class="data-actions">
+          <a class="dact" href="/api/invoices.csv" download><b>Export invoices</b><span>CSV for your accountant or spreadsheet</span></a>
+          <a class="dact" href="/api/export.json" download><b>Download a backup</b><span>Clients, invoices, schedules and history as JSON</span></a>
+          <button class="dact" type="button" id="restoreBtn"><b>Restore removed clients</b><span id="restoreSub">Let PayPal import them again</span></button>
+          <button class="dact danger" type="button" id="resetBtn"><b>Reset demo data</b><span>Start over with fresh sample clients. Settings are kept.</span></button>
+        </div>
+      </section>
+    </div>
   </div>
 </main>
-<script type="module">
-  import { api, header, esc, toast, fmtDate } from '/common.js';
-  await header('settings');
-  const $ = (id) => document.getElementById(id);
-
-  function renderPaypal(p) {
-    const on = p.mode !== 'mock';
-    const where = p.source === 'app' ? `Connected ${p.connectedAt ? 'on ' + fmtDate(p.connectedAt.slice(0, 10)) : ''} in PayPilot` : 'Keys come from the .env file';
-    $('ppStatus').innerHTML = on
-      ? `<div class="set-status on"><i class="dot"></i><div><b>Connected to PayPal ${p.mode === 'live' ? 'Live' : 'Sandbox'}</b><span>App ${esc(p.clientId)} · ${where}</span></div></div>`
-      : `<div class="set-status off"><i class="dot"></i><div><b>Demo mode</b><span>Invoices are simulated inside PayPilot. Connect PayPal to send real sandbox invoices.</span></div></div>`;
-    $('ppForm').classList.toggle('hidden', on);
-    $('ppActions').innerHTML = on
-      ? `<button class="btn ghost" id="discBtn" type="button">Disconnect</button><button class="btn ghost" id="swapBtn" type="button">Use different keys</button>`
-      : '';
-    $('discBtn')?.addEventListener('click', async (e) => {
-      if (!e.target.dataset.confirm) {
-        e.target.dataset.confirm = '1';
-        e.target.textContent = 'Click again to disconnect';
-        return;
-      }
-      const r = await api('/api/settings/paypal/disconnect', { body: {} });
-      toast('PayPal disconnected - now in demo mode');
-      setTimeout(() => location.reload(), 600);
-      renderPaypal(r.settings.paypal);
-    });
-    $('swapBtn')?.addEventListener('click', () => {
-      $('ppForm').classList.remove('hidden');
-      $('cid').focus();
-    });
-  }
-
-  function fill(s) {
-    renderPaypal(s.paypal);
-    $('bizName').value = s.business.businessName;
-    $('bizTax').value = s.business.defaultTaxPercent;
-    $('feePct').value = s.business.lateFeePercent;
-    $('feeDays').value = s.business.lateFeeAfterDays;
-  }
-  fill(await api('/api/settings'));
-
-  $('ppForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    $('ppErr').textContent = '';
-    $('ppGo').disabled = true;
-    $('ppGo').textContent = 'Checking with PayPal…';
-    try {
-      const r = await api('/api/settings/paypal/connect', { body: { clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: false } });
-      toast(r.removedDemoInvoices ? `Connected! Removed ${r.removedDemoInvoices} demo invoices that weren't on PayPal.` : 'Connected to PayPal');
-      setTimeout(() => location.reload(), 900);
-    } catch (err) {
-      $('ppErr').textContent = err.message;
-    } finally {
-      $('ppGo').disabled = false;
-      $('ppGo').textContent = 'Connect PayPal';
-    }
-  });
-
-  $('bizForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    $('bizErr').textContent = '';
-    $('bizOk').textContent = '';
-    try {
-      await api('/api/settings/business', {
-        body: { businessName: $('bizName').value, defaultTaxPercent: $('bizTax').value || 0, lateFeePercent: $('feePct').value || 0, lateFeeAfterDays: $('feeDays').value || 7 },
-      });
-      $('bizOk').textContent = '✓ Saved';
-    } catch (err) {
-      $('bizErr').textContent = err.message;
-    }
-  });
-
-  $('resetBtn').addEventListener('click', async (e) => {
-    if (!e.target.dataset.confirm) {
-      e.target.dataset.confirm = '1';
-      e.target.textContent = 'Click again to reset everything';
-      return;
-    }
-    await api('/api/demo/reset', { body: {} });
-    await api('/api/demo/seed', { body: {} });
-    toast('Demo data reset');
-    e.target.textContent = 'Reset demo data';
-    delete e.target.dataset.confirm;
-  });
-</script>
+<script type="module" src="/settings.js"></script>
 </body>
 </html>

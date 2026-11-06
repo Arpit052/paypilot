@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Analytics</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#09090b">
+</head>
+<body>
+<main>
+  <div class="dash-top">
+    <div>
+      <h1>Analytics</h1>
+      <p class="lede" style="margin:0" id="anSub">How your business is doing, and how your clients pay.</p>
+    </div>
+    <div class="seg" role="group" aria-label="Period" id="period" style="margin-left:auto">
+      <button data-m="3">3 months</button><button data-m="6" aria-pressed="true">6 months</button><button data-m="12">12 months</button>
+    </div>
+  </div>
+
+  <section class="an-kpis" id="kpis"></section>
+
+  <section class="panel an-trend">
+    <div class="an-trend-h">
+      <div><span class="muted small">Revenue over time</span><div class="an-big" id="trendTotal"></div></div>
+      <div class="seg small-seg" role="group" aria-label="Series" id="series"><button data-s="received" aria-pressed="true">Received</button><button data-s="invoiced">Invoiced</button></div>
+    </div>
+    <div class="an-chart" id="chart"></div>
+  </section>
+
+  <div class="an-grid3">
+    <section class="panel"><h2>When clients pay</h2><p class="muted small" style="margin:-6px 0 14px">Paid invoices in this period, by how late they were.</p><div id="timing"></div></section>
+    <section class="panel"><h2>Unpaid, by age</h2><p class="muted small" style="margin:-6px 0 14px">Money still owed to you, by days past due.</p><div id="aging"></div></section>
+    <section class="panel an-insights"><h2>Insights</h2><ul id="insights"></ul></section>
+  </div>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="sec-head"><h2>Clients</h2><span class="muted small" style="margin-left:auto">Sorted by revenue in this period</span></div>
+    <div class="table-wrap" id="clients"></div>
+  </section>
+
+  <section class="panel" style="margin-top:18px">
+    <h2>What earns the most</h2>
+    <div id="services"></div>
+  </section>
+</main>
+<script type="module" src="/analytics.js"></script>
+</body>
+</html>

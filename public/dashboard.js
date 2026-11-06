@@ -1,4 +1,4 @@
-import { api, header, esc, money, moneyMap, fmtDate, toast, RISK_TEXT, daysLateText, openInvoiceDrawer } from './common.js';
+import { api, header, esc, money, moneyMap, fmtDate, toast, RISK_TEXT, daysLateText, openInvoiceDrawer, markPaidButton, copyPayLink } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const cfg = await header('dashboard');
@@ -50,8 +50,8 @@ function chartSvg({ months }) {
   const W = 640, H = 300, padL = 8, padB = 28, padT = 24, gap = 22;
   const max = Math.max(1, ...months.map((b) => b.value));
   const bw = (W - padL * 2 - gap * (months.length - 1)) / months.length;
-  let out = `<defs><linearGradient id="barg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#6366f1" stop-opacity=".75"/></linearGradient>
-    <linearGradient id="barsel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7dd3fc"/><stop offset="1" stop-color="#38bdf8" stop-opacity=".8"/></linearGradient></defs>`;
+  let out = `<defs><linearGradient id="barg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d4d4d8"/><stop offset="1" stop-color="#52525b" stop-opacity=".55"/></linearGradient>
+    <linearGradient id="barsel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#a1a1aa" stop-opacity=".8"/></linearGradient></defs>`;
   for (let g = 0; g <= 3; g++) {
     const gy = padT + ((H - padB - padT) * g) / 3;
     out += `<line x1="0" x2="${W}" y1="${gy}" y2="${gy}" stroke="rgba(255,255,255,0.06)"/>`;
@@ -63,7 +63,7 @@ function chartSvg({ months }) {
     const sel = state.month === b.key;
     out += `<g class="bar" role="button" tabindex="0" data-month="${b.key}" aria-label="${b.label}: ${money(b.value, cur)}. Show payments">`;
     out += `<rect x="${x - 6}" y="${padT - 10}" width="${bw + 12}" height="${H - padT + 10}" fill="transparent"/>`;
-    out += `<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(h, 1)}" rx="8" fill="url(#${sel ? 'barsel' : 'barg'})"><title>${b.label}: ${money(b.value, cur)}</title></rect>`;
+    out += `<rect x="${x}" y="${y}" width="${bw}" height="${Math.max(h, 1)}" rx="6" fill="url(#${sel ? 'barsel' : 'barg'})"><title>${b.label}: ${money(b.value, cur)}</title></rect>`;
     if (b.value) out += `<text x="${x + bw / 2}" y="${y - 7}" text-anchor="middle" font-size="12" font-weight="700" fill="${sel ? '#e0f2fe' : '#c7cdea'}">${money(b.value, cur)}</text>`;
     out += `<text x="${x + bw / 2}" y="${H - 9}" text-anchor="middle" font-size="12" fill="${sel ? '#7dd3fc' : '#7e88aa'}" font-weight="${sel ? 800 : 500}">${b.label}</text></g>`;
   });
@@ -179,7 +179,7 @@ function renderTable() {
   });
 
   if (!data.invoices.length) {
-    $('invoices').innerHTML = `<div class="empty">No invoices yet.<br><a class="btn" href="/">Create one with the Assistant</a> <button class="btn ghost" id="seedBtn">Load demo history</button></div>`;
+    $('invoices').innerHTML = `<div class="empty">No invoices yet.<br><a class="btn" href="/assistant">Create one with the Assistant</a> <button class="btn ghost" id="seedBtn">Load demo history</button></div>`;
     $('seedBtn').onclick = async () => { await api('/api/demo/seed', { body: {} }); load(); };
     return;
   }
@@ -200,10 +200,8 @@ function renderTable() {
             <td><span class="pill ${i.displayStatus}">${i.displayStatus === 'OVERDUE' ? 'Overdue' : i.displayStatus.charAt(0) + i.displayStatus.slice(1).toLowerCase().replace(/_/g, ' ')}</span>${i.source === 'seed' ? ' <span class="muted" title="Demo history, not on PayPal">demo</span>' : i.source === 'import' ? ' <span class="muted" title="Created on PayPal, imported by PayPilot">imported</span>' : ''}${i.depositAmount ? ` <span class="muted" title="Deposit due upfront">deposit ${money(i.depositAmount, i.currency)}</span>` : ''}</td>
             <td class="r num">${money(i.total, i.currency)}</td>
             <td class="r">${
-              i.payerUrl && OPEN.includes(i.status)
-                ? mock
-                  ? `<button class="btn ghost small" data-pay="${esc(i.paypalId)}" title="Simulate the client paying">Simulate payment</button>`
-                  : `<a href="${esc(i.payerUrl)}" target="_blank" rel="noopener">Payment page</a>`
+              OPEN.includes(i.status)
+                ? `<div class="row-acts">${i.payerUrl ? `<button class="linkbtn small" data-copylink="${esc(i.payerUrl)}" title="Copy the PayPal link your client pays from">Copy link</button>` : ''}${markPaidButton(i.id)}</div>`
                 : ''
             }</td>
           </tr>`
@@ -219,13 +217,8 @@ $('invoices').addEventListener('click', async (e) => {
     state.sort = { key: k, dir: state.sort.key === k && state.sort.dir === 'desc' ? 'asc' : 'desc' };
     return renderTable();
   }
-  const id = e.target.dataset?.pay;
-  if (id) {
-    e.target.disabled = true;
-    await api(`/api/mock/pay/${id}`, { body: {} });
-    if (!window.EventSource) toast('Payment received');
-    return load();
-  }
+  const cp = e.target.closest('[data-copylink]');
+  if (cp) return copyPayLink(cp.dataset.copylink);
   if (e.target.closest('a, button')) return;
   const row = e.target.closest('[data-inv]');
   if (row) showInvoice(row.dataset.inv);
@@ -366,3 +359,12 @@ window.addEventListener('pp:notification', (e) => {
   if (e.detail.kind === 'payment') load().catch(() => {});
 });
 setInterval(() => document.visibilityState === 'visible' && load().catch(() => {}), 15000);
+window.addEventListener('pp:changed', () => load());
+// deep link from search: /?inv=<id> opens that invoice
+{
+  const id = new URLSearchParams(location.search).get('inv');
+  if (id) {
+    showInvoice(id);
+    history.replaceState(null, '', '/');
+  }
+}

@@ -5,7 +5,7 @@ import { paypal, notOnCurrentPaypal, isMock } from './paypal.js';
 import { isOpen, clientName } from './analytics.js';
 import { notify } from './notify.js';
 
-function applyStatus(inv, status, paidDate) {
+export function applyStatus(inv, status, paidDate) {
   if (!status || status === inv.status) return false;
   const was = inv.status;
   const who = clientName(inv.clientId);

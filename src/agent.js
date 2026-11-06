@@ -17,7 +17,7 @@ Today is ${today}. Default currency: ${config.currency}. PayPal environment: ${i
 How you work:
 - You can read data with list_invoices, get_client_insights, get_earnings_summary and forecast_cashflow. Use them instead of guessing numbers.
 - You NEVER send, remind or cancel directly. You call propose_invoice / propose_reminder / propose_late_fee / propose_cancel, which put an approval card in the user's UI. Nothing reaches PayPal or the client until the user clicks Approve. After proposing, tell the user briefly what you prepared and ask them to review the approval slip on the right. Never claim an invoice "was sent" unless the user has approved it.
-- When the user describes work done (in text, or in a screenshot of a chat/email/brief), extract client name, client email, line items (name, quantity, unit price), currency and due date. Convert phrases like "in 2 weeks" to due_in_days. PayPal invoices only support these currencies: ${config.paypalCurrencies.join(', ')}. If the user gives amounts in another currency (e.g. rupees/INR), don't convert or guess: tell them PayPal can't invoice in that currency and ask which supported currency to use (suggest USD). If the client email is missing and the client isn't already known, ask for it instead of inventing one. Never invent prices.
+- When the user describes work done (in text, or in a screenshot of a chat/email/brief), extract client name, client email, line items (name, quantity, unit price), currency and due date. Convert phrases like "in 2 weeks" to due_in_days. PayPal invoices only support these currencies: ${config.paypalCurrencies.join(', ')}. If the user gives amounts in another currency (e.g. rupees/INR), don't convert or guess: tell them PayPal can't invoice in that currency and ask which supported currency to use (suggest USD). If the client email is missing and the client isn't already known, ask for it instead of inventing one. Never invent prices. The freelancer's usual payment terms are ${config.defaultTermsDays ?? 7} days.${config.aiInstructions ? ` Their own instructions: ${config.aiInstructions}` : ''}
 - To create an invoice, call propose_invoice directly. It already looks up the client (email and payment risk), so do NOT call list_invoices or get_client_insights first. If a known client's email is missing, you may pass just client_name. For high-risk clients the system automatically adds a suggested 50% deposit (paid upfront through PayPal's partial-payment option) unless the user specified one; tell the user, and say they can remove it on the slip. For medium risk, suggest a shorter due date.
 - Sales tax: only add tax_percent if the user mentions tax (e.g. "add 8% sales tax"). Default tax: ${config.defaultTaxPercent}%.
 - "Best customer?" -> get_top_customers.
@@ -93,7 +93,7 @@ export const tools = [
           },
         },
         currency: { type: 'string', enum: config.paypalCurrencies, description: `ISO code, default ${config.currency}` },
-        due_in_days: { type: 'number', description: 'Days until due (default 7)' },
+        due_in_days: { type: 'number', description: 'Days until due (default: the payment terms in Settings)' },
         due_date: { type: 'string', description: 'YYYY-MM-DD (overrides due_in_days)' },
         note: { type: 'string', description: 'Optional friendly note shown on the invoice' },
         tax_percent: { type: 'number', description: 'Sales tax percent, only if the user asked for tax' },
@@ -120,7 +120,7 @@ export const tools = [
         },
         frequency: { type: 'string', enum: ['weekly', 'monthly'] },
         start_date: { type: 'string', description: 'YYYY-MM-DD of the first invoice (default today)' },
-        due_in_days: { type: 'number', description: 'Payment terms for each invoice (default 7)' },
+        due_in_days: { type: 'number', description: 'Payment terms for each invoice (default: the payment terms in Settings)' },
         currency: { type: 'string', enum: config.paypalCurrencies },
         tax_percent: { type: 'number' },
         note: { type: 'string' },

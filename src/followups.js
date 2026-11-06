@@ -26,7 +26,8 @@ function templateReminder(inv, tone, daysOverdue) {
   const name = clientName(inv.clientId).split(' ')[0];
   const amt = new Intl.NumberFormat('en-US', { style: 'currency', currency: inv.currency }).format(inv.total);
   const due = new Date(`${inv.dueDate}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-  const sign = config.businessName ? `\n${config.businessName}` : '';
+  const who = config.signOff || [config.ownerName, config.businessName].filter(Boolean).join('\n');
+  const sign = who ? `\n${who}` : '';
   const body = {
     friendly: `Hi ${name},\n\nHope you're doing well! Just a quick nudge that invoice #${inv.number} for ${amt} ${inv.dueDate >= isoDate() ? 'is due on' : 'was due on'} ${due}. You can pay it securely with the PayPal link in this email.\n\nThanks so much!${sign}`,
     firm: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} ${daysOverdue > 0 ? `is now ${daysOverdue} days past its due date (${due})` : `is due on ${due}`}. Could you please arrange payment this week, or let me know if anything is holding it up?\n\nThank you,${sign}`,
@@ -44,7 +45,8 @@ Client: ${clientName(inv.clientId)}
 Invoice #${inv.number}: ${inv.currency} ${inv.total} for ${inv.items.map((i) => i.name).join(', ')}
 Due date: ${inv.dueDate} (${inv.dueDate >= isoDate() ? 'not overdue yet - write a light, friendly heads-up before the due date' : `${daysOverdue} days overdue`}). Reminders already sent: ${inv.reminders.length}${lastTone(inv) ? ` (the last one was ${lastTone(inv)}, so don't sound softer than that)` : ''}.
 Client history: ${st.paidCount} paid invoices, average ${st.avgDaysLate ?? 'n/a'} days late, risk ${st.riskLabel}.
-Mention that they can pay via the PayPal link in the email. Max 90 words. Warm but professional; never threatening.
+Mention that they can pay via the PayPal link in the email. ${{ warm: 'Warm, friendly and professional. Max 90 words.', neutral: 'Neutral, matter-of-fact and polite. Max 80 words.', brief: 'Very short and to the point: 2-3 sentences, max 45 words.' }[config.reminderStyle || 'warm']} Never threatening.
+Sign off as: ${config.signOff || [config.ownerName, config.businessName].filter(Boolean).join(', ') || 'no name'}.${config.businessEmail ? ` Questions can go to ${config.businessEmail}.` : ''}${config.aiInstructions ? `\nThe freelancer's own instructions: ${config.aiInstructions}` : ''}
 Respond with ONLY JSON: {"subject": "...", "message": "..."}`;
   const { content } = await complete({ system: 'You write concise, professional payment reminder emails. Output JSON only.', messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }], maxTokens: 600 });
   const text = content.filter((c) => c.type === 'text').map((c) => c.text).join('');
@@ -69,18 +71,20 @@ export async function scanFollowups({ sync = true } = {}) {
 }
 
 /** Draft one reminder for one invoice (AI first, template if the AI is unavailable). */
-export async function draftReminder(inv, today = isoDate(), { tone: wanted = null, origin = 'followup' } = {}) {
+/** Write a reminder (AI first, template if the AI is unavailable) without saving anything. */
+export async function composeReminder(inv, today = isoDate(), wanted = null) {
   const daysOverdue = Math.max(0, daysBetween(inv.dueDate, today));
   const tone = toneFor(inv, daysOverdue, wanted);
-  let draft;
-  let draftedBy = 'ai';
   try {
     if (!llmAvailable()) throw new Error('no llm');
-    draft = await aiReminder(inv, tone, daysOverdue);
+    return { tone, daysOverdue, draft: await aiReminder(inv, tone, daysOverdue), draftedBy: 'ai' };
   } catch {
-    draft = templateReminder(inv, tone, daysOverdue);
-    draftedBy = 'template';
+    return { tone, daysOverdue, draft: templateReminder(inv, tone, daysOverdue), draftedBy: 'template' };
   }
+}
+
+export async function draftReminder(inv, today = isoDate(), { tone: wanted = null, origin = 'followup' } = {}) {
+  const { tone, daysOverdue, draft, draftedBy } = await composeReminder(inv, today, wanted);
   return createAction(
     'send_reminder',
     { invoiceId: inv.id, number: inv.number, client: clientName(inv.clientId), amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, daysOverdue, tone, draftedBy, ...draft },

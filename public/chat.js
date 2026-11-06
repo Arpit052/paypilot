@@ -246,5 +246,5 @@ if (ask) {
   input.value = ask.slice(0, 500);
   autosize();
   input.focus();
-  history.replaceState(null, '', '/');
+  history.replaceState(null, '', '/assistant');
 }

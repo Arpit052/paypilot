@@ -252,6 +252,17 @@ const real = {
     return { total: Number(updated.amount?.value) || null };
   },
 
+  /** Record a payment received outside PayPal (cash, bank transfer, cheque…). Invoice becomes MARKED_AS_PAID. */
+  async recordPayment(paypalId, { amount, currency, method = 'BANK_TRANSFER', date, note, requestId }) {
+    await api(
+      'POST',
+      `/v2/invoicing/invoices/${paypalId}/payments`,
+      { method, payment_date: date, amount: money(currency, amount), ...(note ? { note: String(note).slice(0, 2000) } : {}) },
+      requestId ? { 'PayPal-Request-Id': `${requestId}-paid` } : {}
+    );
+    return { ok: true };
+  },
+
   async remind(paypalId, { subject, note, requestId }) {
     await api(
       'POST',
@@ -345,6 +356,14 @@ const mock = {
     return true;
   },
   /** Mock-only: pretend the client paid. */
+  async recordPayment(paypalId, { date }) {
+    const inv = mockGet(paypalId);
+    if (!inv) throw new PayPalError('Invoice not found', 404);
+    inv.status = 'MARKED_AS_PAID';
+    inv.paidDate = date;
+    mockPut(paypalId, inv);
+    return { ok: true };
+  },
   simulatePayment(paypalId) {
     const inv = mockGet(paypalId);
     if (!inv) throw new PayPalError('Invoice not found', 404);

@@ -50,7 +50,7 @@
           <div><label for="due">Due date</label><input id="due" type="date"></div>
           <div><label for="currency">Currency</label>
             <select id="currency">
-              <option>USD</option><option>EUR</option><option>GBP</option><option>CAD</option><option>AUD</option>
+              <option>USD</option><option>EUR</option><option>GBP</option><option>CAD</option><option>AUD</option><option>NZD</option><option>JPY</option><option>CHF</option><option>SGD</option><option>HKD</option><option>MXN</option><option>BRL</option><option>SEK</option><option>NOK</option><option>DKK</option><option>PLN</option>
             </select></div>
         </div>
       </fieldset>
@@ -133,6 +133,13 @@
   };
   $('issue').value = cfg.today;
   $('issue').max = cfg.today;
+  // defaults from Settings → Invoices
+  {
+    const t = String(cfg.defaultTermsDays ?? 7);
+    if (![...$('terms').options].some((o) => o.value === t)) $('terms').insertAdjacentHTML('afterbegin', `<option value="${t}">Net ${t}</option>`);
+    $('terms').value = t;
+    if (cfg.defaultNote) $('note').value = cfg.defaultNote;
+  }
   const syncDue = () => {
     if ($('terms').value !== 'custom') $('due').value = addDays(cfg.today > $('issue').value ? cfg.today : $('issue').value, Number($('terms').value));
   };
@@ -212,7 +219,7 @@
         document.getElementById('copyPay')?.addEventListener('click', () => copyPayLink(res.payerUrl));
       } else {
         toast('Saved as a draft in your approval tray');
-        setTimeout(() => (location.href = '/'), 900);
+        setTimeout(() => (location.href = '/assistant'), 900);
       }
     } catch (e) {
       $('err').textContent = e.message;

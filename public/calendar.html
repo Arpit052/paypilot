@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Calendar</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#09090b">
+</head>
+<body>
+<main>
+  <div class="dash-top">
+    <div>
+      <h1>Calendar</h1>
+      <p class="lede" style="margin:0">When money is due, when it arrived, and when Autopilot will follow up.</p>
+    </div>
+  </div>
+
+  <section class="cal-stats" id="calStats"></section>
+
+  <div class="cal-layout">
+    <section class="panel cal-panel">
+      <div class="cal-head">
+        <div class="cal-nav">
+          <button class="sb-icon" id="prev" aria-label="Previous month">‹</button>
+          <h2 id="monthLabel"></h2>
+          <button class="sb-icon" id="next" aria-label="Next month">›</button>
+          <button class="btn ghost small" id="todayBtn">Today</button>
+        </div>
+        <div class="cal-filters" id="filters" role="group" aria-label="Show">
+          <button data-k="due" aria-pressed="true"><i class="k-due"></i>Due</button>
+          <button data-k="paid" aria-pressed="true"><i class="k-paid"></i>Paid</button>
+          <button data-k="planned" aria-pressed="true"><i class="k-planned"></i>Autopilot</button>
+          <button data-k="reminded" aria-pressed="true"><i class="k-reminded"></i>Reminders sent</button>
+          <button data-k="recurring" aria-pressed="true"><i class="k-recurring"></i>Recurring</button>
+        </div>
+      </div>
+      <div class="cal-dow"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+      <div class="cal-grid" id="grid"></div>
+    </section>
+
+    <aside class="panel cal-day" id="day" aria-live="polite"></aside>
+  </div>
+</main>
+<script type="module" src="/calendar.js"></script>
+</body>
+</html>

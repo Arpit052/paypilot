@@ -5,13 +5,15 @@ import express from 'express';
 import { config, isoDate, addDays, envFile } from './src/config.js';
 import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb, listSchedules, getSchedule, updateSchedule, deleteSchedule, getClient, logActivity } from './src/db.js';
 import { chatWithTranscript, getTranscript, resetSession } from './src/agent.js';
-import { listActions, approveAction, rejectAction, normaliseInvoiceDraft, dropStaleActions } from './src/actions.js';
+import { listActions, approveAction, rejectAction, normaliseInvoiceDraft, dropStaleActions, markPaid } from './src/actions.js';
 import { earningsSummary, forecastCashflow, chartSeries, clientStats, clientName, isOverdue } from './src/analytics.js';
 import { syncInvoices, applyWebhookEvent, importFromPaypal, syncState } from './src/sync.js';
-import { scanFollowups } from './src/followups.js';
+import { scanFollowups, composeReminder } from './src/followups.js';
 import { collections, draftFor } from './src/collections.js';
 import { noteDueDates } from './src/alerts.js';
-import { runAutopilot, saveAutopilotSettings } from './src/autopilot.js';
+import { calendarMonth } from './src/calendar.js';
+import { analytics } from './src/insights.js';
+import { runAutopilot, saveAutopilotSettings, autopilotSettings, comingUp } from './src/autopilot.js';
 import { paypal, isMock } from './src/paypal.js';
 import { llmAvailable } from './src/llm.js';
 import { seedDemo } from './src/seed.js';
@@ -150,8 +152,16 @@ export function createApp() {
       webhookConfigured: Boolean(config.paypal.webhookId),
       timezone: config.timezone,
       defaultTaxPercent: config.defaultTaxPercent,
+      defaultTermsDays: config.defaultTermsDays ?? 7,
+      defaultNote: config.defaultNote || '',
+      ownerName: config.ownerName || '',
       loginEnabled: Boolean(config.appPassword),
       paypalSource: publicSettings().paypal.source,
+      autopilot: (() => {
+        const ap = autopilotSettings();
+        const next = ap.enabled ? comingUp(30).find((x) => x.state !== 'waiting') || null : null;
+        return { enabled: ap.enabled, next: next && { label: next.label, client: next.client, date: next.date } };
+      })(),
       lateFeePercent: config.lateFeePercent,
       lateFeeAfterDays: config.lateFeeAfterDays,
     })
@@ -199,6 +209,34 @@ export function createApp() {
     res.json({ ok: true, settings: publicSettings() });
   });
   api.post('/settings/business', (req, res) => res.json({ business: saveBusinessSettings(req.body || {}) }));
+  // try the current writing style on a real open invoice (nothing is saved or sent)
+  api.post('/settings/preview-reminder', async (req, res) => {
+    const today = isoDate();
+    const open = listInvoices().filter((i) => isOpen(i)).sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
+    const inv = open[0];
+    if (!inv) throw httpError(400, 'Send an invoice first. The preview uses one of your unpaid invoices.');
+    const tone = ['friendly', 'firm', 'final'].includes(req.body?.tone) ? req.body.tone : null;
+    const r = await composeReminder(inv, today, tone);
+    res.json({ number: inv.number, client: getClient(inv.clientId)?.name || '', tone: r.tone, draftedBy: r.draftedBy, ...r.draft });
+  });
+  api.post('/settings/hidden/clear', (req, res) => {
+    const n = (kvGet('hidden:emails') || []).length;
+    kvSet('hidden:emails', []);
+    res.json({ restored: n });
+  });
+  api.get('/export.json', (req, res) => {
+    res.set('Content-Disposition', `attachment; filename="paypilot-backup-${isoDate()}.json"`);
+    res.json({
+      exportedAt: new Date().toISOString(),
+      app: 'PayPilot',
+      settings: { ...publicSettings(), autopilot: autopilotSettings() },
+      clients: listClients(),
+      invoices: listInvoices(),
+      schedules: listSchedules(),
+      actions: listActions({}).slice(0, 1000),
+      activity: listActivity(500),
+    });
+  });
 
   // ---- assistant ----
   api.post('/chat', rateLimit({ perMinute: config.chatRateLimitPerMin, message: 'Too many messages in a minute. Please wait a moment.' }), async (req, res) => {
@@ -264,6 +302,13 @@ export function createApp() {
     const a = createAction('create_invoice', draft, { origin: 'form', summary: `Invoice ${draft.clientName} · ${draft.currency} ${draft.total}` });
     if (!b.sendNow) return res.json({ action: a, sent: false });
     res.json({ action: await approveAction(a.id), sent: true });
+  });
+  api.post('/invoices/:id/mark-paid', async (req, res) => {
+    try {
+      res.json(await markPaid(req.params.id, req.body || {}));
+    } catch (e) {
+      throw Object.assign(e, { status: e.status || 502 });
+    }
   });
   api.get('/dashboard', (req, res) => {
     const today = isoDate();
@@ -396,6 +441,9 @@ export function createApp() {
     dropStaleActions();
     res.json(collections());
   });
+  api.get('/analytics', (req, res) => res.json(analytics({ months: req.query.months })));
+  api.get('/calendar', (req, res) => res.json(calendarMonth(String(req.query.month || ''))));
+  api.get('/autopilot', (req, res) => res.json({ autopilot: autopilotSettings(), lateFeePercent: config.lateFeePercent }));
   api.post('/autopilot', (req, res) => res.json({ autopilot: saveAutopilotSettings(req.body || {}) }));
   api.post('/autopilot/run', async (req, res) => res.json({ created: await runAutopilot() }));
   api.post('/followups/draft', async (req, res) => {
@@ -446,7 +494,13 @@ export function createApp() {
   api.use((req, res) => res.status(404).json({ error: 'Not found' }));
   app.use('/api', api);
 
-  app.use(express.static(path.join(config.root, 'public'), { extensions: ['html'] }));
+  // Dashboard is the home page; the Assistant lives at /assistant
+  const page = (f) => (req, res) => res.sendFile(path.join(config.root, 'public', f));
+  app.get('/', page('dashboard.html'));
+  app.get(['/assistant', '/assistant.html'], page('index.html'));
+  app.get(['/calendar', '/calendar.html'], page('calendar.html'));
+  app.get(['/analytics', '/analytics.html'], page('analytics.html'));
+  app.use(express.static(path.join(config.root, 'public'), { extensions: ['html'], index: false }));
   app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
   // one error handler for everything (Express 5 forwards async errors here)

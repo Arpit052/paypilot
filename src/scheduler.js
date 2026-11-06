@@ -36,7 +36,7 @@ export async function runJobs() {
         kind: 'approval',
         title: `${drafts} draft${drafts > 1 ? 's' : ''} waiting for approval`,
         body: [result.recurringDrafts ? `${result.recurringDrafts} recurring invoice${result.recurringDrafts > 1 ? 's' : ''}` : '', result.reminderDrafts ? `${result.reminderDrafts} payment reminder${result.reminderDrafts > 1 ? 's' : ''}` : '', result.lateFeeDrafts ? `${result.lateFeeDrafts} late fee${result.lateFeeDrafts > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ') + ' ready to review.',
-        link: result.reminderDrafts || result.lateFeeDrafts ? '/followups' : '/',
+        link: result.reminderDrafts || result.lateFeeDrafts ? '/followups' : '/assistant',
       });
     }
     lastRun.at = new Date().toISOString();

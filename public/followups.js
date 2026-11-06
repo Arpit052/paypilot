@@ -127,12 +127,8 @@ function renderPlan() {
   $('apToggle').setAttribute('aria-checked', String(a.enabled));
   $('apToggle').classList.toggle('off', !a.enabled);
   $('apLabel').textContent = a.enabled ? 'Autopilot on' : 'Autopilot off';
-  const num = (k, v, max) => `<input type="number" min="0" max="${max}" value="${v}" data-plan="${k}" aria-label="${k}">`;
-  $('planSteps').innerHTML = `
-    <li class="ps friendly"><span class="ps-dot"></span><div><b>Friendly heads-up</b><span>${num('beforeDays', a.beforeDays, 14)} days <em>before</em> the due date</span></div></li>
-    <li class="ps firm"><span class="ps-dot"></span><div><b>Firm reminder</b><span>${num('firmAfter', a.firmAfter, 30)} days <em>after</em> the due date</span></div></li>
-    <li class="ps final"><span class="ps-dot"></span><div><b>Final reminder</b><span>${num('finalAfter', a.finalAfter, 90)} days <em>after</em> the due date</span>
-      <label class="ps-fee"><input type="checkbox" data-plan="feeWithFinal" ${a.feeWithFinal ? 'checked' : ''}> add a ${data.lateFee.percent}% late fee</label></div></li>`;
+  $('planMini').innerHTML = `<span class="apm-h"><b>Autopilot plan</b><span class="muted">Edit in Settings →</span></span>
+    <span class="apm-steps"><span class="friendly"><i></i>Heads-up ${a.beforeDays}d before</span><span class="firm"><i></i>Firm ${a.firmAfter}d after</span><span class="final"><i></i>Final ${a.finalAfter}d after${a.feeWithFinal && data.lateFee.percent > 0 ? ` + ${data.lateFee.percent}% fee` : ''}</span></span>`;
   renderUpcoming();
 }
 
@@ -222,28 +218,6 @@ document.querySelector('.coll').addEventListener('click', async (e) => {
     btn.textContent = label;
   }
 });
-
-let saveTimer;
-$('planSteps').addEventListener('input', () => {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(savePlan, 600);
-});
-async function savePlan() {
-  const body = {};
-  document.querySelectorAll('[data-plan]').forEach((el) => (body[el.dataset.plan] = el.type === 'checkbox' ? el.checked : Number(el.value)));
-  try {
-    await api('/api/autopilot', { body });
-    $('planSaved').textContent = 'Saved';
-    setTimeout(() => ($('planSaved').textContent = ''), 1500);
-    data = await api('/api/collections');
-    // leave the plan inputs as typed; refresh everything that depends on them
-    renderStats();
-    renderLists();
-    renderUpcoming();
-  } catch (err) {
-    toast(err.message);
-  }
-}
 
 $('apToggle').onclick = async () => {
   const enabled = !data.autopilot.enabled;

@@ -226,7 +226,7 @@ test('dashboard figures', async () => {
 
 test('cron endpoint requires secret; static pages served', async () => {
   assert.equal((await call('/api/cron/followups?key=x')).status, 403);
-  for (const p of ['/', '/dashboard', '/followups', '/clients', '/app.css', '/common.js']) {
+  for (const p of ['/', '/dashboard', '/assistant', '/followups', '/calendar', '/analytics', '/clients', '/settings', '/app.css', '/common.js']) {
     const res = await fetch(base + p);
     assert.equal(res.status, 200, p);
   }
@@ -453,4 +453,38 @@ test('autopilot plans every unpaid invoice and never softens the tone', async ()
   const [a, b] = await Promise.all([call('/api/autopilot/run', {}), call('/api/autopilot/run', {})]);
   const ids = [...a.data.created, ...b.data.created].map((x) => x.id);
   assert.equal(new Set(ids).size, a.data.created.length);
+});
+
+test('mark an invoice as paid by hand', async () => {
+  const open = (await call('/api/invoices')).data.invoices.find((i) => ['SENT', 'PARTIALLY_PAID'].includes(i.status) && i.paypalId?.startsWith('INV2-MOCK'));
+  const r = await call(`/api/invoices/${open.id}/mark-paid`, { method: 'cash' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const after = (await call('/api/invoices')).data.invoices.find((i) => i.id === open.id);
+  assert.equal(after.status, 'MARKED_AS_PAID');
+  assert.ok(after.paidDate);
+  assert.equal((await call(`/api/invoices/${open.id}/mark-paid`, {})).status, 400, 'cannot pay twice');
+});
+
+test('calendar, analytics, preferences and reminder preview', async () => {
+  const cal = (await call('/api/calendar')).data;
+  assert.match(cal.month, /^\d{4}-\d{2}$/);
+  assert.ok(cal.events.every((e) => e.date >= cal.start && e.date <= cal.end));
+  const an = (await call('/api/analytics?months=6')).data;
+  assert.equal(an.months, 6);
+  assert.equal(an.timing.length, 4);
+  assert.ok(an.weeks.length >= 26);
+  const bad = await call('/api/settings/business', { reminderStyle: 'angry' });
+  assert.equal(bad.status, 400);
+  const ok = await call('/api/settings/business', { reminderStyle: 'brief', ownerName: 'Ana Ortiz', defaultTermsDays: 15, notify: { import: false } });
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  const s = (await call('/api/settings')).data.business;
+  assert.equal(s.defaultTermsDays, 15);
+  assert.equal(s.notify.import, false);
+  assert.equal(s.notify.payment, true);
+  const pv = await call('/api/settings/preview-reminder', {});
+  assert.equal(pv.status, 200, JSON.stringify(pv.data));
+  assert.ok(pv.data.subject && pv.data.message);
+  const backup = await fetch(base + '/api/export.json');
+  assert.equal(backup.status, 200);
+  assert.ok(Array.isArray((await backup.json()).invoices));
 });

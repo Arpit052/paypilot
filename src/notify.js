@@ -1,10 +1,13 @@
 // Notifications: stored in SQLite and pushed live to every open browser tab
 // over Server-Sent Events (GET /api/events).
 import { insertNotification } from './db.js';
+import { config } from './config.js';
 
 const subscribers = new Set();
 
 export function notify(n) {
+  // Settings → Notifications can switch kinds off (they're then not stored or shown)
+  if (config.notify && config.notify[n.kind] === false) return null;
   const note = insertNotification(n);
   const payload = `event: notification\ndata: ${JSON.stringify(note)}\n\n`;
   for (const res of subscribers) {

@@ -14,7 +14,18 @@ const envBusiness = {
   defaultTaxPercent: config.defaultTaxPercent,
   lateFeePercent: config.lateFeePercent,
   lateFeeAfterDays: config.lateFeeAfterDays,
+  currency: config.currency,
+  ownerName: '',
+  businessEmail: '',
+  website: '',
+  defaultTermsDays: 7,
+  defaultNote: '',
+  reminderStyle: 'warm',
+  signOff: '',
+  aiInstructions: '',
+  notify: { payment: true, overdue: true, due: true, approval: true, import: true },
 };
+const PREF_KEYS = ['currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
 const envChoseMode = Boolean(process.env.PAYPAL_MODE);
 
 let paypalSource = 'env';
@@ -37,6 +48,7 @@ export function applySettings() {
   config.defaultTaxPercent = b.defaultTaxPercent ?? envBusiness.defaultTaxPercent;
   config.lateFeePercent = b.lateFeePercent ?? envBusiness.lateFeePercent;
   config.lateFeeAfterDays = b.lateFeeAfterDays ?? envBusiness.lateFeeAfterDays;
+  for (const k of PREF_KEYS) config[k] = k === 'notify' ? { ...envBusiness.notify, ...(b.notify || {}) } : b[k] ?? envBusiness[k];
 }
 
 /** Has the first-run choice been made (connect PayPal or try demo)? */
@@ -77,8 +89,10 @@ export function publicSettings() {
       defaultTaxPercent: config.defaultTaxPercent,
       lateFeePercent: config.lateFeePercent,
       lateFeeAfterDays: config.lateFeeAfterDays,
+      ...Object.fromEntries(PREF_KEYS.map((k) => [k, config[k]])),
     },
     setupDone: setupDone(),
+    hiddenClients: (kvGet('hidden:emails') || []).length,
   };
 }
 
@@ -100,6 +114,31 @@ export function saveBusinessSettings(input = {}) {
   if (input.defaultTaxPercent !== undefined) next.defaultTaxPercent = num(input.defaultTaxPercent, 0, 50, 'Default sales tax');
   if (input.lateFeePercent !== undefined) next.lateFeePercent = num(input.lateFeePercent, 0, 25, 'Late fee');
   if (input.lateFeeAfterDays !== undefined) next.lateFeeAfterDays = Math.round(num(input.lateFeeAfterDays, 1, 90, 'Days before a late fee'));
+  const text = (v, max) => String(v ?? '').trim().slice(0, max);
+  if (input.ownerName !== undefined) next.ownerName = text(input.ownerName, 80);
+  if (input.website !== undefined) next.website = text(input.website, 120);
+  if (input.signOff !== undefined) next.signOff = text(input.signOff, 200);
+  if (input.defaultNote !== undefined) next.defaultNote = text(input.defaultNote, 600);
+  if (input.aiInstructions !== undefined) next.aiInstructions = text(input.aiInstructions, 600);
+  if (input.businessEmail !== undefined) {
+    const e = text(input.businessEmail, 120);
+    if (e && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw httpErr('That business email doesn\'t look right');
+    next.businessEmail = e;
+  }
+  if (input.defaultTermsDays !== undefined) next.defaultTermsDays = Math.round(num(input.defaultTermsDays, 0, 120, 'Default payment terms'));
+  if (input.reminderStyle !== undefined) {
+    if (!['warm', 'neutral', 'brief'].includes(input.reminderStyle)) throw httpErr('Unknown reminder style');
+    next.reminderStyle = input.reminderStyle;
+  }
+  if (input.currency !== undefined) {
+    const c = String(input.currency).toUpperCase();
+    if (!config.paypalCurrencies.includes(c)) throw httpErr(`PayPal can't invoice in ${c}`);
+    next.currency = c;
+  }
+  if (input.notify && typeof input.notify === 'object') {
+    next.notify = { ...(cur.notify || envBusiness.notify) };
+    for (const k of Object.keys(envBusiness.notify)) if (input.notify[k] !== undefined) next.notify[k] = Boolean(input.notify[k]);
+  }
   kvSet('settings:business', next);
   applySettings();
   return publicSettings().business;

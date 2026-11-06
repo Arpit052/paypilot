@@ -64,7 +64,7 @@ function normaliseLines(d) {
   if (!config.paypalCurrencies.includes(currency))
     throw invalid(`PayPal invoices can't be in ${currency}. Choose a currency PayPal supports, such as USD, EUR or GBP. Your client still pays from their own account.`);
   const company = String(d.company || '').trim().slice(0, 120);
-  return { clientName, clientEmail, company, items, taxPercent, currency, note: String(d.note || '').trim().slice(0, 4000) };
+  return { clientName, clientEmail, company, items, taxPercent, currency, note: String(d.note === undefined ? config.defaultNote || '' : d.note || '').trim().slice(0, 4000) };
 }
 
 /** Normalise + validate an invoice draft. Throws on bad input. Shared by the AI tool and the approve step. */
@@ -74,7 +74,7 @@ export function normaliseInvoiceDraft(d) {
   const isDate = (x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x);
   let issueDate = isDate(d.issueDate) ? d.issueDate : today;
   if (issueDate > today) throw invalid('Issue date cannot be in the future');
-  let dueDate = isDate(d.dueDate) ? d.dueDate : addDays(today, Number(d.dueInDays ?? 7));
+  let dueDate = isDate(d.dueDate) ? d.dueDate : addDays(today, Number(d.dueInDays ?? config.defaultTermsDays ?? 7));
   if (dueDate < today) dueDate = today;
   if (dueDate < issueDate) throw invalid('Due date must be on or after the issue date');
   const reference = String(d.reference || '').trim().slice(0, 120);
@@ -107,7 +107,7 @@ export function normaliseScheduleDraft(d) {
   const today = isoDate();
   let startDate = d.startDate && /^\d{4}-\d{2}-\d{2}$/.test(d.startDate) ? d.startDate : today;
   if (startDate < today) startDate = today;
-  const dueInDays = Math.min(Math.max(Math.round(Number(d.dueInDays ?? 7)), 0), 90);
+  const dueInDays = Math.min(Math.max(Math.round(Number(d.dueInDays ?? config.defaultTermsDays ?? 7)), 0), 90);
   const { total } = invoiceTotals(base.items, base.taxPercent);
   return { ...base, frequency, startDate, dueInDays, total };
 }
@@ -260,6 +260,29 @@ export function dropStaleActions() {
     n++;
   }
   return n;
+}
+
+const METHODS = { bank: 'BANK_TRANSFER', cash: 'CASH', check: 'CHECK', card: 'CREDIT_CARD', paypal: 'PAYPAL', other: 'OTHER' };
+
+/**
+ * You were paid outside PayPal (or PayPal didn't catch it): record it. On real PayPal the
+ * payment is recorded on the invoice too, so both sides agree.
+ */
+export async function markPaid(invoiceId, { method = 'bank', date, note } = {}) {
+  const inv = findInvoice(invoiceId);
+  if (!inv) throw invalid('Invoice not found');
+  if (!isOpen(inv)) throw invalid(`Invoice #${inv.number} is already ${inv.status.toLowerCase().replace(/_/g, ' ')}.`);
+  const today = isoDate();
+  const paidDate = /^\d{4}-\d{2}-\d{2}$/.test(String(date || '')) ? date : today;
+  if (paidDate > today) throw invalid("The payment date can't be in the future");
+  if (inv.paypalId) {
+    if (notOnCurrentPaypal(inv)) throw invalid(notOnPaypalMessage(inv));
+    await paypal.recordPayment(inv.paypalId, { amount: inv.total, currency: inv.currency, method: METHODS[method] || 'OTHER', date: paidDate, note, requestId: `mark-${inv.id}` });
+  }
+  const { applyStatus } = await import('./sync.js');
+  applyStatus(inv, 'MARKED_AS_PAID', paidDate);
+  logActivity('marked_paid', `Invoice #${inv.number} marked as paid (${method})`);
+  return { number: inv.number, status: 'MARKED_AS_PAID', paidDate };
 }
 
 export async function approveAction(id, edits) {
