@@ -1,7 +1,7 @@
 // Keeps local invoice state in sync with PayPal: polling + webhooks.
 import { isoDate } from './config.js';
 import { listInvoices, getInvoiceByPaypalId, updateInvoice, logActivity } from './db.js';
-import { paypal } from './paypal.js';
+import { paypal, isDemoOnly } from './paypal.js';
 import { isOpen, clientName } from './analytics.js';
 import { notify } from './notify.js';
 
@@ -27,7 +27,7 @@ function applyStatus(inv, status, paidDate) {
 
 /** Poll PayPal for every open invoice. Returns number of invoices that changed. */
 export async function syncInvoices() {
-  const open = listInvoices().filter((i) => i.paypalId && i.source !== 'seed' && isOpen(i)).slice(0, 50);
+  const open = listInvoices().filter((i) => i.paypalId && i.source !== 'seed' && !isDemoOnly(i) && isOpen(i)).slice(0, 50);
   let changed = 0;
   const errors = [];
   for (const inv of open) {

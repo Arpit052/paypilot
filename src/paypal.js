@@ -260,3 +260,6 @@ const mock = {
 
 export const paypal = config.paypal.mode === 'mock' ? mock : real;
 export const isMock = config.paypal.mode === 'mock';
+
+/** True for demo invoices created while PayPal was in mock mode (they don't exist on real PayPal). */
+export const isDemoOnly = (inv) => !isMock && String(inv?.paypalId || '').startsWith('INV2-MOCK-');

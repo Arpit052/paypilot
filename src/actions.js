@@ -2,7 +2,7 @@
 // clients. Nothing reaches PayPal until the user approves the action card.
 import { config, isoDate, addDays } from './config.js';
 import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
-import { paypal, PayPalError } from './paypal.js';
+import { paypal, PayPalError, isDemoOnly } from './paypal.js';
 import { invoiceTotals, isOpen } from './analytics.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -141,6 +141,7 @@ const executors = {
     const inv = findInvoice(payload.invoiceId);
     if (!inv) throw new Error('Invoice not found');
     if (!isOpen(inv)) throw new Error(`Invoice #${inv.number} is ${inv.status}; no reminder needed`);
+    if (isDemoOnly(inv)) throw invalid(`Invoice #${inv.number} is demo data and isn't on PayPal. Use "Reset demo" to clear it.`);
     const subject = String(payload.subject || '').trim() || `Reminder: invoice #${inv.number}`;
     const message = String(payload.message || '').trim();
     if (!message) throw new Error('Reminder message is empty');
@@ -155,6 +156,7 @@ const executors = {
     const inv = findInvoice(payload.invoiceId);
     if (!inv) throw new Error('Invoice not found');
     if (!isOpen(inv)) throw new Error(`Invoice #${inv.number} is ${inv.status}; cannot cancel`);
+    if (isDemoOnly(inv)) throw invalid(`Invoice #${inv.number} is demo data and isn't on PayPal. Use "Reset demo" to clear it.`);
     await paypal.cancel(inv.paypalId, {
       subject: `Invoice #${inv.number} cancelled`,
       note: payload.reason || 'This invoice has been cancelled.',
