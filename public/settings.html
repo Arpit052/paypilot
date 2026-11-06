@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Settings</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#060914">
+</head>
+<body>
+<main>
+  <h1>Settings</h1>
+  <p class="lede">Connect PayPal, name your business, and set how PayPilot handles late payments.</p>
+
+  <div class="set-grid">
+    <section class="panel" id="ppPanel">
+      <h2>PayPal connection</h2>
+      <div id="ppStatus"></div>
+      <form id="ppForm" class="hidden" autocomplete="off">
+        <p class="set-help">Paste your <b>sandbox</b> app keys from developer.paypal.com → Apps &amp; Credentials. PayPilot checks them with PayPal before saving.</p>
+        <div class="form-grid">
+          <div class="full"><label for="cid">Client ID</label><input id="cid" spellcheck="false" required></div>
+          <div class="full"><label for="sec">Secret</label><input id="sec" type="password" spellcheck="false" required></div>
+        </div>
+        <div class="slip-actions"><button class="btn" type="submit" id="ppGo">Connect PayPal</button></div>
+      </form>
+      <div class="slip-actions" id="ppActions"></div>
+      <div class="slip-error" id="ppErr" role="alert"></div>
+    </section>
+
+    <form class="panel" id="bizForm">
+      <h2>Your business</h2>
+      <p class="set-help">Shown on every invoice your clients receive.</p>
+      <div class="form-grid">
+        <div class="full"><label for="bizName">Business name</label><input id="bizName" maxlength="100" required></div>
+        <div><label for="bizTax">Default sales tax (%)</label><input id="bizTax" type="number" min="0" max="50" step="0.01"></div>
+        <div></div>
+      </div>
+      <h2 style="margin-top:22px">Late fees <span class="tag">AI suggests, you approve</span></h2>
+      <p class="set-help">When an invoice is this many days overdue, PayPilot drafts a late fee for you to approve. It's added to the PayPal invoice only after you click Approve. Set the fee to 0 to turn this off.</p>
+      <div class="form-grid">
+        <div><label for="feePct">Late fee (% of invoice)</label><input id="feePct" type="number" min="0" max="25" step="0.5"></div>
+        <div><label for="feeDays">After (days overdue)</label><input id="feeDays" type="number" min="1" max="90" step="1"></div>
+      </div>
+      <div class="slip-actions"><button class="btn" type="submit">Save</button></div>
+      <div class="ok-text" id="bizOk" role="status"></div>
+      <div class="slip-error" id="bizErr" role="alert"></div>
+    </form>
+
+    <section class="panel">
+      <h2>Demo data</h2>
+      <p class="set-help">Start over with fresh sample clients and invoices. Your PayPal connection and settings are kept.</p>
+      <div class="slip-actions"><button class="btn ghost" id="resetBtn" type="button">Reset demo data</button></div>
+    </section>
+  </div>
+</main>
+<script type="module">
+  import { api, header, esc, toast, fmtDate } from '/common.js';
+  await header('settings');
+  const $ = (id) => document.getElementById(id);
+
+  function renderPaypal(p) {
+    const on = p.mode !== 'mock';
+    const where = p.source === 'app' ? `Connected ${p.connectedAt ? 'on ' + fmtDate(p.connectedAt.slice(0, 10)) : ''} in PayPilot` : 'Keys come from the .env file';
+    $('ppStatus').innerHTML = on
+      ? `<div class="set-status on"><i class="dot"></i><div><b>Connected to PayPal ${p.mode === 'live' ? 'Live' : 'Sandbox'}</b><span>App ${esc(p.clientId)} · ${where}</span></div></div>`
+      : `<div class="set-status off"><i class="dot"></i><div><b>Demo mode</b><span>Invoices are simulated inside PayPilot. Connect PayPal to send real sandbox invoices.</span></div></div>`;
+    $('ppForm').classList.toggle('hidden', on);
+    $('ppActions').innerHTML = on
+      ? `<button class="btn ghost" id="discBtn" type="button">Disconnect</button><button class="btn ghost" id="swapBtn" type="button">Use different keys</button>`
+      : '';
+    $('discBtn')?.addEventListener('click', async (e) => {
+      if (!e.target.dataset.confirm) {
+        e.target.dataset.confirm = '1';
+        e.target.textContent = 'Click again to disconnect';
+        return;
+      }
+      const r = await api('/api/settings/paypal/disconnect', { body: {} });
+      toast('PayPal disconnected - now in demo mode');
+      setTimeout(() => location.reload(), 600);
+      renderPaypal(r.settings.paypal);
+    });
+    $('swapBtn')?.addEventListener('click', () => {
+      $('ppForm').classList.remove('hidden');
+      $('cid').focus();
+    });
+  }
+
+  function fill(s) {
+    renderPaypal(s.paypal);
+    $('bizName').value = s.business.businessName;
+    $('bizTax').value = s.business.defaultTaxPercent;
+    $('feePct').value = s.business.lateFeePercent;
+    $('feeDays').value = s.business.lateFeeAfterDays;
+  }
+  fill(await api('/api/settings'));
+
+  $('ppForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('ppErr').textContent = '';
+    $('ppGo').disabled = true;
+    $('ppGo').textContent = 'Checking with PayPal…';
+    try {
+      const r = await api('/api/settings/paypal/connect', { body: { clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: false } });
+      toast(r.removedDemoInvoices ? `Connected! Removed ${r.removedDemoInvoices} demo invoices that weren't on PayPal.` : 'Connected to PayPal');
+      setTimeout(() => location.reload(), 900);
+    } catch (err) {
+      $('ppErr').textContent = err.message;
+    } finally {
+      $('ppGo').disabled = false;
+      $('ppGo').textContent = 'Connect PayPal';
+    }
+  });
+
+  $('bizForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('bizErr').textContent = '';
+    $('bizOk').textContent = '';
+    try {
+      await api('/api/settings/business', {
+        body: { businessName: $('bizName').value, defaultTaxPercent: $('bizTax').value || 0, lateFeePercent: $('feePct').value || 0, lateFeeAfterDays: $('feeDays').value || 7 },
+      });
+      $('bizOk').textContent = '✓ Saved';
+    } catch (err) {
+      $('bizErr').textContent = err.message;
+    }
+  });
+
+  $('resetBtn').addEventListener('click', async (e) => {
+    if (!e.target.dataset.confirm) {
+      e.target.dataset.confirm = '1';
+      e.target.textContent = 'Click again to reset everything';
+      return;
+    }
+    await api('/api/demo/reset', { body: {} });
+    await api('/api/demo/seed', { body: {} });
+    toast('Demo data reset');
+    e.target.textContent = 'Reset demo data';
+    delete e.target.dataset.confirm;
+  });
+</script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { api, header, esc, money, moneyMap, fmtDate, toast, RISK_TEXT, daysLateText } from './common.js';
+import { api, header, esc, money, moneyMap, fmtDate, toast, RISK_TEXT, daysLateText, openInvoiceDrawer } from './common.js';
 
 const $ = (id) => document.getElementById(id);
 const cfg = await header('dashboard');
@@ -171,13 +171,13 @@ function renderTable() {
   $('invoices').innerHTML = rows.length
     ? `<table class="data"><thead><tr>${COLS.map(th).join('')}<th></th></tr></thead><tbody>${rows
         .map(
-          (i) => `<tr>
+          (i) => `<tr class="clickable" data-inv="${esc(i.id)}" tabindex="0" title="Click to see this invoice's timeline">
             <td class="num">${esc(i.number)}</td>
             <td>${esc(i.client)}</td>
             <td class="muted">${esc(i.items.map((x) => x.name).join(', ')).slice(0, 60)}</td>
             <td>${fmtDate(i.issueDate)}</td>
             <td>${fmtDate(i.dueDate)}</td>
-            <td><span class="pill ${i.displayStatus}">${i.displayStatus === 'OVERDUE' ? 'Overdue' : i.displayStatus.charAt(0) + i.displayStatus.slice(1).toLowerCase().replace(/_/g, ' ')}</span>${i.source === 'seed' ? ' <span class="muted" title="Demo history, not on PayPal">demo</span>' : ''}${i.depositAmount ? ` <span class="muted" title="Deposit due upfront">deposit ${money(i.depositAmount, i.currency)}</span>` : ''}</td>
+            <td><span class="pill ${i.displayStatus}">${i.displayStatus === 'OVERDUE' ? 'Overdue' : i.displayStatus.charAt(0) + i.displayStatus.slice(1).toLowerCase().replace(/_/g, ' ')}</span>${i.source === 'seed' ? ' <span class="muted" title="Demo history, not on PayPal">demo</span>' : i.source === 'import' ? ' <span class="muted" title="Created on PayPal, imported by PayPilot">imported</span>' : ''}${i.depositAmount ? ` <span class="muted" title="Deposit due upfront">deposit ${money(i.depositAmount, i.currency)}</span>` : ''}</td>
             <td class="r num">${money(i.total, i.currency)}</td>
             <td class="r">${
               i.payerUrl && OPEN.includes(i.status)
@@ -200,12 +200,35 @@ $('invoices').addEventListener('click', async (e) => {
     return renderTable();
   }
   const id = e.target.dataset?.pay;
-  if (!id) return;
-  e.target.disabled = true;
-  await api(`/api/mock/pay/${id}`, { body: {} });
-  if (!window.EventSource) toast('Payment received');
-  load();
+  if (id) {
+    e.target.disabled = true;
+    await api(`/api/mock/pay/${id}`, { body: {} });
+    if (!window.EventSource) toast('Payment received');
+    return load();
+  }
+  if (e.target.closest('a, button')) return;
+  const row = e.target.closest('[data-inv]');
+  if (row) showInvoice(row.dataset.inv);
 });
+$('invoices').addEventListener('keydown', (e) => {
+  const row = e.target.closest?.('[data-inv]');
+  if (row && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    showInvoice(row.dataset.inv);
+  }
+});
+function showInvoice(id) {
+  const inv = data.invoices.find((x) => x.id === id);
+  if (!inv) return;
+  openInvoiceDrawer(inv, {
+    today: data.dash?.today,
+    mock: cfg.paypalMode === 'mock',
+    onSimulatePay: async (pid) => {
+      await api(`/api/mock/pay/${pid}`, { body: {} });
+      load();
+    },
+  });
+}
 $('seg').addEventListener('click', (e) => {
   const b = e.target.closest('[data-f]');
   if (b) setFilter(b.dataset.f);
@@ -288,7 +311,10 @@ $('syncBtn').onclick = async (e) => {
   e.target.disabled = true;
   try {
     const r = await api('/api/sync', { body: {} });
-    toast(r.changed ? `${r.changed} invoice${r.changed > 1 ? 's' : ''} updated from PayPal` : `Checked ${r.checked} open invoice${r.checked === 1 ? '' : 's'}. No new payments.`);
+    const parts = [];
+    if (r.imported) parts.push(`${r.imported} new invoice${r.imported > 1 ? 's' : ''} imported from PayPal`);
+    if (r.changed) parts.push(`${r.changed} invoice${r.changed > 1 ? 's' : ''} updated`);
+    toast(parts.length ? parts.join(' · ') : `Checked ${r.checked} open invoice${r.checked === 1 ? '' : 's'}. No new payments.`);
     load();
   } catch (err) {
     toast(err.message);

@@ -171,9 +171,13 @@ test('payment via webhook path flips status to PAID', async () => {
 
 test('follow-up scan drafts reminders for overdue invoices only, then sends', async () => {
   const { data } = await call('/api/followups/scan', {});
-  const nums = data.created.map((a) => a.payload.client).sort();
-  assert.deepEqual(nums, ['Jake Miller']);
-  const jake = data.created.find((a) => a.payload.client === 'Jake Miller');
+  const reminders = data.created.filter((a) => a.type === 'send_reminder');
+  assert.deepEqual(reminders.map((a) => a.payload.client).sort(), ['Jake Miller']);
+  const jake = reminders.find((a) => a.payload.client === 'Jake Miller');
+  // Jake is 12 days late (> 7-day policy), so a late-fee slip is drafted too
+  const fees = data.created.filter((a) => a.type === 'add_late_fee');
+  assert.deepEqual(fees.map((a) => a.payload.client), ['Jake Miller']);
+  assert.equal(fees[0].payload.fee, 42.5, '5% of $850');
   assert.equal(jake.payload.tone, 'firm', 'second reminder escalates');
   assert.equal(jake.payload.subject, 'Quick reminder', 'AI drafted');
   // rescan does not duplicate
@@ -181,6 +185,24 @@ test('follow-up scan drafts reminders for overdue invoices only, then sends', as
   const sent = await call(`/api/actions/${jake.id}/approve`, { edits: { message: 'Edited by me' } });
   assert.equal(sent.status, 200);
   assert.equal(sent.data.action.result.remindersSent, 2);
+  // approving the late fee updates the invoice total; a second fee is refused
+  const fee = await call(`/api/actions/${fees[0].id}/approve`, {});
+  assert.equal(fee.status, 200, JSON.stringify(fee.data));
+  assert.equal(fee.data.action.result.newTotal, 892.5);
+  assert.equal((await call('/api/followups/scan', {})).data.created.filter((a) => a.type === 'add_late_fee').length, 0);
+});
+
+test('settings: business details validate and apply; secrets never returned', async () => {
+  assert.equal((await call('/api/settings/business', { defaultTaxPercent: 80 })).status, 400);
+  const ok = await call('/api/settings/business', { businessName: 'Test Studio', defaultTaxPercent: 8 });
+  assert.equal(ok.status, 200);
+  const { data } = await call('/api/settings');
+  assert.equal(data.business.businessName, 'Test Studio');
+  assert.equal(data.paypal.mode, 'mock');
+  assert.ok(!JSON.stringify(data).toLowerCase().includes('secret'));
+  // obviously incomplete keys are rejected before contacting PayPal
+  assert.equal((await call('/api/settings/paypal/connect', { clientId: 'abc', clientSecret: 'x' })).status, 400);
+  await call('/api/settings/business', { businessName: 'Northline Studio', defaultTaxPercent: 0 });
 });
 
 test('dashboard figures', async () => {

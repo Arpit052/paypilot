@@ -84,7 +84,7 @@ export async function header(active) {
   const pending = await api('/api/actions?status=pending').then((r) => r.actions.length).catch(() => 0);
   const link = (href, label, key, extra = '') =>
     `<a href="${href}" ${active === key ? 'aria-current="page"' : ''}>${label}${extra}</a>`;
-  const pp = CONFIG.paypalMode === 'mock' ? 'Mock' : CONFIG.paypalMode === 'live' ? 'Live' : 'Sandbox';
+  const pp = CONFIG.paypalMode === 'mock' ? 'Demo' : CONFIG.paypalMode === 'live' ? 'Live' : 'Sandbox';
   const ai = CONFIG.llmProvider === 'none' ? 'not set' : CONFIG.llmProvider;
   const el = document.createElement('header');
   el.className = 'topbar';
@@ -109,9 +109,10 @@ export async function header(active) {
           <ul id="bellList"></ul>
         </div>
       </div>
-      <span class="mode ${CONFIG.paypalMode === 'mock' ? 'warn' : ''}" title="PayPal environment">PayPal: <b>${pp}</b></span>
+      <a class="mode mode-link ${CONFIG.paypalMode === 'mock' ? 'warn' : 'ok'}" href="/settings" title="${CONFIG.paypalMode === 'mock' ? 'Demo mode - click to connect your PayPal' : 'Connected to PayPal - manage in Settings'}">PayPal: <b>${pp}</b>${CONFIG.paypalMode === 'mock' ? ' · Connect' : ' ✓'}</a>
       <span class="mode ${ai === 'not set' ? 'warn' : ''}" title="AI provider">AI: <b>${esc(ai)}</b></span>
       ${CONFIG.demoTimeOffsetDays ? `<span class="mode warn" title="DEMO_TIME_OFFSET_DAYS">Clock +${CONFIG.demoTimeOffsetDays}d</span>` : ''}
+      <a class="mode gear ${active === 'settings' ? 'on' : ''}" href="/settings" title="Settings" aria-label="Settings"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></a>
       ${CONFIG.loginEnabled ? '<button class="mode" id="logoutBtn" style="background:none;cursor:pointer">Sign out</button>' : ''}
     </div>`;
   document.body.prepend(el);
@@ -134,7 +135,7 @@ function ago(iso) {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
-const NOTE_ICON = { payment: '💰', approval: '📝' };
+const NOTE_ICON = { payment: '💰', approval: '📝', import: '📥', latefee: '⏰' };
 let notes = [];
 let unread = 0;
 
@@ -194,6 +195,10 @@ async function startNotifications() {
     unread += 1;
     renderBell();
     popToast(n);
+    if (n.kind === 'payment') {
+      chaChing();
+      confetti();
+    }
     window.dispatchEvent(new CustomEvent('pp:notification', { detail: n }));
   });
 }
@@ -243,7 +248,7 @@ export function startLiveClock(timeZone) {
 // ------------------------------------------------------------------
 // Approval slips
 // ------------------------------------------------------------------
-const STAMP = { create_invoice: 'SENT', send_reminder: 'REMINDED', cancel_invoice: 'VOID', create_schedule: 'SCHEDULED' };
+const STAMP = { create_invoice: 'SENT', send_reminder: 'REMINDED', cancel_invoice: 'VOID', create_schedule: 'SCHEDULED', add_late_fee: 'FEE ADDED' };
 
 /**
  * Render an approval card for an action. `onDone(action)` fires after approve/reject.
@@ -382,6 +387,34 @@ export function renderSlip(action, { onDone } = {}) {
       <div class="slip-error" role="alert"></div>
       <div class="slip-result"></div>`;
     el._edits = () => ({ subject: el.querySelector('[data-f=subject]').value, message: el.querySelector('[data-f=message]').value });
+  } else if (action.type === 'add_late_fee') {
+    el.innerHTML = `
+      <div class="slip-head">
+        <div><div class="slip-kind">Late fee</div>
+          <div class="slip-from">Invoice #${esc(p.number)} · ${esc(p.client)}${p.daysOverdue ? ` · ${p.daysOverdue} days overdue` : ''}</div></div>
+        <span class="pill final">late fee</span>
+      </div>
+      <div class="sums num">
+        <div><span>Current total</span><span>${money(p.amount, cur)}</span></div>
+        <div><span>Late fee <input data-f="percent" class="num fee-pct" type="number" min="0.5" max="25" step="0.5" value="${esc(p.percent)}" aria-label="Late fee percent">%</span><span data-fee></span></div>
+      </div>
+      <div class="total"><span>New total</span><b class="num" data-newtotal></b></div>
+      <div class="slip-meta" style="margin-top:10px">Added as a separate line (no tax) on the PayPal invoice. PayPal emails your client the updated invoice.</div>
+      <div class="slip-actions">
+        <button class="btn" data-approve>Add late fee via PayPal</button>
+        <button class="btn ghost" data-reject>Waive it</button>
+      </div>
+      <div class="slip-error" role="alert"></div>
+      <div class="slip-result"></div>`;
+    const pctIn = el.querySelector('[data-f=percent]');
+    const recalcFee = () => {
+      const fee = Math.round(p.amount * (Number(pctIn.value) || 0)) / 100;
+      el.querySelector('[data-fee]').textContent = '+' + money(fee, cur);
+      el.querySelector('[data-newtotal]').textContent = money(Math.round((p.amount + fee) * 100) / 100, cur);
+    };
+    pctIn.addEventListener('input', recalcFee);
+    recalcFee();
+    el._edits = () => ({ percent: Number(pctIn.value) });
   } else {
     el.innerHTML = `
       <div class="slip-head"><div><div class="slip-kind">Cancel invoice #${esc(p.number)}</div>
@@ -402,7 +435,7 @@ export function renderSlip(action, { onDone } = {}) {
     el.classList.add('done');
     if (a.status === 'rejected') {
       el.classList.add('rejected');
-      el.querySelector('.slip-result').textContent = 'Discarded.';
+      el.querySelector('.slip-result').textContent = a.type === 'add_late_fee' ? 'Waived. PayPilot won\'t suggest a fee for this invoice again.' : 'Discarded.';
       return;
     }
     const s = document.createElement('div');
@@ -417,6 +450,8 @@ export function renderSlip(action, { onDone } = {}) {
         ? `Invoice <b>#${esc(r.number)}</b> sent through PayPal.${r.payerUrl ? ` <a href="${esc(r.payerUrl)}" target="_blank" rel="noopener">Open client's payment page</a>` : ''}`
         : a.type === 'send_reminder'
           ? `Reminder sent for invoice <b>#${esc(r.number)}</b>.`
+          : a.type === 'add_late_fee'
+          ? `Late fee of <b>${money(r.fee, cur)}</b> added. Invoice <b>#${esc(r.number)}</b> is now ${money(r.newTotal, cur)}.`
           : `Invoice <b>#${esc(r.number)}</b> cancelled.`;
   };
 
@@ -445,4 +480,154 @@ export function renderSlip(action, { onDone } = {}) {
     }
   });
   return el;
+}
+
+// ------------------------------------------------------------------
+// Invoice drawer: details + a timeline of everything that happened to it
+// ------------------------------------------------------------------
+const PAID_ST = ['PAID', 'MARKED_AS_PAID'];
+const OPEN_ST = ['SENT', 'UNPAID', 'PARTIALLY_PAID'];
+const dayDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+
+/** Ordered events for one invoice, built from its saved history. */
+export function invoiceTimeline(inv, today) {
+  const ev = [];
+  const cur = inv.currency;
+  ev.push({
+    at: inv.issueDate,
+    icon: '✉️',
+    title: inv.source === 'import' ? 'Created on PayPal' : inv.source === 'seed' ? 'Invoice issued' : 'Sent through PayPal',
+    sub: `${money(inv.total - (inv.items || []).filter((i) => i.lateFee).reduce((s, i) => s + i.unitPrice, 0), cur)} to ${inv.client || 'client'}${inv.depositAmount ? ` · ${money(inv.depositAmount, cur)} deposit requested upfront` : ''}`,
+  });
+  (inv.reminders || []).forEach((r, n) =>
+    ev.push({ at: r.at, icon: '🔔', title: `${r.tone ? r.tone[0].toUpperCase() + r.tone.slice(1) : 'Payment'} reminder sent`, sub: r.subject || `Reminder ${n + 1}` })
+  );
+  (inv.items || []).filter((i) => i.lateFee).forEach((i) => ev.push({ at: i.addedAt || today, icon: '⏰', cls: 'late', title: `${i.name} added`, sub: `+${money(i.unitPrice, cur)}, new total ${money(inv.total, cur)}` }));
+  const paid = PAID_ST.includes(inv.status);
+  if (paid && inv.paidDate) {
+    const late = dayDiff(inv.dueDate, inv.paidDate);
+    ev.push({ at: inv.paidDate, icon: '💰', cls: 'paid', title: `Paid ${money(inv.total, cur)}`, sub: late > 0 ? `${late} day${late === 1 ? '' : 's'} after the due date` : 'On time 🎉' });
+  }
+  if (inv.status === 'PARTIALLY_PAID') ev.push({ at: today, icon: '💵', cls: 'paid', title: 'Deposit received', sub: 'Part of this invoice has been paid' });
+  if (inv.status === 'CANCELLED') ev.push({ at: null, icon: '✖', cls: 'late', title: 'Invoice cancelled', sub: '' });
+  if (!paid && inv.status !== 'CANCELLED') {
+    if (inv.dueDate < today) ev.push({ at: inv.dueDate, icon: '!', cls: 'late', title: 'Payment due date passed', sub: `${dayDiff(inv.dueDate, today)} days overdue` });
+    else ev.push({ at: inv.dueDate, icon: '⏳', cls: 'future', title: inv.dueDate === today ? 'Due today' : 'Payment due', sub: inv.dueDate === today ? '' : `in ${dayDiff(today, inv.dueDate)} day${dayDiff(today, inv.dueDate) === 1 ? '' : 's'}` });
+  }
+  const order = (e) => (e.cls === 'future' ? '9999' : e.at || '9998');
+  return ev.sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
+}
+
+let drawerEls = null;
+export function closeInvoiceDrawer() {
+  if (!drawerEls) return;
+  const [back, dr] = drawerEls;
+  back.classList.remove('open');
+  dr.classList.remove('open');
+  setTimeout(() => { back.remove(); dr.remove(); }, 260);
+  drawerEls = null;
+}
+
+/** Slide-in panel for one invoice. `opts.onSimulatePay(paypalId)` for demo mode. */
+export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = {}) {
+  closeInvoiceDrawer();
+  const cur = inv.currency;
+  const back = document.createElement('div');
+  back.className = 'drawer-back';
+  const dr = document.createElement('aside');
+  dr.className = 'drawer';
+  dr.setAttribute('role', 'dialog');
+  dr.setAttribute('aria-label', `Invoice ${inv.number}`);
+  const status = inv.displayStatus || inv.status;
+  const label = status === 'OVERDUE' ? 'Overdue' : status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, ' ');
+  const lines = (inv.items || []).map((it) => `<tr class="${it.lateFee ? 'fee' : ''}"><td>${esc(it.name)}${it.quantity !== 1 ? ` × ${esc(it.quantity)}` : ''}</td><td>${money(it.quantity * it.unitPrice, cur)}</td></tr>`).join('');
+  const taxable = (inv.items || []).filter((i) => !i.noTax).reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const isOpen = OPEN_ST.includes(inv.status);
+  const ask = (q) => `/?ask=${encodeURIComponent(q)}`;
+  dr.innerHTML = `
+    <button class="x" aria-label="Close">✕</button>
+    <div class="dr-num">Invoice #${esc(inv.number)} · <span class="pill ${esc(status)}">${esc(label)}</span></div>
+    <div class="dr-amt num">${money(inv.total, cur)}</div>
+    <div class="dr-who">${esc(inv.client || '')}${inv.clientEmail ? ` · ${esc(inv.clientEmail)}` : ''}${inv.reference ? ` · Ref ${esc(inv.reference)}` : ''}</div>
+    <table class="dr-lines"><tbody>${lines}${inv.taxPercent ? `<tr><td>Sales tax (${esc(inv.taxPercent)}%)</td><td>${money(Math.round(taxable * inv.taxPercent) / 100, cur)}</td></tr>` : ''}</tbody></table>
+    <div class="dr-actions">
+      ${isOpen && inv.payerUrl ? (mock ? `<button class="btn small" data-sim>Simulate client payment</button>` : `<a class="btn small" href="${esc(inv.payerUrl)}" target="_blank" rel="noopener">Open PayPal payment page</a>`) : ''}
+      ${isOpen ? `<a class="btn ghost small" href="${ask(`Draft a reminder for invoice #${inv.number}`)}">Draft a reminder</a>` : ''}
+      ${isOpen && status === 'OVERDUE' && !(inv.items || []).some((i) => i.lateFee) ? `<a class="btn ghost small" href="${ask(`Add a late fee to invoice #${inv.number}`)}">Add late fee</a>` : ''}
+    </div>
+    <h3 style="margin:0 0 14px;font-size:15px">Timeline</h3>
+    <ol class="timeline">${invoiceTimeline(inv, today)
+      .map((e) => `<li class="${e.cls || ''}"><span class="tdot" aria-hidden="true">${e.icon}</span><div><b>${esc(e.title)}</b>${e.at ? `<time>${fmtDate(e.at)}</time>` : ''}${e.sub ? `<div class="tsub">${esc(e.sub)}</div>` : ''}</div></li>`)
+      .join('')}</ol>`;
+  document.body.append(back, dr);
+  drawerEls = [back, dr];
+  requestAnimationFrame(() => { back.classList.add('open'); dr.classList.add('open'); });
+  back.onclick = closeInvoiceDrawer;
+  dr.querySelector('.x').onclick = closeInvoiceDrawer;
+  dr.querySelector('.x').focus();
+  dr.querySelector('[data-sim]')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    await onSimulatePay?.(inv.paypalId);
+    closeInvoiceDrawer();
+  });
+}
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closeInvoiceDrawer());
+
+// ------------------------------------------------------------------
+// Payment celebration: a soft "cha-ching" + a burst of confetti
+// ------------------------------------------------------------------
+let audioCtx = null;
+// browsers only allow sound after the user has interacted with the page once
+document.addEventListener('pointerdown', () => {
+  try {
+    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch {
+    /* no audio */
+  }
+}, { once: true });
+
+export function chaChing() {
+  if (!audioCtx || localStorage.getItem('pp-sound') === 'off') return;
+  try {
+    const t0 = audioCtx.currentTime;
+    const out = audioCtx.createGain();
+    out.gain.value = 0.18;
+    out.connect(audioCtx.destination);
+    // two bright bell tones ("cha-CHING")
+    [[1318.5, 0, 0.22], [1975.5, 0.11, 0.6], [2637, 0.11, 0.45]].forEach(([f, start, dur]) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + start);
+      g.gain.exponentialRampToValueAtTime(1, t0 + start + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+      o.connect(g).connect(out);
+      o.start(t0 + start);
+      o.stop(t0 + start + dur + 0.05);
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+export function confetti() {
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  const box = document.createElement('div');
+  box.className = 'confetti';
+  const colors = ['#8b5cf6', '#6366f1', '#38bdf8', '#34d399', '#fbbf24', '#f472b6', '#ffffff'];
+  for (let i = 0; i < 90; i++) {
+    const p = document.createElement('i');
+    p.style.left = Math.random() * 100 + 'vw';
+    p.style.background = colors[i % colors.length];
+    p.style.setProperty('--dx', (Math.random() - 0.5) * 220 + 'px');
+    p.style.setProperty('--rot', Math.random() * 900 - 450 + 'deg');
+    p.style.animationDuration = 1.8 + Math.random() * 1.6 + 's';
+    p.style.animationDelay = Math.random() * 0.35 + 's';
+    if (i % 3 === 0) { p.style.width = '7px'; p.style.height = '7px'; p.style.borderRadius = '50%'; }
+    box.append(p);
+  }
+  document.body.append(box);
+  setTimeout(() => box.remove(), 4200);
 }

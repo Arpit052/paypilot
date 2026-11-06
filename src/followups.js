@@ -3,7 +3,8 @@
 import { config, isoDate, daysBetween } from './config.js';
 import { listInvoices } from './db.js';
 import { complete, llmAvailable } from './llm.js';
-import { createAction, listActions } from './actions.js';
+import { createAction, listActions, lateFeeDraft, hasLateFee } from './actions.js';
+import { notOnCurrentPaypal } from './paypal.js';
 import { isOverdue, clientStats, clientName } from './analytics.js';
 import { syncInvoices } from './sync.js';
 
@@ -49,7 +50,7 @@ export async function scanFollowups({ sync = true } = {}) {
   const pendingFor = new Set(listActions({ status: 'pending', type: 'send_reminder' }).map((a) => a.payload.invoiceId));
   const created = [];
   for (const inv of listInvoices()) {
-    if (!isOverdue(inv, today) || pendingFor.has(inv.id) || !inv.paypalId) continue;
+    if (!isOverdue(inv, today) || pendingFor.has(inv.id) || !inv.paypalId || notOnCurrentPaypal(inv)) continue;
     const last = inv.reminders.at(-1)?.at;
     if (last && daysBetween(last, today) < config.reminderCooldownDays) continue;
     const daysOverdue = daysBetween(inv.dueDate, today);
@@ -82,5 +83,20 @@ export async function scanFollowups({ sync = true } = {}) {
       )
     );
   }
-  return created;
+  return [...created, ...draftLateFees(today)];
+}
+
+/** Late-fee drafts for invoices overdue past the policy threshold (Settings → Late fees). */
+export function draftLateFees(today = isoDate()) {
+  if (!(config.lateFeePercent > 0)) return [];
+  const decided = new Set(listActions({ type: 'add_late_fee' }).map((a) => a.payload.invoiceId));
+  const out = [];
+  for (const inv of listInvoices()) {
+    if (!isOverdue(inv, today) || !inv.paypalId || notOnCurrentPaypal(inv) || hasLateFee(inv) || decided.has(inv.id)) continue;
+    const daysOverdue = daysBetween(inv.dueDate, today);
+    if (daysOverdue < config.lateFeeAfterDays) continue;
+    const payload = lateFeeDraft(inv, { clientName: clientName(inv.clientId), daysOverdue });
+    out.push(createAction('add_late_fee', payload, { origin: 'followup', summary: `Late fee #${inv.number} (${payload.percent}%)` }));
+  }
+  return out;
 }

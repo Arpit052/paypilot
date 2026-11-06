@@ -21,7 +21,7 @@ export function invoiceTotals(items, taxPercent = 0) {
   for (const it of items) {
     const line = r(Number(it.quantity) * Number(it.unitPrice));
     subtotal += line;
-    tax += r((line * taxPercent) / 100);
+    if (!it.noTax) tax += r((line * taxPercent) / 100);
   }
   return { subtotal: r(subtotal), tax: r(tax), total: r(subtotal + tax) };
 }

@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome to PayPilot</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#060914">
+  <style>
+    .welcome { max-width: 1080px; margin: 0 auto; padding: 8vh 24px 60px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; }
+    .w-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 34px; }
+    .w-brand svg { width: 40px; height: 40px; }
+    .w-brand .wordmark { font-size: 24px; }
+    .w-hero h1 { font-family: var(--display); font-weight: 700; font-size: clamp(30px, 4.2vw, 48px); line-height: 1.08; letter-spacing: -0.02em; margin: 0 0 18px; }
+    .w-hero h1 em { font-style: normal; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .w-hero p.lead { color: var(--ink-2); font-size: 17px; max-width: 470px; margin: 0 0 28px; }
+    .w-points { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+    .w-points li { display: flex; gap: 12px; align-items: flex-start; color: var(--ink-2); }
+    .w-points li b { color: var(--ink); display: block; }
+    .w-dot { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--glass-2); box-shadow: inset 0 0 0 1px var(--glass-line-2); font-size: 15px; }
+    .w-card { border-radius: 22px; padding: 28px; background: linear-gradient(160deg, rgba(139, 92, 246, 0.12), rgba(56, 189, 248, 0.05) 60%), var(--glass); box-shadow: inset 0 0 0 1px var(--glass-line-2), 0 30px 80px -30px rgba(99, 102, 241, 0.55); backdrop-filter: blur(14px); }
+    .w-card h2 { font-family: var(--display); font-size: 19px; font-weight: 600; margin: 0 0 6px; }
+    .w-card .sub { color: var(--ink-2); margin: 0 0 20px; font-size: 14px; }
+    .w-card label { display: block; font-size: 12px; font-weight: 700; color: var(--ink-3); margin: 0 0 6px; letter-spacing: .02em; }
+    .w-card input[type=text], .w-card input[type=password] { width: 100%; border: 1px solid var(--glass-line-2); border-radius: 11px; padding: 11px 13px; background: rgba(6, 9, 20, 0.55); color: var(--ink); font: inherit; font-size: 14px; margin-bottom: 14px; }
+    .w-card input:focus { outline: none; border-color: rgba(167, 139, 250, 0.85); box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.16); }
+    .w-check { display: flex !important; gap: 8px; align-items: center; font-weight: 600 !important; color: var(--ink-2) !important; font-size: 13px !important; margin: 0 0 18px !important; letter-spacing: 0 !important; }
+    .w-card .btn { width: 100%; justify-content: center; padding: 12px; font-size: 15px; }
+    .w-or { display: flex; align-items: center; gap: 12px; color: var(--ink-3); font-size: 12px; margin: 20px 0; text-transform: uppercase; letter-spacing: .12em; }
+    .w-or::before, .w-or::after { content: ''; flex: 1; height: 1px; background: var(--glass-line-2); }
+    .w-help { margin: 0 0 18px; border-radius: 12px; background: rgba(255, 255, 255, 0.03); box-shadow: inset 0 0 0 1px var(--glass-line); }
+    .w-help summary { cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 700; color: #c4b5fd; list-style: none; }
+    .w-help summary::-webkit-details-marker { display: none; }
+    .w-help summary::before { content: '＋ '; }
+    .w-help[open] summary::before { content: '－ '; }
+    .w-help ol { margin: 0; padding: 0 16px 12px 34px; font-size: 13px; color: var(--ink-2); }
+    .w-help li { margin: 4px 0; }
+    .w-note { font-size: 12px; color: var(--ink-3); margin: 12px 0 0; display: flex; gap: 6px; }
+    .w-err { color: var(--late); font-size: 13px; min-height: 18px; margin: 10px 0 0; }
+    .w-ok { text-align: center; padding: 20px 0 6px; }
+    .w-ok .tick { width: 64px; height: 64px; border-radius: 50%; margin: 0 auto 14px; display: grid; place-items: center; font-size: 30px; background: var(--paid-bg); color: var(--paid); box-shadow: 0 0 40px -6px rgba(52, 211, 153, 0.7); }
+    @media (max-width: 860px) { .welcome { grid-template-columns: 1fr; gap: 34px; padding-top: 5vh; } }
+  </style>
+</head>
+<body>
+<main class="welcome">
+  <section class="w-hero">
+    <div class="w-brand" id="brand"></div>
+    <h1>Get paid on time,<br><em>on autopilot.</em></h1>
+    <p class="lead">PayPilot is an AI assistant that writes your invoices, sends them through PayPal, and chases late payments for you. You approve every step.</p>
+    <ul class="w-points">
+      <li><span class="w-dot">✍️</span><span><b>Describe the work, get an invoice</b>Type it or paste a screenshot of the chat.</span></li>
+      <li><span class="w-dot">🛡️</span><span><b>Nothing goes out without you</b>The AI drafts; you approve. Every time.</span></li>
+      <li><span class="w-dot">⚡</span><span><b>Know the moment you're paid</b>PayPilot watches PayPal and tells you instantly.</span></li>
+    </ul>
+  </section>
+
+  <section class="w-card" id="card">
+    <h2>Connect your PayPal</h2>
+    <p class="sub">Use your PayPal <b>sandbox</b> app keys to send real test invoices. No real money moves.</p>
+    <form id="connect" autocomplete="off">
+      <label for="cid">Client ID</label>
+      <input id="cid" type="text" spellcheck="false" placeholder="Starts with A…" required>
+      <label for="sec">Secret</label>
+      <input id="sec" type="password" spellcheck="false" placeholder="Paste your sandbox Secret" required>
+      <details class="w-help">
+        <summary>Where do I find these?</summary>
+        <ol>
+          <li>Sign in at <b>developer.paypal.com</b>.</li>
+          <li>Open <b>Apps &amp; Credentials</b> and make sure <b>Sandbox</b> is selected.</li>
+          <li>Open your app (or click <b>Create App</b>).</li>
+          <li>Copy the <b>Client ID</b>, then click <b>Show</b> and copy the <b>Secret</b>.</li>
+        </ol>
+      </details>
+      <label class="w-check"><input type="checkbox" id="sample" checked> Add sample history so the dashboard isn't empty</label>
+      <button class="btn" type="submit" id="go">Connect PayPal</button>
+      <div class="w-err" id="err" role="alert"></div>
+    </form>
+    <div class="w-or">or</div>
+    <button class="btn ghost" id="demo" type="button">Explore with demo data</button>
+    <p class="w-note">🔒 <span>Your Secret is checked with PayPal and stored only on this server. It's never shown again. You can disconnect any time in Settings.</span></p>
+  </section>
+</main>
+<script type="module">
+  import { LOGO } from '/common.js';
+  document.getElementById('brand').innerHTML = `${LOGO}<span class="wordmark">PayPilot</span>`;
+  const $ = (id) => document.getElementById(id);
+
+  async function post(url, body) {
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });
+    if (res.status === 401) location.href = '/login.html';
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || 'Something went wrong.');
+    return json;
+  }
+
+  $('connect').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('err').textContent = '';
+    $('go').disabled = true;
+    $('go').textContent = 'Checking with PayPal…';
+    try {
+      await post('/api/settings/paypal/connect', { clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked });
+      $('card').innerHTML = `<div class="w-ok"><div class="tick">✓</div><h2>Connected to PayPal</h2><p class="sub">Sandbox keys verified. Invoices you approve will now go out through PayPal.</p><a class="btn" href="/">Open PayPilot →</a></div>`;
+    } catch (err) {
+      $('err').textContent = err.message;
+      $('go').disabled = false;
+      $('go').textContent = 'Connect PayPal';
+    }
+  });
+
+  $('demo').addEventListener('click', async () => {
+    $('demo').disabled = true;
+    try {
+      await post('/api/settings/paypal/demo');
+      location.href = '/';
+    } catch (err) {
+      $('err').textContent = err.message;
+      $('demo').disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

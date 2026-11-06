@@ -18,6 +18,7 @@ const TOOL_LABEL = {
   get_earnings_summary: 'summarised earnings',
   forecast_cashflow: 'ran cash-flow forecast',
   propose_invoice: 'drafted invoice',
+  propose_late_fee: 'drafted late fee',
   propose_reminder: 'drafted reminder',
   propose_cancel: 'drafted cancellation',
   propose_recurring: 'drafted recurring schedule',
@@ -156,3 +157,11 @@ if (cfg.llmProvider === 'none') {
 const trays = await Promise.all(['schedule', 'form', 'chat'].map((o) => api(`/api/actions?status=pending&origin=${o}`)));
 trays.flatMap((t) => t.actions).forEach((a) => addSlip(a, false));
 updateTrayCount();
+// "/?ask=..." (e.g. from an invoice's timeline): pre-fill the question so the user can send it
+const ask = new URLSearchParams(location.search).get('ask');
+if (ask) {
+  input.value = ask.slice(0, 500);
+  autosize();
+  input.focus();
+  history.replaceState(null, '', '/');
+}

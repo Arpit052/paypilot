@@ -84,6 +84,9 @@ export const config = {
   reminderCooldownDays: Number(env.REMINDER_COOLDOWN_DAYS || 3),
   cronSecret: env.CRON_SECRET || '',
   defaultTaxPercent: Number(env.DEFAULT_TAX_PERCENT || 0),
+  // Late-fee policy: suggest a fee of lateFeePercent once an invoice is lateFeeAfterDays overdue (0% = off).
+  lateFeePercent: env.LATE_FEE_PERCENT === undefined ? 5 : Number(env.LATE_FEE_PERCENT),
+  lateFeeAfterDays: Number(env.LATE_FEE_AFTER_DAYS || 7),
   // Business-day calendar: dates ("today", due dates) are computed in this time zone.
   timezone: validTimeZone(env.APP_TIMEZONE) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
   // Optional passcode for the web app (recommended when the demo is hosted publicly).

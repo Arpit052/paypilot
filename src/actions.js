@@ -2,7 +2,7 @@
 // clients. Nothing reaches PayPal until the user approves the action card.
 import { config, isoDate, addDays } from './config.js';
 import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
-import { paypal, PayPalError, isDemoOnly } from './paypal.js';
+import { paypal, PayPalError, notOnCurrentPaypal, isMock } from './paypal.js';
 import { invoiceTotals, isOpen } from './analytics.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -24,6 +24,12 @@ const round2 = (n) => Math.round(n * 100) / 100;
 const invalid = (message) => Object.assign(new Error(message), { status: 400 });
 
 /** Shared validation for client + line items (invoices and recurring schedules). */
+function notOnPaypalMessage(inv) {
+  return isMock()
+    ? `Invoice #${inv.number} lives on your real PayPal account, but PayPilot is in demo mode. Reconnect PayPal in Settings to manage it.`
+    : `Invoice #${inv.number} is demo data and isn't on PayPal, so it can't be changed there.`;
+}
+
 function normaliseLines(d) {
   const clientName = String(d.clientName || '').trim();
   const clientEmail = String(d.clientEmail || '').trim();
@@ -95,6 +101,16 @@ export function normaliseScheduleDraft(d) {
   return { ...base, frequency, startDate, dueInDays, total };
 }
 
+export const hasLateFee = (inv) => (inv.items || []).some((it) => it.lateFee);
+
+/** Build the payload for a late-fee approval slip (used by follow-ups and the assistant). */
+export function lateFeeDraft(inv, { percent = config.lateFeePercent, clientName = '', daysOverdue = 0 } = {}) {
+  const pct = round2(Number(percent));
+  if (!(pct > 0 && pct <= 25)) throw invalid('Late fee must be between 0.5% and 25%');
+  const fee = round2((inv.total * pct) / 100);
+  return { invoiceId: inv.id, number: inv.number, client: clientName, amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, daysOverdue, percent: pct, fee, newTotal: round2(inv.total + fee) };
+}
+
 const executors = {
   async create_invoice(payload, requestId) {
     const draft = normaliseInvoiceDraft(payload);
@@ -141,7 +157,7 @@ const executors = {
     const inv = findInvoice(payload.invoiceId);
     if (!inv) throw new Error('Invoice not found');
     if (!isOpen(inv)) throw new Error(`Invoice #${inv.number} is ${inv.status}; no reminder needed`);
-    if (isDemoOnly(inv)) throw invalid(`Invoice #${inv.number} is demo data and isn't on PayPal. Use "Reset demo" to clear it.`);
+    if (notOnCurrentPaypal(inv)) throw invalid(notOnPaypalMessage(inv));
     const subject = String(payload.subject || '').trim() || `Reminder: invoice #${inv.number}`;
     const message = String(payload.message || '').trim();
     if (!message) throw new Error('Reminder message is empty');
@@ -156,7 +172,7 @@ const executors = {
     const inv = findInvoice(payload.invoiceId);
     if (!inv) throw new Error('Invoice not found');
     if (!isOpen(inv)) throw new Error(`Invoice #${inv.number} is ${inv.status}; cannot cancel`);
-    if (isDemoOnly(inv)) throw invalid(`Invoice #${inv.number} is demo data and isn't on PayPal. Use "Reset demo" to clear it.`);
+    if (notOnCurrentPaypal(inv)) throw invalid(notOnPaypalMessage(inv));
     await paypal.cancel(inv.paypalId, {
       subject: `Invoice #${inv.number} cancelled`,
       note: payload.reason || 'This invoice has been cancelled.',
@@ -165,6 +181,22 @@ const executors = {
     updateInvoice(inv.id, { status: 'CANCELLED' });
     logActivity('invoice_cancelled', `Invoice #${inv.number} cancelled`);
     return { number: inv.number, status: 'CANCELLED' };
+  },
+
+  async add_late_fee(payload, requestId) {
+    const inv = findInvoice(payload.invoiceId);
+    if (!inv) throw new Error('Invoice not found');
+    if (!isOpen(inv)) throw invalid(`Invoice #${inv.number} is ${inv.status}; no late fee needed`);
+    if (notOnCurrentPaypal(inv)) throw invalid(notOnPaypalMessage(inv));
+    if (hasLateFee(inv)) throw invalid(`Invoice #${inv.number} already has a late fee`);
+    const d = lateFeeDraft(inv, { percent: payload.percent });
+    const name = `Late fee (${d.percent}%)`;
+    const r = await paypal.addLateFee(inv.paypalId, { name, amount: d.fee, currency: inv.currency, requestId });
+    const items = [...inv.items, { name, quantity: 1, unitPrice: d.fee, lateFee: true, noTax: true, addedAt: isoDate() }];
+    const total = r.total || d.newTotal;
+    updateInvoice(inv.id, { items, total });
+    logActivity('late_fee', `Late fee of ${inv.currency} ${d.fee} added to invoice #${inv.number} (new total ${inv.currency} ${total})`);
+    return { number: inv.number, fee: d.fee, newTotal: total };
   },
 
   // Recurring invoices: approving stores the schedule only. Each time it comes due, the

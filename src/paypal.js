@@ -44,7 +44,7 @@ export function buildInvoiceBody({ number, client, items, currency, issueDate, d
       quantity: String(it.quantity),
       unit_amount: money(currency, it.unitPrice),
       unit_of_measure: 'QUANTITY',
-      ...(taxPercent > 0 ? { tax: { name: 'Sales Tax', percent: String(taxPercent) } } : {}),
+      ...(taxPercent > 0 && !it.noTax ? { tax: { name: 'Sales Tax', percent: String(taxPercent) } } : {}),
     })),
     configuration: {
       allow_tip: false,
@@ -74,10 +74,11 @@ function paidDateFrom(inv) {
 // ======================= REAL PAYPAL =======================
 let token = null;
 let tokenExp = 0;
+let tokenFor = '';
 
 async function getToken() {
-  if (token && Date.now() < tokenExp - 60000) return token;
   const { clientId, clientSecret, baseUrl } = config.paypal;
+  if (token && tokenFor === clientId && Date.now() < tokenExp - 60000) return token;
   if (!clientId || !clientSecret) throw new PayPalError('PayPal credentials missing (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET).', 500);
   const res = await fetch(`${baseUrl}/v1/oauth2/token`, {
     method: 'POST',
@@ -91,7 +92,43 @@ async function getToken() {
   if (!res.ok) throw new PayPalError(`PayPal auth failed: ${json.error_description || res.status}`, res.status, json);
   token = json.access_token;
   tokenExp = Date.now() + json.expires_in * 1000;
+  tokenFor = clientId;
   return token;
+}
+
+/**
+ * Check a pair of sandbox keys against PayPal before saving them (used by the
+ * "Connect PayPal" screen). Never stores anything itself.
+ */
+export async function verifyCredentials(clientId, clientSecret, baseUrl = 'https://api-m.sandbox.paypal.com') {
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/v1/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: 'grant_type=client_credentials',
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch {
+    return { ok: false, error: "Couldn't reach PayPal. Check your internet connection and try again." };
+  }
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      ok: false,
+      error:
+        res.status === 401
+          ? "PayPal didn't accept these keys. Copy the Client ID and Secret again from developer.paypal.com → Apps & Credentials (Sandbox)."
+          : `PayPal returned an error (${res.status}). Please try again.`,
+    };
+  }
+  if (!String(json.scope || '').includes('/services/invoicing')) {
+    return { ok: false, error: 'These keys work, but the app has no Invoicing permission. Enable "Invoicing" for the app on developer.paypal.com.' };
+  }
+  return { ok: true, appId: json.app_id || null };
 }
 
 async function api(method, path, body, extraHeaders = {}) {
@@ -166,6 +203,39 @@ const real = {
     return { status: inv.status, paidDate: paidDateFrom(inv), payerUrl, raw: inv };
   },
 
+  /** All invoices on the PayPal account (newest first), up to `max`. List entries have no line items. */
+  async listInvoices({ max = 300 } = {}) {
+    const out = [];
+    for (let page = 1; out.length < max && page <= 10; page++) {
+      const r = await api('GET', `/v2/invoicing/invoices?page=${page}&page_size=100&total_required=true`);
+      out.push(...(r.items || []));
+      if (!r.items?.length || out.length >= (r.total_items || 0)) break;
+    }
+    return out.slice(0, max);
+  },
+
+  /**
+   * Add a late-fee line to a sent invoice (full update via PUT) and re-notify the client.
+   * Idempotent: if a late-fee line is already on the invoice, nothing is added twice.
+   */
+  async addLateFee(paypalId, { name, amount, currency, requestId }) {
+    const raw = await api('GET', `/v2/invoicing/invoices/${paypalId}`);
+    if ((raw.items || []).some((it) => /^late fee/i.test(it.name || ''))) return { total: Number(raw.amount?.value) || null, already: true };
+    const body = {
+      id: raw.id,
+      detail: raw.detail,
+      invoicer: raw.invoicer,
+      primary_recipients: raw.primary_recipients,
+      items: [...(raw.items || []), { name: String(name).slice(0, 200), quantity: '1', unit_amount: money(currency, amount), unit_of_measure: 'QUANTITY' }],
+      configuration: raw.configuration,
+    };
+    const updated = await api('PUT', `/v2/invoicing/invoices/${paypalId}?send_to_recipient=true&send_to_invoicer=true`, body, {
+      Prefer: 'return=representation',
+      ...(requestId ? { 'PayPal-Request-Id': `${requestId}-latefee` } : {}),
+    });
+    return { total: Number(updated.amount?.value) || null };
+  },
+
   async remind(paypalId, { subject, note, requestId }) {
     await api(
       'POST',
@@ -212,6 +282,9 @@ export function mockNextNumber() {
 export { mockPut };
 
 const mock = {
+  async listInvoices() {
+    return []; // demo invoices already live in PayPilot's own database
+  },
   async createAndSendInvoice({ client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, requestId }) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(client.email)) throw new PayPalError('Invalid recipient email', 422);
     const done = requestId && kvGet(`idem:${requestId}`);
@@ -227,6 +300,14 @@ const mock = {
     const inv = mockGet(paypalId);
     if (!inv) throw new PayPalError('Invoice not found', 404);
     return { status: inv.status, paidDate: inv.paidDate || null, payerUrl: `/mock-pay.html?id=${paypalId}` };
+  },
+  async addLateFee(paypalId, { amount }) {
+    const inv = mockGet(paypalId);
+    if (!inv) throw new PayPalError('Invoice not found', 404);
+    if (inv.lateFee) return { total: null, already: true };
+    inv.lateFee = amount;
+    mockPut(paypalId, inv);
+    return { total: null };
   },
   async remind(paypalId) {
     const inv = mockGet(paypalId);
@@ -258,8 +339,20 @@ const mock = {
   },
 };
 
-export const paypal = config.paypal.mode === 'mock' ? mock : real;
-export const isMock = config.paypal.mode === 'mock';
+/** Is PayPal in offline demo mode right now? (Can change at runtime via Settings.) */
+export const isMock = () => config.paypal.mode === 'mock';
 
-/** True for demo invoices created while PayPal was in mock mode (they don't exist on real PayPal). */
-export const isDemoOnly = (inv) => !isMock && String(inv?.paypalId || '').startsWith('INV2-MOCK-');
+// Always points at the client for the current mode, so connecting/disconnecting
+// PayPal in Settings takes effect immediately without a restart.
+export const paypal = new Proxy(
+  {},
+  { get: (_, key) => (isMock() ? mock : real)[key] }
+);
+
+const isMockId = (inv) => String(inv?.paypalId || '').startsWith('INV2-MOCK-');
+
+/**
+ * True when an invoice can't be acted on in the current PayPal mode: demo invoices
+ * while real PayPal is connected, or real PayPal invoices while in demo mode.
+ */
+export const notOnCurrentPaypal = (inv) => Boolean(inv?.paypalId) && (isMock() ? !isMockId(inv) : isMockId(inv));

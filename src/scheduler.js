@@ -2,7 +2,7 @@
 // reminders for overdue invoices. Everything it creates still waits for human approval.
 import { config } from './config.js';
 import { isMock } from './paypal.js';
-import { syncInvoices } from './sync.js';
+import { syncInvoices, importFromPaypal, importIfStale } from './sync.js';
 import { runRecurring } from './recurring.js';
 import { scanFollowups } from './followups.js';
 import { notify } from './notify.js';
@@ -16,18 +16,21 @@ export async function runJobs() {
   running = true;
   try {
     const result = {};
-    if (!isMock) result.sync = await syncInvoices().catch((e) => ({ error: e.message }));
+    if (!isMock()) {
+      result.imported = await importFromPaypal().then((r) => r.imported).catch((e) => ({ error: e.message }));
+      result.sync = await syncInvoices().catch((e) => ({ error: e.message }));
+    }
     result.recurringDrafts = runRecurring().length;
-    result.reminderDrafts = await scanFollowups({ sync: false })
-      .then((r) => r.length)
-      .catch((e) => ({ error: e.message }));
-    const drafts = (Number(result.recurringDrafts) || 0) + (Number(result.reminderDrafts) || 0);
+    const fu = await scanFollowups({ sync: false }).catch((e) => ({ error: e.message }));
+    result.reminderDrafts = Array.isArray(fu) ? fu.filter((a) => a.type === 'send_reminder').length : fu;
+    result.lateFeeDrafts = Array.isArray(fu) ? fu.filter((a) => a.type === 'add_late_fee').length : 0;
+    const drafts = (Number(result.recurringDrafts) || 0) + (Number(result.reminderDrafts) || 0) + result.lateFeeDrafts;
     if (drafts) {
       notify({
         kind: 'approval',
         title: `${drafts} draft${drafts > 1 ? 's' : ''} waiting for approval`,
-        body: [result.recurringDrafts ? `${result.recurringDrafts} recurring invoice${result.recurringDrafts > 1 ? 's' : ''}` : '', result.reminderDrafts ? `${result.reminderDrafts} payment reminder${result.reminderDrafts > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ') + ' ready to review.',
-        link: result.reminderDrafts ? '/followups' : '/',
+        body: [result.recurringDrafts ? `${result.recurringDrafts} recurring invoice${result.recurringDrafts > 1 ? 's' : ''}` : '', result.reminderDrafts ? `${result.reminderDrafts} payment reminder${result.reminderDrafts > 1 ? 's' : ''}` : '', result.lateFeeDrafts ? `${result.lateFeeDrafts} late fee${result.lateFeeDrafts > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ') + ' ready to review.',
+        link: result.reminderDrafts || result.lateFeeDrafts ? '/followups' : '/',
       });
     }
     lastRun.at = new Date().toISOString();
@@ -45,9 +48,15 @@ export async function runJobs() {
  */
 function startPaymentWatcher() {
   const secs = Number(process.env.PAYPAL_SYNC_SECONDS ?? 120);
-  if (isMock || !(secs > 0)) return;
+  if (!(secs > 0)) return;
   setInterval(() => {
-    if (listInvoices().some((i) => i.paypalId && ['SENT', 'UNPAID', 'PARTIALLY_PAID'].includes(i.status))) syncInvoices().catch(() => {});
+    if (isMock()) return;
+    importIfStale(10)
+      .catch(() => {})
+      .then(() => {
+        if (listInvoices().some((i) => i.paypalId && ['SENT', 'UNPAID', 'PARTIALLY_PAID'].includes(i.status))) return syncInvoices();
+      })
+      .catch(() => {});
   }, secs * 1000).unref();
 }
 

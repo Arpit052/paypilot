@@ -142,7 +142,7 @@ export function transaction(fn) {
 }
 
 export function resetDb() {
-  sql().exec('DELETE FROM notifications; DELETE FROM actions; DELETE FROM schedules; DELETE FROM invoices; DELETE FROM clients; DELETE FROM activity; DELETE FROM kv;');
+  sql().exec(`DELETE FROM notifications; DELETE FROM actions; DELETE FROM schedules; DELETE FROM invoices; DELETE FROM clients; DELETE FROM activity; DELETE FROM kv WHERE key NOT LIKE 'settings:%';`);
 }
 
 // ---------------- clients ----------------
@@ -259,6 +259,10 @@ function update(table, cols, id, patch) {
     vals.push(JSON_FIELDS.has(k) ? j(v) : v ?? null);
   }
   if (sets.length) sql().prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
+}
+
+export function deleteInvoice(id) {
+  sql().prepare('DELETE FROM invoices WHERE id = ?').run(id);
 }
 
 export function updateInvoice(id, patch) {

@@ -2,7 +2,7 @@
 import { config, isoDate, daysBetween } from './config.js';
 import { listInvoices, findClient, findInvoice } from './db.js';
 import { runToolLoop } from './llm.js';
-import { createAction, normaliseInvoiceDraft, normaliseScheduleDraft } from './actions.js';
+import { createAction, normaliseInvoiceDraft, normaliseScheduleDraft, lateFeeDraft, hasLateFee } from './actions.js';
 import { clientStats, earningsSummary, forecastCashflow, isOpen, isOverdue, clientName, topCustomers } from './analytics.js';
 import { isMock } from './paypal.js';
 
@@ -11,17 +11,18 @@ function systemPrompt() {
   return `You are PayPilot, an AI payments assistant for a freelancer whose business is "${config.businessName}".
 You help them get paid through PayPal: create and send invoices, chase late payments, cancel invoices, and answer questions about their earnings and clients.
 
-Today is ${today}. Default currency: ${config.currency}. PayPal environment: ${isMock ? 'mock (offline simulation)' : config.paypal.mode}.
+Today is ${today}. Default currency: ${config.currency}. PayPal environment: ${isMock() ? 'mock (offline simulation)' : config.paypal.mode}.
 
 How you work:
 - You can read data with list_invoices, get_client_insights, get_earnings_summary and forecast_cashflow. Use them instead of guessing numbers.
-- You NEVER send, remind or cancel directly. You call propose_invoice / propose_reminder / propose_cancel, which put an approval card in the user's UI. Nothing reaches PayPal or the client until the user clicks Approve. After proposing, tell the user briefly what you prepared and ask them to review the approval slip on the right. Never claim an invoice "was sent" unless the user has approved it.
+- You NEVER send, remind or cancel directly. You call propose_invoice / propose_reminder / propose_late_fee / propose_cancel, which put an approval card in the user's UI. Nothing reaches PayPal or the client until the user clicks Approve. After proposing, tell the user briefly what you prepared and ask them to review the approval slip on the right. Never claim an invoice "was sent" unless the user has approved it.
 - When the user describes work done (in text, or in a screenshot of a chat/email/brief), extract client name, client email, line items (name, quantity, unit price), currency and due date. Convert phrases like "in 2 weeks" to due_in_days. If the client email is missing and the client isn't already known, ask for it instead of inventing one. Never invent prices.
 - To create an invoice, call propose_invoice directly. It already looks up the client (email and payment risk), so do NOT call list_invoices or get_client_insights first. If a known client's email is missing, you may pass just client_name. For high-risk clients the system automatically adds a suggested 50% deposit (paid upfront through PayPal's partial-payment option) unless the user specified one; tell the user, and say they can remove it on the slip. For medium risk, suggest a shorter due date.
 - Sales tax: only add tax_percent if the user mentions tax (e.g. "add 8% sales tax"). Default tax: ${config.defaultTaxPercent}%.
 - "Best customer?" -> get_top_customers.
 - Recurring work ("every month", "weekly retainer"): use propose_recurring. Explain that each period a new draft will appear for approval; nothing is sent automatically.
 - For reminders, write the subject and message yourself. Match tone to how late it is: friendly (first nudge), firm (second), final (repeated/very late). Be professional and human, never rude. Sign off as ${config.businessName}.
+- Late fees: policy is ${config.lateFeePercent}% once an invoice is ${config.lateFeeAfterDays}+ days overdue. Use propose_late_fee when the user asks to add one (or suggest it for very late invoices). Only one late fee per invoice; it's added as a separate, untaxed line on the PayPal invoice after approval.
 - Risk labels are none (reliable payer), low, medium or high. Days late are whole days.
 - Reply in clear, friendly English (US business tone). Keep replies short and skimmable; use **bold** for key amounts.`;
 }
@@ -138,6 +139,18 @@ export const tools = [
         message: { type: 'string', description: 'The reminder text the client will receive' },
       },
       required: ['invoice', 'tone', 'subject', 'message'],
+    },
+  },
+  {
+    name: 'propose_late_fee',
+    description: 'Prepare a late fee for an overdue invoice, for the user to approve. On approval it is added as a line on the PayPal invoice and the client is re-notified.',
+    parameters: {
+      type: 'object',
+      properties: {
+        invoice: invoiceRef,
+        percent: { type: 'number', description: 'Percent of the invoice total. Omit to use the business policy.' },
+      },
+      required: ['invoice'],
     },
   },
   {
@@ -272,6 +285,26 @@ function makeHandlers(created) {
       );
       created.push(a);
       return { status: 'awaiting_user_approval', action_id: a.id };
+    },
+
+    propose_late_fee({ invoice, percent }) {
+      const inv = findInvoice(invoice);
+      if (!inv) return { error: `Invoice "${invoice}" not found` };
+      if (!isOpen(inv)) return { error: `Invoice #${inv.number} is ${inv.status}; no late fee needed` };
+      if (hasLateFee(inv)) return { error: `Invoice #${inv.number} already has a late fee` };
+      let payload;
+      try {
+        payload = lateFeeDraft(inv, {
+          percent: percent ?? config.lateFeePercent,
+          clientName: clientName(inv.clientId),
+          daysOverdue: isOverdue(inv, today) ? daysBetween(inv.dueDate, today) : 0,
+        });
+      } catch (e) {
+        return { error: e.message };
+      }
+      const a = createAction('add_late_fee', payload, { summary: `Late fee #${inv.number} (${payload.percent}%)` });
+      created.push(a);
+      return { status: 'awaiting_user_approval', action_id: a.id, fee: payload.fee, new_total: payload.newTotal };
     },
 
     propose_cancel({ invoice, reason }) {

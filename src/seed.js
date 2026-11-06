@@ -89,7 +89,7 @@ function seedInner() {
     });
   }
 
-  if (isMock) {
+  if (isMock()) {
     const open = [
       { email: 'jake.miller@example.com', item: ['Website redesign - phase 1', 1, 850], issue: -26, due: -12, reminders: 1 },
       { email: 'billing@acmelabs.example', item: ['Pitch deck design', 1, 320], issue: -12, due: -3, reminders: 0 },

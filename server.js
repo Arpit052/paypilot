@@ -7,7 +7,7 @@ import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb,
 import { chat, resetSession } from './src/agent.js';
 import { listActions, approveAction, rejectAction, normaliseInvoiceDraft } from './src/actions.js';
 import { earningsSummary, forecastCashflow, chartSeries, clientStats, clientName, isOverdue } from './src/analytics.js';
-import { syncInvoices, applyWebhookEvent } from './src/sync.js';
+import { syncInvoices, applyWebhookEvent, importFromPaypal } from './src/sync.js';
 import { scanFollowups } from './src/followups.js';
 import { paypal, isMock } from './src/paypal.js';
 import { llmAvailable } from './src/llm.js';
@@ -18,7 +18,10 @@ import { startScheduler, runJobs, lastRun } from './src/scheduler.js';
 import { invoiceTotals, topCustomers, paymentsInMonth, invoicesCsv } from './src/analytics.js';
 import { createAction } from './src/actions.js';
 import { eventStream } from './src/notify.js';
-import { listNotifications, unreadNotificationCount, markNotificationsRead } from './src/db.js';
+import { listNotifications, unreadNotificationCount, markNotificationsRead, deleteInvoice } from './src/db.js';
+import { applySettings, setupDone, publicSettings, connectPaypal, useDemoMode, disconnectPaypal, saveBusinessSettings } from './src/settings.js';
+import { verifyCredentials } from './src/paypal.js';
+import { isOpen } from './src/analytics.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 const startedAt = Date.now();
@@ -67,6 +70,15 @@ function rateLimit({ perMinute, message }) {
   };
 }
 
+// First run: send people to the "Connect PayPal / Try demo" screen before any page.
+const WELCOME_FREE = /^\/(welcome|login|mock-pay)(\.html)?$/;
+function welcomeGate(req, res, next) {
+  if (req.method !== 'GET' || req.path.startsWith('/api/') || WELCOME_FREE.test(req.path)) return next();
+  const isPage = req.path === '/' || req.path.endsWith('.html') || !path.extname(req.path);
+  if (isPage && !setupDone()) return res.redirect(302, '/welcome');
+  next();
+}
+
 function securityHeaders(req, res, next) {
   res.set({
     'X-Content-Type-Options': 'nosniff',
@@ -81,7 +93,7 @@ function securityHeaders(req, res, next) {
 }
 
 function invoiceRow(i, today) {
-  return { ...i, client: clientName(i.clientId), displayStatus: isOverdue(i, today) ? 'OVERDUE' : i.status };
+  return { ...i, client: clientName(i.clientId), clientEmail: getClient(i.clientId)?.email || '', displayStatus: isOverdue(i, today) ? 'OVERDUE' : i.status };
 }
 
 function aiLabel() {
@@ -96,6 +108,8 @@ export function createApp() {
   app.use(securityHeaders);
   app.use(express.json({ limit: '12mb' })); // screenshots arrive as base64
   app.use(requireLogin);
+  applySettings();
+  app.use(welcomeGate);
 
   const api = express.Router();
 
@@ -134,8 +148,46 @@ export function createApp() {
       timezone: config.timezone,
       defaultTaxPercent: config.defaultTaxPercent,
       loginEnabled: Boolean(config.appPassword),
+      paypalSource: publicSettings().paypal.source,
+      lateFeePercent: config.lateFeePercent,
+      lateFeeAfterDays: config.lateFeeAfterDays,
     })
   );
+
+  // ---- settings: PayPal connection + business details ----
+  api.get('/settings', (req, res) => res.json(publicSettings()));
+  api.post('/settings/paypal/connect', rateLimit({ perMinute: 6, message: 'Too many attempts. Please wait a minute.' }), async (req, res) => {
+    const clientId = String(req.body?.clientId || '').trim();
+    const clientSecret = String(req.body?.clientSecret || '').trim();
+    if (!/^[A-Za-z0-9_-]{20,128}$/.test(clientId)) throw httpError(400, 'That Client ID looks incomplete. Copy it again from developer.paypal.com.');
+    if (!/^[A-Za-z0-9_-]{20,128}$/.test(clientSecret)) throw httpError(400, 'That Secret looks incomplete. Click "Show" next to Secret on developer.paypal.com and copy it again.');
+    const check = await verifyCredentials(clientId, clientSecret);
+    if (!check.ok) throw httpError(400, check.error);
+    connectPaypal({ clientId, clientSecret });
+    // demo invoices that were never on PayPal can't be chased on the real account
+    let removed = 0;
+    for (const inv of listInvoices()) {
+      if (String(inv.paypalId || '').startsWith('INV2-MOCK-') && isOpen(inv)) {
+        deleteInvoice(inv.id);
+        removed++;
+      }
+    }
+    const imp = await importFromPaypal().catch(() => ({ imported: 0 }));
+    if (req.body?.sampleHistory !== false && !listInvoices().some((i) => i.source === 'seed')) seedDemo();
+    logActivity('paypal_connected', 'Connected to PayPal sandbox');
+    res.json({ ok: true, removedDemoInvoices: removed, imported: imp.imported, settings: publicSettings() });
+  });
+  api.post('/settings/paypal/demo', (req, res) => {
+    useDemoMode();
+    if (!listInvoices().length) seedDemo();
+    res.json({ ok: true, settings: publicSettings() });
+  });
+  api.post('/settings/paypal/disconnect', (req, res) => {
+    disconnectPaypal();
+    logActivity('paypal_disconnected', 'Disconnected PayPal - now in demo mode');
+    res.json({ ok: true, settings: publicSettings() });
+  });
+  api.post('/settings/business', (req, res) => res.json({ business: saveBusinessSettings(req.body || {}) }));
 
   // ---- assistant ----
   api.post('/chat', rateLimit({ perMinute: config.chatRateLimitPerMin, message: 'Too many messages in a minute. Please wait a moment.' }), async (req, res) => {
@@ -169,7 +221,11 @@ export function createApp() {
     const today = isoDate();
     res.json({ invoices: listInvoices().map((i) => invoiceRow(i, today)) });
   });
-  api.post('/sync', async (req, res) => res.json(await syncInvoices()));
+  api.post('/sync', async (req, res) => {
+    const imp = await importFromPaypal().catch((e) => ({ imported: 0, errors: [e.message] }));
+    const r = await syncInvoices();
+    res.json({ ...r, imported: imp.imported, errors: [...(imp.errors || []), ...r.errors] });
+  });
   // New invoice form: the user filled it in themselves. sendNow=true sends right away,
   // otherwise it's saved as a draft in the approval tray.
   api.post('/invoices', async (req, res) => {
@@ -297,7 +353,7 @@ export function createApp() {
   // ---- PayPal webhooks ----
   api.post('/webhooks/paypal', async (req, res) => {
     const event = req.body || {};
-    if (!isMock) {
+    if (!isMock()) {
       if (!config.paypal.webhookId) throw httpError(503, 'PAYPAL_WEBHOOK_ID not configured');
       const ok = await paypal.verifyWebhook(req.headers, event);
       if (!ok) throw httpError(400, 'Webhook signature verification failed');
@@ -307,7 +363,7 @@ export function createApp() {
 
   // ---- mock-mode helpers ----
   api.post('/mock/pay/:paypalId', (req, res) => {
-    if (!isMock) throw httpError(400, 'Only available in mock mode');
+    if (!isMock()) throw httpError(400, 'Only available in mock mode');
     paypal.simulatePayment(req.params.paypalId);
     // delivered the same way PayPal would: as a webhook event
     res.json(applyWebhookEvent({ event_type: 'INVOICING.INVOICE.PAID', resource: { invoice: { id: req.params.paypalId, status: 'PAID' } } }));
@@ -361,7 +417,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.join(config.root, 
       console.log(envFile ? `  Settings: read from "${envFile}"` : `  Settings: NO .env FILE FOUND in ${config.root}`);
       const keys = ['GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET'];
       console.log('  Keys found: ' + (keys.filter((k) => process.env[k]).join(', ') || 'none'));
-      console.log(`  PayPal: ${config.paypal.mode}${isMock ? ' (offline simulation - add PayPal sandbox keys to .env for real invoices)' : ''}`);
+      console.log(`  PayPal: ${config.paypal.mode}${isMock() ? ' (demo mode - connect PayPal in Settings for real invoices)' : ''}`);
       console.log(`  AI:     ${llmAvailable() ? aiLabel() : 'NOT CONFIGURED - set GEMINI_API_KEY in .env'}`);
       console.log(`  Dates:  ${config.timezone}${config.appPassword ? ' | Login: passcode required' : ''}${config.schedulerMinutes > 0 ? ` | Background jobs every ${config.schedulerMinutes} min` : ''}\n`);
     })
