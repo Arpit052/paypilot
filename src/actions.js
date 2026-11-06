@@ -150,7 +150,15 @@ const executors = {
       'invoice_sent',
       `Invoice #${inv.number} for ${draft.currency} ${inv.total} sent to ${client.name}${draft.depositAmount ? ` (deposit ${draft.currency} ${draft.depositAmount} due upfront)` : ''}`
     );
-    return { invoiceId: inv.id, number: inv.number, paypalId: inv.paypalId, payerUrl: inv.payerUrl };
+    return {
+      invoiceId: inv.id,
+      number: inv.number,
+      paypalId: inv.paypalId,
+      payerUrl: inv.payerUrl,
+      ...(pp.depositAsNote
+        ? { notice: `Your PayPal account's country doesn't support split payments, so the ${draft.currency} ${draft.depositAmount} deposit was added to the invoice as a note. The client pays the full amount through PayPal.` }
+        : {}),
+    };
   },
 
   async send_reminder(payload, requestId) {

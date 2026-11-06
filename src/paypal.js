@@ -29,7 +29,8 @@ export function buildInvoiceBody({ number, client, items, currency, issueDate, d
       currency_code: currency,
       payment_term: { term_type: 'DUE_ON_DATE_SPECIFIED', due_date: dueDate },
     },
-    invoicer: { business_name: config.businessName },
+    // without a name PayPal shows the account's own business name
+    ...(config.businessName ? { invoicer: { business_name: config.businessName } } : {}),
     primary_recipients: [
       {
         billing_info: {
@@ -174,12 +175,24 @@ const real = {
       save();
     }
     if (!state.id) {
-      const created = await api(
-        'POST',
-        '/v2/invoicing/invoices',
-        buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference }),
-        { Prefer: 'return=representation', ...hdr('create') }
-      );
+      // PayPal doesn't offer split payments to merchants in some countries (India, Brazil,
+      // Israel). There we still send the invoice and ask for the deposit in the note.
+      const noSplitKey = `paypal:noPartial:${config.paypal.clientId}`;
+      const asNote = () => {
+        state.depositAsNote = true;
+        const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(depositAmount);
+        const line = `Deposit: please pay ${fmt} upfront so work can begin. The balance is due by ${dueDate}.`;
+        return buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note: note ? `${note}\n\n${line}` : line, taxPercent, depositAmount: 0, reference });
+      };
+      const body = depositAmount > 0 && kvGet(noSplitKey) ? asNote() : buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference });
+      let created;
+      try {
+        created = await api('POST', '/v2/invoicing/invoices', body, { Prefer: 'return=representation', ...hdr('create') });
+      } catch (e) {
+        if (!(depositAmount > 0 && e.status === 400 && /partial/i.test(e.message))) throw e;
+        kvSet(noSplitKey, true);
+        created = await api('POST', '/v2/invoicing/invoices', asNote(), { Prefer: 'return=representation', ...hdr('create-nosplit') });
+      }
       state.id = created.id || String(created.href || '').split('/').pop();
       if (!state.id) throw new PayPalError('PayPal did not return an invoice id', 500, created);
       state.total = Number(created.amount?.value) || null;
@@ -194,7 +207,7 @@ const real = {
       state.sent = true;
       save();
     }
-    return { paypalId: state.id, number: state.number, status: 'SENT', payerUrl: state.payerUrl, issueDate: isoDate(), total: state.total };
+    return { paypalId: state.id, number: state.number, status: 'SENT', payerUrl: state.payerUrl, issueDate: isoDate(), total: state.total, depositAsNote: Boolean(state.depositAsNote) };
   },
 
   async getInvoice(paypalId) {

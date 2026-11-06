@@ -29,7 +29,7 @@ function templateReminder(inv, tone, daysOverdue) {
 async function aiReminder(inv, tone, daysOverdue) {
   const st = clientStats(inv.clientId);
   const prompt = `Draft a ${tone} payment reminder email.
-Freelancer business: ${config.businessName}
+Freelancer business: ${config.businessName || '(not set - sign off without a business name)'}
 Client: ${clientName(inv.clientId)}
 Invoice #${inv.number}: ${inv.currency} ${inv.total} for ${inv.items.map((i) => i.name).join(', ')}
 Due date: ${inv.dueDate} (${daysOverdue} days overdue). Reminders already sent: ${inv.reminders.length}.

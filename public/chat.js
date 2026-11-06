@@ -6,11 +6,22 @@ const input = $('input');
 const tray = $('tray');
 let image = null;
 
-let sessionId = sessionStorage.getItem('pp-session');
+// One conversation per browser; it's saved on the server, so it survives tab switches and reloads.
+const store = (() => {
+  try {
+    localStorage.setItem('pp-test', '1');
+    localStorage.removeItem('pp-test');
+    return localStorage;
+  } catch {
+    return sessionStorage;
+  }
+})();
+let sessionId = store.getItem('pp-session');
 if (!sessionId) {
   sessionId = crypto.randomUUID();
-  sessionStorage.setItem('pp-session', sessionId);
+  store.setItem('pp-session', sessionId);
 }
+const DRAFT_KEY = 'pp-draft';
 
 const TOOL_LABEL = {
   list_invoices: 'checked invoices',
@@ -55,6 +66,60 @@ function addSlip(action, prepend = true) {
   updateTrayCount();
 }
 
+function botHtml(text, tools = []) {
+  const used = [...new Set(tools)].map((t) => TOOL_LABEL[t] || t);
+  return md(text || 'Done.') + (used.length ? `<span class="tools">${esc(used.join(', '))}</span>` : '');
+}
+
+function renderStored(m) {
+  if (m.role === 'user') addMsg('user', (m.image ? `<span class="att-note">Screenshot attached</span><br>` : "") + esc(m.text));
+  else if (m.role === 'bot') addMsg('bot', botHtml(m.text, m.tools));
+  else addMsg('err', esc(m.text));
+}
+
+let typingEl = null;
+let typingTick = null;
+function showTyping(since = Date.now()) {
+  hideTyping();
+  typingEl = document.createElement('div');
+  typingEl.className = 'typing';
+  typingEl.textContent = 'Working';
+  typingTick = setInterval(() => {
+    const secs = Math.round((Date.now() - since) / 1000);
+    typingEl.textContent = secs >= 5 ? `Working (${secs}s)` : 'Working';
+  }, 1000);
+  log.append(typingEl);
+  log.scrollTop = log.scrollHeight;
+}
+function hideTyping() {
+  clearInterval(typingTick);
+  typingEl?.remove();
+  typingEl = null;
+}
+
+/** The answer is still being prepared (we left the page mid-reply): wait for it. */
+async function waitForReply(shown) {
+  busy = true;
+  $('sendBtn').disabled = true;
+  showTyping();
+  try {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const h = await api(`/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`).catch(() => null);
+      if (h && !h.pending) {
+        hideTyping();
+        h.messages.slice(shown).forEach(renderStored);
+        await loadTray();
+        break;
+      }
+    }
+  } finally {
+    hideTyping();
+    busy = false;
+    $('sendBtn').disabled = false;
+  }
+}
+
 let busy = false;
 async function send(text) {
   if (busy || (!text.trim() && !image)) return;
@@ -63,30 +128,21 @@ async function send(text) {
   addMsg('user', userHtml);
   const payload = { sessionId, message: text, image };
   input.value = '';
+  saveDraft();
   clearImage();
   autosize();
   $('sendBtn').disabled = true;
-  const typing = document.createElement('div');
-  typing.className = 'typing';
-  typing.textContent = 'Working';
-  const started = Date.now();
-  const tick = setInterval(() => {
-    const secs = Math.round((Date.now() - started) / 1000);
-    typing.textContent = secs >= 5 ? `Working (${secs}s)` : 'Working';
-  }, 1000);
-  log.append(typing);
-  log.scrollTop = log.scrollHeight;
+  showTyping();
   try {
     const r = await api('/api/chat', { body: payload });
-    typing.remove();
-    const used = [...new Set(r.tools)].map((t) => TOOL_LABEL[t] || t);
-    addMsg('bot', md(r.reply || 'Done.') + (used.length ? `<span class="tools">${esc(used.join(', '))}</span>` : ''));
+    hideTyping();
+    addMsg('bot', botHtml(r.reply, r.tools));
     r.actions.forEach((a) => addSlip(a));
   } catch (e) {
-    typing.remove();
+    hideTyping();
     addMsg('err', esc(e.message));
   } finally {
-    clearInterval(tick);
+    hideTyping();
     busy = false;
     $('sendBtn').disabled = false;
     input.focus();
@@ -130,7 +186,15 @@ function autosize() {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 160) + 'px';
 }
-input.addEventListener('input', autosize);
+function saveDraft() {
+  try {
+    input.value ? store.setItem(DRAFT_KEY, input.value) : store.removeItem(DRAFT_KEY);
+  } catch {}
+}
+input.addEventListener('input', () => {
+  autosize();
+  saveDraft();
+});
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
@@ -146,6 +210,8 @@ $('chips')?.addEventListener('click', (e) => {
 });
 $('newChat').onclick = async () => {
   await api('/api/chat/reset', { body: { sessionId } }).catch(() => {});
+  sessionId = crypto.randomUUID();
+  store.setItem('pp-session', sessionId);
   location.reload();
 };
 
@@ -154,9 +220,25 @@ const cfg = await header('chat');
 if (cfg.llmProvider === 'none') {
   addMsg('err', 'AI is not configured yet. Add <b>ANTHROPIC_API_KEY</b> or <b>OPENAI_API_KEY</b> to your <code>.env</code> file and restart the server.');
 }
-const trays = await Promise.all(['schedule', 'form', 'chat'].map((o) => api(`/api/actions?status=pending&origin=${o}`)));
-trays.flatMap((t) => t.actions).forEach((a) => addSlip(a, false));
-updateTrayCount();
+async function loadTray() {
+  const trays = await Promise.all(['schedule', 'form', 'chat'].map((o) => api(`/api/actions?status=pending&origin=${o}`)));
+  tray.innerHTML = '';
+  trays.flatMap((t) => t.actions).forEach((a) => addSlip(a, false));
+  updateTrayCount();
+}
+await loadTray();
+
+// bring back the conversation (and a half-typed message) from before
+const saved = await api(`/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`).catch(() => ({ messages: [], pending: false }));
+saved.messages.forEach(renderStored);
+try {
+  const draft = store.getItem(DRAFT_KEY);
+  if (draft && !input.value) {
+    input.value = draft;
+    autosize();
+  }
+} catch {}
+if (saved.pending) waitForReply(saved.messages.length);
 // "/?ask=..." (e.g. from an invoice's timeline): pre-fill the question so the user can send it
 const ask = new URLSearchParams(location.search).get('ask');
 if (ask) {

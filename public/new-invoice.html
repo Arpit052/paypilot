@@ -164,7 +164,7 @@
     const dep = Number($('deposit').value) || 0;
     const lines = items().filter((i) => i.name);
     $('preview').innerHTML = `
-      <div class="slip-head"><div><div class="slip-kind">Invoice preview</div><div class="slip-from">from ${esc(cfg.businessName)} · via PayPal</div></div><div class="slip-from">${esc(cur)}</div></div>
+      <div class="slip-head"><div><div class="slip-kind">Invoice preview</div><div class="slip-from">from ${esc(cfg.businessName || 'your business')} · via PayPal</div></div><div class="slip-from">${esc(cur)}</div></div>
       <div class="pv-to"><span class="muted">Bill to</span><br><b>${esc($('name').value) || '<span class="muted">Customer name</span>'}</b>${$('company').value ? `<br>${esc($('company').value)}` : ''}<br><span class="muted">${esc($('email').value) || 'email@example.com'}</span></div>
       <div class="pv-dates"><span>Issued <b>${fmtDate($('issue').value)}</b></span><span>Due <b>${fmtDate($('due').value)}</b></span>${$('ref').value ? `<span>Ref <b>${esc($('ref').value)}</b></span>` : ''}</div>
       <table class="items"><thead><tr><th>Service</th><th class="q">Qty</th><th class="amt">Amount</th></tr></thead><tbody>

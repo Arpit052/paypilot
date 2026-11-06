@@ -21,7 +21,7 @@ Freelancers lose time and money on getting paid:
 
 | Feature | How it works |
 |---|---|
-| **Text → invoice** | *"Bill Jake (jake@abc.com) for 3 logo concepts at $150 and an urgent revision for $60, due in 10 days."* The AI extracts the client, line items, rates and due date, and puts an editable **invoice slip** in the approval tray. |
+| **Text → invoice** | *"Bill Ryan (ryan@castillocoffee.example) for 3 logo concepts at $150 and an urgent revision for $60, due in 10 days."* The AI extracts the client, line items, rates and due date, and puts an editable **invoice slip** in the approval tray. |
 | **Screenshot → invoice** | Attach or paste a screenshot of a client email or chat. A vision model reads it and drafts the invoice. |
 | **Human-in-the-loop** | The AI can only *propose*. Nothing reaches PayPal or the client until you click **Approve & send via PayPal**. You can edit any field first. |
 | **Real PayPal invoices** | Approved drafts are created and sent with the **PayPal Invoicing v2 API**. The client gets PayPal's email and payment page. |
@@ -30,14 +30,14 @@ Freelancers lose time and money on getting paid:
 | **Escalating follow-ups** | PayPilot scans for overdue invoices, and the AI drafts a reminder for each whose tone moves from *friendly* to *firm* to *final*, based on reminders already sent and days overdue. Approve, and it goes out through PayPal's **remind** endpoint. This can run on a schedule. |
 | **Deposits for risky clients** | When a client usually pays late, the agent automatically adds a **50% upfront deposit** using PayPal's **partial-payment** option, and tells you why. You can change or remove it on the slip. |
 | **Sales tax** | Add a sales-tax % to any invoice ("plus 8% sales tax"). It's sent to PayPal as per-line tax, so the client sees a proper breakdown. |
-| **Recurring invoices** | Set up from a simple form on the Clients page or by asking *"Bill Emily $600 every month"*. On each due date a ready-made draft lands in your approval tray (the first one immediately if it starts today), so nothing auto-sends. Pause, resume or delete any time. |
+| **Recurring invoices** | Set up from a simple form on the Clients page or by asking *"Bill Priya $725 every month"*. On each due date a ready-made draft lands in your approval tray (the first one immediately if it starts today), so nothing auto-sends. Pause, resume or delete any time. |
 | **Money brief** | One click gives a step-by-step report: total earned so far, this month vs last month, top customers, overdue amount by customer, what's still to collect, and clients to watch. It ends with AI-written recommendations. The numbers are computed in code; the AI only writes the headline and actions. |
 | **New invoice form** | Bill a new or existing customer without the chat: name, email, company, multiple services (qty × rate), issue date, payment terms or due date, currency, sales tax, deposit, reference/PO number and a note. A live paper-invoice preview updates as you type. Send through PayPal right away, or save as a draft. The customer is stored and payment status is tracked. |
 | **Live payment notifications** | When a client pays (PayPal webhook, or the automatic PayPal check every 2 minutes), the invoice flips to **Paid** in the database, a 🔔 notification is stored, and every open tab gets a pop-up instantly over **Server-Sent Events**. The dashboard refreshes itself. |
 | **Live clock** | The current date and time in your business time zone, ticking in the top bar. || **Interactive dashboard** | Click a summary card to filter invoices, click a month in the chart to see every payment received that month, sort any column (including invoice status), search, and export everything to CSV for your accountant. |
 | **Top customers** | Clients ranked by money actually received, with their share of revenue, on the dashboard and Clients page. Ask the agent *"Who is my best customer?"* |
 | **Cash-flow forecast** | Expected incoming money over the next 30 days, weighted by each client's real payment behaviour. |
-| **Ask anything** | *"Who owes me money?"*, *"How much did I earn this month?"*, *"Cancel Olivia's invoice."* The agent answers from your real PayPal data, never from guesses. |
+| **Ask anything** | *"Who owes me money?"*, *"How much did I earn this month?"*, *"Cancel Danielle's invoice."* The agent answers from your real PayPal data, never from guesses. |
 
 | Dashboard + live payment notification | New invoice form | Clients and recurring invoices |
 |---|---|---|
@@ -141,7 +141,7 @@ With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-proces
 
 ## Try this flow (what the demo video shows)
 
-1. **Assistant:** *"Bill Jake Miller (your-sandbox-personal-email) for 3 logo concepts at $150 each and an urgent revision for $60, due in 10 days."* An invoice slip appears with a risk warning if Jake pays late.
+1. **Assistant:** *"Bill Ryan Castillo (your-sandbox-personal-email) for 3 logo concepts at $150 each and an urgent revision for $60, due in 10 days."* An invoice slip appears with a risk warning if Ryan pays late.
 2. Edit a rate and click **Approve & send via PayPal**. The slip is stamped **SENT**. Open the sandbox personal account to see the invoice.
 3. Pay it from the sandbox personal account. The dashboard flips to **Paid** through the webhook.
 4. **Follow-ups → Find overdue invoices.** The AI drafts tone-matched reminders. Approve one, and PayPal sends the reminder.

@@ -116,6 +116,12 @@ export async function header(active) {
       ${CONFIG.loginEnabled ? '<button class="mode" id="logoutBtn" style="background:none;cursor:pointer">Sign out</button>' : ''}
     </div>`;
   document.body.prepend(el);
+  if (!CONFIG.businessName && active !== 'settings') {
+    const nudge = document.createElement('div');
+    nudge.className = 'nudge';
+    nudge.innerHTML = 'Your invoices don\'t show a business name yet. <a href="/settings">Add it in Settings</a>';
+    el.after(nudge);
+  }
   startLiveClock(CONFIG.timezone);
   startNotifications();
   el.querySelector('#logoutBtn')?.addEventListener('click', async () => {
@@ -263,7 +269,7 @@ export function renderSlip(action, { onDone } = {}) {
   if (action.type === 'create_invoice') {
     el.innerHTML = `
       <div class="slip-head">
-        <div><div class="slip-kind">${action.origin === 'schedule' ? 'Recurring invoice draft' : 'Invoice draft'}</div><div class="slip-from">from ${esc(CONFIG?.businessName || '')} · via PayPal</div></div>
+        <div><div class="slip-kind">${action.origin === 'schedule' ? 'Recurring invoice draft' : 'Invoice draft'}</div><div class="slip-from">from ${esc(CONFIG?.businessName || 'your business')} · via PayPal</div></div>
         <div class="slip-from num">${esc(cur)}</div>
       </div>
       <div class="row2">
@@ -453,6 +459,7 @@ export function renderSlip(action, { onDone } = {}) {
           : a.type === 'add_late_fee'
           ? `Late fee of <b>${money(r.fee, cur)}</b> added. Invoice <b>#${esc(r.number)}</b> is now ${money(r.newTotal, cur)}.`
           : `Invoice <b>#${esc(r.number)}</b> cancelled.`;
+    if (r.notice) el.querySelector('.slip-result').insertAdjacentHTML('beforeend', `<div class="slip-notice">${esc(r.notice)}</div>`);
   };
 
   if (action.status !== 'pending') markDone(action);

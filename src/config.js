@@ -80,7 +80,7 @@ export const config = {
   host: env.HOST || (env.RENDER ? '0.0.0.0' : '127.0.0.1'),
   dataDir: env.DATA_DIR || path.join(ROOT, 'data'),
 
-  businessName: env.BUSINESS_NAME || 'Northline Studio',
+  businessName: env.BUSINESS_NAME || '', // set on the welcome screen or in Settings
   currency: (env.DEFAULT_CURRENCY || 'USD').toUpperCase(),
   // Shift the app's clock forward for demos ("what happens in 10 days?").
   demoTimeOffsetDays: Number(env.DEMO_TIME_OFFSET_DAYS || 0),

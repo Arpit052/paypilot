@@ -17,8 +17,6 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: BUSINESS_NAME
-        value: Northline Studio
       - key: DEFAULT_CURRENCY
         value: USD
       - key: CRON_SECRET

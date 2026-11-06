@@ -25,12 +25,12 @@
           <select id="rClient"></select></div>
         <div id="newClientFields" class="full hidden">
           <div class="form-grid">
-            <div><label for="rName">Client name</label><input id="rName" placeholder="e.g. Emily Carter"></div>
+            <div><label for="rName">Client name</label><input id="rName" placeholder="e.g. Priya Raman"></div>
             <div><label for="rEmail">Client email</label><input id="rEmail" type="email" placeholder="name@company.com"></div>
           </div>
         </div>
         <div class="full"><label for="rDesc">What it's for</label><input id="rDesc" required placeholder="e.g. Monthly design retainer"></div>
-        <div><label for="rAmount">Amount (<span class="cur"></span>)</label><input id="rAmount" type="number" min="1" step="0.01" required placeholder="600"></div>
+        <div><label for="rAmount">Amount (<span class="cur"></span>)</label><input id="rAmount" type="number" min="1" step="0.01" required placeholder="725"></div>
         <div><label for="rFreq">Repeats</label><select id="rFreq"><option value="monthly">Every month</option><option value="weekly">Every week</option></select></div>
         <div><label for="rStart">First invoice on</label><input id="rStart" type="date" required></div>
         <div><label for="rDue">Client pays within (days)</label><input id="rDue" type="number" min="0" max="90" value="7"></div>
@@ -57,7 +57,7 @@
           .map((c) => {
             const r = rank[c.id];
             return `<tr>
-              <td><b>${esc(c.name)}</b>${r?.rank === 1 ? ' <span class="pill top">Top customer</span>' : ''}<br><span class="muted">${esc(c.email)}</span></td>
+              <td><b>${esc(c.name)}</b>${r?.rank === 1 ? ' <span class="pill top">Top customer</span>' : ''}<br><span class="muted">${c.company ? `${esc(c.company)} · ` : ''}${esc(c.email)}</span></td>
               <td><span class="pill ${c.riskLabel}">${RISK_TEXT[c.riskLabel]}</span></td>
               <td class="r">${daysLateText(c.avgDaysLate)}</td>
               <td class="r num">${c.invoiceCount}</td>
@@ -92,7 +92,7 @@
             </tr>`
           )
           .join('')}</tbody></table>`
-      : '<h2>Your schedules</h2><div class="empty">No recurring invoices yet. Create one with the form, or tell the assistant something like "Bill Emily $600 every month".</div>';
+      : '<h2>Your schedules</h2><div class="empty">No recurring invoices yet. Create one with the form, or tell the assistant something like "Bill Priya $725 every month".</div>';
   }
 
   $('rClient').addEventListener('change', () => $('newClientFields').classList.toggle('hidden', $('rClient').value !== '__new'));

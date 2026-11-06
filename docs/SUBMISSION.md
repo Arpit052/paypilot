@@ -14,7 +14,7 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, and for
 
 **What PayPilot does.** It's an AI agent that sits on top of PayPal Invoicing:
 
-- **Describe work → PayPal invoice.** Type "Bill Jake for 3 logo concepts at $150 each, due in 10 days" or paste a screenshot of a client's email. The agent extracts the client, line items, rates and due date and drafts a PayPal invoice.
+- **Describe work → PayPal invoice.** Type "Bill Ryan for 3 logo concepts at $150 each, due in 10 days" or paste a screenshot of a client's email. The agent extracts the client, line items, rates and due date and drafts a PayPal invoice.
 - **Human-in-the-loop by design.** The AI can only *propose*. Every invoice, reminder or cancellation appears as an editable slip, and only the user's Approve click calls PayPal. Even a prompt injection hidden in a screenshot can't move money.
 - **Knows your clients.** It computes a risk score from each client's PayPal payment history and warns you before you invoice a habitual late payer, suggesting a shorter due date or an advance.
 - **Protects cash flow automatically.** For clients who usually pay late, the agent adds a 50% upfront deposit using PayPal's partial-payment feature. It supports sales tax and recurring monthly or weekly invoices, and each recurring invoice still comes to you for approval.
@@ -53,11 +53,11 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, and for
 | Time | Screen | Say |
 |---|---|---|
 | 0:00–0:15 | Title, then Assistant page | "Freelancers hate chasing money. PayPilot is an AI agent on top of PayPal that does it for you, and nothing goes out without your approval." |
-| 0:15–0:55 | Type the Jake invoice prompt. The slip appears with the high-risk warning. Edit one rate. Click Approve. The SENT stamp lands. | "I describe the job in plain words. The agent checks Jake's history, sees he usually pays 15 days late, and warns me. I tweak a rate and approve, and it's a real PayPal invoice now." |
+| 0:15–0:55 | Type the Ryan invoice prompt. The slip appears with the high-risk warning. Edit one rate. Click Approve. The SENT stamp lands. | "I describe the job in plain words. The agent checks Ryan's history, sees he usually pays 15 days late, and warns me. I tweak a rate and approve, and it's a real PayPal invoice now." |
 | 0:55–1:15 | Sandbox personal account inbox or PayPal invoice page | "Here's what the client gets: PayPal's own invoice and payment page." |
 | 1:15–1:35 | Attach a screenshot of a client email. A second slip appears. | "It also reads screenshots. This WhatsApp brief becomes an invoice draft." |
 | 1:35–1:55 | Pay from the sandbox personal account, then the dashboard flips to Paid | "The client pays, a PayPal webhook arrives, and the dashboard updates instantly." |
-| 1:55–2:30 | Follow-ups → Find overdue invoices. A firm reminder for Jake and a friendly one for Acme. Approve one. | "For late payers, the AI writes reminders that get firmer each time, and sends them through PayPal's remind API only when I approve." |
+| 1:55–2:30 | Follow-ups → Find overdue invoices. A firm reminder for Ryan and a friendly one for Hollis & Grant. Approve one. | "For late payers, the AI writes reminders that get firmer each time, and sends them through PayPal's remind API only when I approve." |
 | 2:30–2:45 | Ask "How much did I earn this month?" and the forecast question | "And I can just ask questions in plain English." |
 | 2:45–3:00 | Architecture diagram from the README | "Gemini tool-calling, PayPal Invoicing v2 and webhooks, and a human-approval gate on every write. That's PayPilot." |
 

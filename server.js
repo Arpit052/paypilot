@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import express from 'express';
 import { config, isoDate, envFile } from './src/config.js';
 import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb, listSchedules, getSchedule, updateSchedule, deleteSchedule, getClient, logActivity } from './src/db.js';
-import { chat, resetSession } from './src/agent.js';
+import { chatWithTranscript, getTranscript, resetSession } from './src/agent.js';
 import { listActions, approveAction, rejectAction, normaliseInvoiceDraft } from './src/actions.js';
 import { earningsSummary, forecastCashflow, chartSeries, clientStats, clientName, isOverdue } from './src/analytics.js';
 import { syncInvoices, applyWebhookEvent, importFromPaypal } from './src/sync.js';
@@ -161,9 +161,12 @@ export function createApp() {
     const clientSecret = String(req.body?.clientSecret || '').trim();
     if (!/^[A-Za-z0-9_-]{20,128}$/.test(clientId)) throw httpError(400, 'That Client ID looks incomplete. Copy it again from developer.paypal.com.');
     if (!/^[A-Za-z0-9_-]{20,128}$/.test(clientSecret)) throw httpError(400, 'That Secret looks incomplete. Click "Show" next to Secret on developer.paypal.com and copy it again.');
+    const bizName = String(req.body?.businessName || '').trim();
+    if (!bizName && !config.businessName) throw httpError(400, 'Add your business name first. It appears on your invoices.');
     const check = await verifyCredentials(clientId, clientSecret);
     if (!check.ok) throw httpError(400, check.error);
     connectPaypal({ clientId, clientSecret });
+    if (bizName) saveBusinessSettings({ businessName: bizName });
     // demo invoices that were never on PayPal can't be chased on the real account
     let removed = 0;
     for (const inv of listInvoices()) {
@@ -178,6 +181,8 @@ export function createApp() {
     res.json({ ok: true, removedDemoInvoices: removed, imported: imp.imported, settings: publicSettings() });
   });
   api.post('/settings/paypal/demo', (req, res) => {
+    const bizName = String(req.body?.businessName || '').trim();
+    if (bizName) saveBusinessSettings({ businessName: bizName });
     useDemoMode();
     if (!listInvoices().length) seedDemo();
     res.json({ ok: true, settings: publicSettings() });
@@ -201,7 +206,13 @@ export function createApp() {
       image = { mediaType, data: String(body.image.data).replace(/^data:[^,]+,/, '') };
     }
     if (!String(body.message || '').trim() && !image) throw httpError(400, 'Empty message');
-    res.json(await chat(sessionId, { text: body.message, image }));
+    if (getTranscript(sessionId).pending) throw httpError(409, "I'm still working on your last message. One moment.");
+    res.json(await chatWithTranscript(sessionId, { text: body.message, image }));
+  });
+  // The Assistant page reloads its conversation from here (tab switches, refreshes).
+  api.get('/chat/history', (req, res) => {
+    const t = getTranscript(String(req.query.sessionId || 'default').slice(0, 64));
+    res.json({ messages: t.messages, pending: Boolean(t.pending) });
   });
   api.post('/chat/reset', (req, res) => {
     resetSession(String(req.body?.sessionId || 'default'));

@@ -1,6 +1,6 @@
 // The PayPilot agent: system prompt, tool definitions and handlers.
 import { config, isoDate, daysBetween } from './config.js';
-import { listInvoices, findClient, findInvoice } from './db.js';
+import { listInvoices, findClient, findInvoice, getClient, kvGet, kvSet } from './db.js';
 import { runToolLoop } from './llm.js';
 import { createAction, normaliseInvoiceDraft, normaliseScheduleDraft, lateFeeDraft, hasLateFee } from './actions.js';
 import { clientStats, earningsSummary, forecastCashflow, isOpen, isOverdue, clientName, topCustomers } from './analytics.js';
@@ -8,7 +8,7 @@ import { isMock } from './paypal.js';
 
 function systemPrompt() {
   const today = isoDate();
-  return `You are PayPilot, an AI payments assistant for a freelancer whose business is "${config.businessName}".
+  return `You are PayPilot, an AI payments assistant for a freelancer${config.businessName ? ` whose business is "${config.businessName}"` : ''}.
 You help them get paid through PayPal: create and send invoices, chase late payments, cancel invoices, and answer questions about their earnings and clients.
 
 Today is ${today}. Default currency: ${config.currency}. PayPal environment: ${isMock() ? 'mock (offline simulation)' : config.paypal.mode}.
@@ -168,6 +168,7 @@ function invoiceView(i, today) {
   return {
     number: i.number,
     client: clientName(i.clientId),
+    company: getClient(i.clientId)?.company || undefined,
     total: i.total,
     currency: i.currency,
     status: isOverdue(i, today) ? 'OVERDUE' : i.status,
@@ -205,7 +206,7 @@ function makeHandlers(created) {
     get_client_insights({ client }) {
       const c = findClient(client);
       if (!c) return { known: false, message: `"${client}" is a new client - no history yet.` };
-      return { known: true, name: c.name, email: c.email, ...clientStats(c.id, today) };
+      return { known: true, name: c.name, company: c.company || undefined, email: c.email, ...clientStats(c.id, today) };
     },
 
     get_earnings_summary({ from, to }) {
@@ -334,8 +335,52 @@ function stripImages(messages) {
   );
 }
 
+// ---------- transcript (what the Assistant page shows) ----------
+// Kept in the database so the conversation survives switching tabs, reloading the
+// page, or leaving while the AI is still thinking: the reply is saved when it's ready.
+const TRANSCRIPT_MAX = 80;
+const tKey = (id) => `chat:${id}`;
+
+export function getTranscript(id) {
+  const t = kvGet(tKey(id)) || { messages: [], pending: null };
+  // a reply that never came back (e.g. the app was restarted mid-answer)
+  if (t.pending && Date.now() - Date.parse(t.pending.since) > 3 * 60 * 1000) {
+    t.pending = null;
+    t.messages.push({ role: 'err', text: "That answer didn't finish. Please send your message again.", at: new Date().toISOString() });
+    kvSet(tKey(id), t);
+  }
+  return t;
+}
+function saveTranscript(id, t) {
+  kvSet(tKey(id), { ...t, messages: t.messages.slice(-TRANSCRIPT_MAX) });
+}
+
 export function resetSession(id) {
   sessions.delete(id);
+  kvSet(tKey(id), { messages: [], pending: null });
+}
+
+/** Like chat(), but records the exchange in the transcript (used by the web app). */
+export async function chatWithTranscript(sessionId, input) {
+  const t = getTranscript(sessionId);
+  const at = new Date().toISOString();
+  t.messages.push({ role: 'user', text: String(input.text || '').slice(0, 4000), image: Boolean(input.image), at });
+  t.pending = { since: at };
+  saveTranscript(sessionId, t);
+  try {
+    const r = await chat(sessionId, input);
+    const done = getTranscript(sessionId);
+    done.messages.push({ role: 'bot', text: r.reply || 'Done.', tools: [...new Set(r.tools)], at: new Date().toISOString() });
+    done.pending = null;
+    saveTranscript(sessionId, done);
+    return r;
+  } catch (e) {
+    const failed = getTranscript(sessionId);
+    failed.messages.push({ role: 'err', text: e.message, at: new Date().toISOString() });
+    failed.pending = null;
+    saveTranscript(sessionId, failed);
+    throw e;
+  }
 }
 
 /**

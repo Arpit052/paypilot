@@ -31,19 +31,19 @@ setLlmOverride(async ({ messages, tools }) => {
   const last = messages.at(-1);
   const userText = last.role === 'user' ? last.content.find((c) => c.type === 'text')?.text || '' : '';
   if (/HEADLINE:/.test(userText)) {
-    return { content: [{ type: 'text', text: 'HEADLINE: Jake Miller owes $850 and is 12 days late.\n- Send Jake a firm reminder for #1001.\n- Nudge Acme Labs on #1002.' }] };
+    return { content: [{ type: 'text', text: 'HEADLINE: Ryan Castillo owes $1,240 and is 12 days late.\n- Send Jake a firm reminder for #1001.\n- Nudge Marcus Hollis on #1002.' }] };
   }
   if (last.role === 'user' && /bill/i.test(userText)) {
     return {
       content: [
-        { type: 'tool_call', id: 't1', name: 'get_client_insights', input: { client: 'Jake Miller' } },
+        { type: 'tool_call', id: 't1', name: 'get_client_insights', input: { client: 'Ryan Castillo' } },
         {
           type: 'tool_call',
           id: 't2',
           name: 'propose_invoice',
           input: {
-            client_name: 'Jake Miller',
-            client_email: 'jake.miller@example.com',
+            client_name: 'Ryan Castillo',
+            client_email: 'ryan@castillocoffee.example',
             items: [{ name: 'Logo concept', quantity: 3, unit_price: 150 }],
             due_in_days: 10,
           },
@@ -52,10 +52,10 @@ setLlmOverride(async ({ messages, tools }) => {
     };
   }
   if (last.role === 'user' && /tax/i.test(userText)) {
-    return { content: [{ type: 'tool_call', id: 'tx', name: 'propose_invoice', input: { client_name: 'Olivia Brooks', client_email: 'olivia.brooks@example.com', items: [{ name: 'Instagram post', quantity: 10, unit_price: 25 }], tax_percent: 8, deposit_percent: 20 } }] };
+    return { content: [{ type: 'tool_call', id: 'tx', name: 'propose_invoice', input: { client_name: 'Danielle Okafor', client_email: 'dani@okaforfitness.example', items: [{ name: 'Instagram post', quantity: 10, unit_price: 25 }], tax_percent: 8, deposit_percent: 20 } }] };
   }
   if (last.role === 'user' && /every month/i.test(userText)) {
-    return { content: [{ type: 'tool_call', id: 'rc', name: 'propose_recurring', input: { client_name: 'Emily Carter', client_email: 'emily@cartercreative.example', items: [{ name: 'Design retainer', quantity: 1, unit_price: 600 }], frequency: 'monthly' } }] };
+    return { content: [{ type: 'tool_call', id: 'rc', name: 'propose_recurring', input: { client_name: 'Priya Raman', client_email: 'priya@brightlinedental.example', items: [{ name: 'Design retainer', quantity: 1, unit_price: 600 }], frequency: 'monthly' } }] };
   }
   if (last.role === 'user' && /owe/i.test(userText)) {
     return { content: [{ type: 'tool_call', id: 't3', name: 'list_invoices', input: { status: 'overdue' } }] };
@@ -78,10 +78,10 @@ test('seed demo history', async () => {
   const r = await call('/api/demo/seed', {});
   assert.equal(r.status, 200);
   const { data } = await call('/api/clients');
-  assert.equal(data.clients.length, 4);
-  const jake = data.clients.find((c) => c.name === 'Jake Miller');
+  assert.equal(data.clients.length, 5);
+  const jake = data.clients.find((c) => c.name === 'Ryan Castillo');
   assert.equal(jake.riskLabel, 'high', 'late payer should be high risk');
-  const emily = data.clients.find((c) => c.name === 'Emily Carter');
+  const emily = data.clients.find((c) => c.name === 'Priya Raman');
   assert.equal(emily.riskLabel, 'none', 'reliable payer = no risk');
   assert.ok(data.clients.every((c) => c.avgDaysLate === null || Number.isInteger(c.avgDaysLate)), 'whole days only');
 });
@@ -117,6 +117,17 @@ test('chat history persists across turns and images are stripped', async () => {
   assert.ok(!hist.some((m) => m.content.some((c) => c.type === 'image')), 'old images stripped');
 });
 
+test('assistant conversation is saved for when you come back to the page', async () => {
+  const h = (await call('/api/chat/history?sessionId=s2')).data;
+  assert.equal(h.pending, false);
+  assert.equal(h.messages.filter((m) => m.role === 'user').length, 2);
+  assert.equal(h.messages[0].image, true, 'screenshot noted, not stored');
+  assert.ok(!JSON.stringify(h).includes('iVBOR'), 'image data is not kept');
+  assert.equal(h.messages.at(-1).role, 'bot');
+  await call('/api/chat/reset', { sessionId: 's2' });
+  assert.equal((await call('/api/chat/history?sessionId=s2')).data.messages.length, 0);
+});
+
 test('approve with user edits → invoice sent via PayPal (mock)', async () => {
   const { status, data } = await call(`/api/actions/${actionId}/approve`, {
     edits: { items: [{ name: 'Logo concept', quantity: 3, unitPrice: 160 }], depositAmount: 0 },
@@ -146,14 +157,14 @@ test('payment pushes a live notification over SSE and is stored', async () => {
   const res = await fetch(base + '/api/events', { signal: ctrl.signal });
   assert.match(res.headers.get('content-type'), /text\/event-stream/);
   const reader = res.body.getReader();
-  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Acme Labs');
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Marcus Hollis');
   await call(`/api/mock/pay/${inv.paypalId}`, {});
   let text = '';
   const until = Date.now() + 3000;
   while (!text.includes('event: notification') && Date.now() < until) text += new TextDecoder().decode((await reader.read()).value);
   ctrl.abort();
   assert.match(text, /event: notification/);
-  assert.match(text, /Payment received: \$320/);
+  assert.match(text, /Payment received: \$387\.50/);
   const n = (await call('/api/notifications')).data;
   assert.ok(n.unread >= 1);
   assert.equal(n.notifications[0].kind, 'payment');
@@ -161,7 +172,7 @@ test('payment pushes a live notification over SSE and is stored', async () => {
 });
 
 test('payment via webhook path flips status to PAID', async () => {
-  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Olivia Brooks');
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Danielle Okafor');
   const r = await call(`/api/mock/pay/${inv.paypalId}`, {});
   assert.equal(r.data.changed, true);
   const after = (await call('/api/invoices')).data.invoices.find((i) => i.id === inv.id);
@@ -172,12 +183,12 @@ test('payment via webhook path flips status to PAID', async () => {
 test('follow-up scan drafts reminders for overdue invoices only, then sends', async () => {
   const { data } = await call('/api/followups/scan', {});
   const reminders = data.created.filter((a) => a.type === 'send_reminder');
-  assert.deepEqual(reminders.map((a) => a.payload.client).sort(), ['Jake Miller']);
-  const jake = reminders.find((a) => a.payload.client === 'Jake Miller');
-  // Jake is 12 days late (> 7-day policy), so a late-fee slip is drafted too
+  assert.deepEqual(reminders.map((a) => a.payload.client).sort(), ['Ryan Castillo']);
+  const jake = reminders.find((a) => a.payload.client === 'Ryan Castillo');
+  // Ryan is 12 days late (> 7-day policy), so a late-fee slip is drafted too
   const fees = data.created.filter((a) => a.type === 'add_late_fee');
-  assert.deepEqual(fees.map((a) => a.payload.client), ['Jake Miller']);
-  assert.equal(fees[0].payload.fee, 42.5, '5% of $850');
+  assert.deepEqual(fees.map((a) => a.payload.client), ['Ryan Castillo']);
+  assert.equal(fees[0].payload.fee, 62, '5% of $1,240');
   assert.equal(jake.payload.tone, 'firm', 'second reminder escalates');
   assert.equal(jake.payload.subject, 'Quick reminder', 'AI drafted');
   // rescan does not duplicate
@@ -188,7 +199,7 @@ test('follow-up scan drafts reminders for overdue invoices only, then sends', as
   // approving the late fee updates the invoice total; a second fee is refused
   const fee = await call(`/api/actions/${fees[0].id}/approve`, {});
   assert.equal(fee.status, 200, JSON.stringify(fee.data));
-  assert.equal(fee.data.action.result.newTotal, 892.5);
+  assert.equal(fee.data.action.result.newTotal, 1302);
   assert.equal((await call('/api/followups/scan', {})).data.created.filter((a) => a.type === 'add_late_fee').length, 0);
 });
 
@@ -202,7 +213,7 @@ test('settings: business details validate and apply; secrets never returned', as
   assert.ok(!JSON.stringify(data).toLowerCase().includes('secret'));
   // obviously incomplete keys are rejected before contacting PayPal
   assert.equal((await call('/api/settings/paypal/connect', { clientId: 'abc', clientSecret: 'x' })).status, 400);
-  await call('/api/settings/business', { businessName: 'Northline Studio', defaultTaxPercent: 0 });
+  await call('/api/settings/business', { businessName: 'Test Studio', defaultTaxPercent: 0 });
 });
 
 test('dashboard figures', async () => {
@@ -270,7 +281,7 @@ test('recurring invoices: schedule → due draft → next month', async () => {
   assert.ok(sch[0].nextRun > ok.data.action.payload.startDate, 'next run advanced to next month');
   assert.equal((await call('/api/schedules/run', {})).data.created.length, 0, 'not due again yet');
   // manual form path (no AI)
-  const form = await call('/api/schedules', { clientName: 'Acme Labs', clientEmail: 'billing@acmelabs.example', description: 'Weekly support', amount: 150, frequency: 'weekly' });
+  const form = await call('/api/schedules', { clientName: 'Marcus Hollis', clientEmail: 'billing@hollisgrant.example', description: 'Weekly support', amount: 150, frequency: 'weekly' });
   assert.equal(form.status, 200, JSON.stringify(form.data));
   assert.ok(form.data.action.result.firstDraftId);
   const bad = await call('/api/schedules', { clientName: 'X', clientEmail: 'nope', description: 'x', amount: 5, frequency: 'weekly' });
@@ -378,7 +389,7 @@ test('provider adapters map tool calls correctly', () => {
 test('PayPal invoice body shape', () => {
   const b = buildInvoiceBody({
     number: '0007',
-    client: { name: 'Emily Carter', email: 'p@x.com' },
+    client: { name: 'Priya Raman', email: 'p@x.com' },
     items: [{ name: 'Retainer', quantity: 1, unitPrice: 600 }],
     currency: 'USD',
     issueDate: '2026-11-01',
@@ -387,7 +398,7 @@ test('PayPal invoice body shape', () => {
   });
   assert.equal(b.detail.invoice_number, '0007');
   assert.equal(b.detail.payment_term.due_date, '2026-11-15');
-  assert.deepEqual(b.primary_recipients[0].billing_info.name, { given_name: 'Emily', surname: 'Carter' });
+  assert.deepEqual(b.primary_recipients[0].billing_info.name, { given_name: 'Priya', surname: 'Raman' });
   assert.deepEqual(b.items[0].unit_amount, { currency_code: 'USD', value: '600.00' });
   assert.equal(b.items[0].quantity, '1');
 });

@@ -22,7 +22,7 @@
       const { invoice: i, businessName } = await api(`/api/mock/invoice/${encodeURIComponent(id)}`);
       const paid = ['PAID', 'MARKED_AS_PAID'].includes(i.status);
       slip.innerHTML = `
-        <div class="slip-head"><div><div class="slip-kind">Invoice #${esc(i.number)}</div><div class="slip-from">from ${esc(businessName)} to ${esc(i.client)}</div></div><span class="pill ${i.displayStatus}">${esc(i.displayStatus)}</span></div>
+        <div class="slip-head"><div><div class="slip-kind">Invoice #${esc(i.number)}</div><div class="slip-from">from ${esc(businessName || 'your freelancer')} to ${esc(i.client)}</div></div><span class="pill ${i.displayStatus}">${esc(i.displayStatus)}</span></div>
         <table class="items"><thead><tr><th>Work</th><th class="q">Qty</th><th class="amt">Amount</th></tr></thead><tbody>
         ${i.items.map((x) => `<tr><td>${esc(x.name)}</td><td class="q num">${x.quantity}</td><td class="amt num">${money(x.quantity * x.unitPrice, i.currency)}</td></tr>`).join('')}
         </tbody></table>

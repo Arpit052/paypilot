@@ -162,7 +162,9 @@ export function findClient(ref) {
   const d = sql();
   return rowClient(
     d.prepare('SELECT * FROM clients WHERE id = ? OR email = ? COLLATE NOCASE OR name = ? COLLATE NOCASE LIMIT 1').get(q, q, q) ||
-      d.prepare("SELECT * FROM clients WHERE name LIKE '%' || ? || '%' COLLATE NOCASE ORDER BY length(name) LIMIT 1").get(q)
+      d.prepare("SELECT * FROM clients WHERE company = ? COLLATE NOCASE LIMIT 1").get(q) ||
+      d.prepare("SELECT * FROM clients WHERE name LIKE '%' || ? || '%' COLLATE NOCASE ORDER BY length(name) LIMIT 1").get(q) ||
+      d.prepare("SELECT * FROM clients WHERE company LIKE '%' || ? || '%' COLLATE NOCASE ORDER BY length(company) LIMIT 1").get(q)
   );
 }
 
