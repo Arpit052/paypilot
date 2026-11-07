@@ -1,6 +1,6 @@
-# PayPilot: an AI payments agent for freelancers, built on PayPal
+# PayPilot: an AI money agent for small businesses, built on PayPal
 
-**Tell PayPilot what work you did, in plain words or as a screenshot. It drafts a PayPal invoice, sends it once you approve, chases late payers with reminders whose tone escalates, and tells you what cash is coming.**
+**Freelancers, clinics, tutors, tradespeople, consultants and small agencies all have the same problem: the work is done, but the money isn't in. PayPilot turns a plain-English description (or a screenshot) into a PayPal invoice, chases late payers with reminders whose tone escalates, tells you whether you can afford a purchase from how each client really pays, and spots clients who should be on a monthly retainer.** Nothing goes out without your approval.
 
 Built for the *Build What's Next with PayPal and AI* hackathon.
 
@@ -10,12 +10,18 @@ Built for the *Build What's Next with PayPal and AI* hackathon.
 
 ## The problem
 
-Freelancers lose time and money on getting paid:
+Getting paid is a small-business problem, not just a freelancer one:
 
-- Invoicing gets put off because it's tedious.
-- Chasing late clients is awkward, so people don't do it.
-- Payment status is scattered across email, WhatsApp and spreadsheets.
-- There's no clear view of what cash is coming next month.
+- **56%** of US small businesses have unpaid invoices, owed **$17,500** on average, and **47%** have invoices more than 30 days overdue (Intuit QuickBooks Small Business Late Payments Report, 2025).
+- In the UK, businesses hit by late payment spend about **86 staff hours a year** chasing it, and late payment is linked to about **14,000 business closures a year** (UK Office of the Small Business Commissioner research, July 2025).
+- **52%** of small business owners simply write off late payments up to 10 times a year because chasing isn't worth the time (FSB / GoCardless Late Payments Report, 2025).
+- The US alone has about **72.9 million** independent workers (MBO Partners, State of Independence 2025), on top of millions of small service businesses.
+
+Behind those numbers are three everyday pains: invoicing gets put off, chasing is awkward so it doesn't happen, and nobody can say with confidence *"can I afford this next month?"* because it depends on when clients pay.
+
+## Who it's for
+
+PayPilot doesn't care what work you do, only how you get paid. Pick a **type of business** in Settings (Freelancer, Agency, Clinic, Tutoring, Trades and repair, Consulting) and it sets sensible payment terms, reminder style, the invoice note, one-click line items, and the words the AI uses (*patients*, *families*, *maintenance plan*, *advisory retainer*). The demo loads a different sample business for each type: a design studio, a physio clinic, a tutoring studio, a home-repair company or a consultancy.
 
 ## What PayPilot does
 
@@ -42,6 +48,13 @@ Freelancers lose time and money on getting paid:
 | **Mark as paid** | Paid by bank transfer or cash? Record it (two clicks to confirm) and PayPilot records the payment on the PayPal invoice too. |
 | **Copy pay link** | Copy PayPal's payment link to send by text or WhatsApp. |
 
+**Earn more, spend safely**
+
+| Feature | How it works |
+|---|---|
+| **Budget Estimator** | *"Can I buy a $2,000 laptop on Dec 5?"* PayPilot plays out 4,000 possible futures of who pays you and when, using each client's own payment history, and answers with the **chance** you can buy it and keep your safety buffer (with its error margin), the **likely and bad-case shortfall**, the **earliest date it becomes safe** (80% and 95%), and **which invoice decides it**. A second answer includes the new work your repeat clients usually send. Also in the Assistant. [How the model works](#how-the-budget-estimator-works) |
+| **Suggested retainers** | Finds clients who already buy from you nearly every month, prices a monthly plan a little below a typical month with them, and shows both sides of the deal: what you gain a year, what they save, fewer invoices, and how fast your existing retainer clients pay compared with them. The AI writes the offer email in your style; when they say yes, one click creates the retainer. |
+
 **Understand**
 
 | Feature | How it works |
@@ -58,9 +71,14 @@ Freelancers lose time and money on getting paid:
 | Feature | How it works |
 |---|---|
 | **Search (Ctrl/⌘ K)** | Find any invoice, client, page or action, or send the query straight to the Assistant. |
+| **Business types** | Freelancer, Agency, Clinic, Tutoring, Trades and repair, Consulting: presets for terms, reminder style, invoice note and line-item shortcuts, plus a matching sample business in the demo. |
 | **Settings** | Business, invoice defaults, PayPal connection, Autopilot plan, late fees, notification types, AI writing style (warm / neutral / brief) with a live preview, data export/backup, security. |
 | **Connect in the app** | First run asks for a business name and PayPal sandbox keys (checked with PayPal before saving), or opens demo mode. |
 | **Passcode + sign out** | Lock PayPilot with a passcode (scrypt-hashed) and sign out from the sidebar. |
+
+| Budget Estimator | Suggested retainers | Business types |
+|---|---|---|
+| ![](docs/screenshots/budget.png) | ![](docs/screenshots/retainers.png) | ![](docs/screenshots/business-type.png) |
 
 | Collections + Autopilot | Analytics | Calendar |
 |---|---|---|
@@ -76,9 +94,9 @@ Freelancers lose time and money on getting paid:
 
 ```mermaid
 flowchart LR
-  U[Freelancer<br/>text / screenshot] --> UI[Web UI<br/>chat + approval tray]
+  U[Business owner<br/>text / screenshot] --> UI[Web UI<br/>chat + approval tray]
   UI -->|/api/chat| AG[AI agent<br/>tool-calling loop]
-  AG <-->|tools| T{{list_invoices<br/>get_client_insights<br/>get_earnings_summary<br/>forecast_cashflow<br/>propose_invoice<br/>propose_reminder<br/>propose_cancel}}
+  AG <-->|tools| T{{list_invoices<br/>get_client_insights<br/>get_earnings_summary<br/>forecast_cashflow<br/>check_budget<br/>suggest_retainers<br/>propose_invoice<br/>propose_reminder<br/>propose_cancel}}
   AG <--> LLM[(Gemini via @google/genai<br/>or Claude / OpenAI-compatible)]
   T -->|propose_*| Q[Pending actions]
   Q -->|user approves| EX[Executor]
@@ -89,7 +107,7 @@ flowchart LR
   CRON[Scheduler] -->|/api/cron/followups| FU[Follow-up scanner] -->|AI drafts reminder| Q
 ```
 
-**Design.** A dark "midnight cockpit" interface (frosted-glass panels on an aurora background) with invoices rendered as white paper slips that get a rubber-stamp animation when sent. The PayPilot logo and wordmark are original; fonts (Unbounded, Manrope; SIL Open Font License) are bundled so it looks right offline.
+**Design.** A calm black interface with a left sidebar, invoices rendered as white paper slips, and charts drawn in plain SVG. The PayPilot logo and wordmark are original; fonts (Geist, Unbounded, Manrope; SIL Open Font License) are bundled so it looks right offline.
 
 **Stack.** Node.js + **Express 5** API, **SQLite** (Node's built-in `node:sqlite`, with a transactional repository layer and automatic migrations), **Google Gen AI SDK** (`@google/genai`) for Gemini, PayPal REST APIs, and a vanilla-JS frontend.
 
@@ -122,6 +140,23 @@ flowchart LR
   - **Vision** (`src/agent.js`): reads client emails and chat screenshots to draft invoices.
   - **Generation** (`src/followups.js`): writes reminder emails using the client's payment history and the escalation tone.
 - **Deterministic analytics** (`src/analytics.js`): risk scoring and the probability-weighted forecast, so the numbers the AI reports come from data, not guesses.
+- **Statistics** (`src/budget.js`, `src/offers.js`): a Monte Carlo cash model and a buying-pattern score. The AI calls them as tools (`check_budget`, `suggest_retainers`) and explains the result; it never makes the numbers up.
+
+### How the Budget Estimator works
+
+The money you'll have on a date is uncertain because you don't know when, or if, each client pays. So PayPilot simulates it:
+
+1. **Each client's payment habit.** Every paid invoice tells us how many days after the due date the money arrived. A client with few payments is blended with everyone's history (empirical Bayes: their own data gets weight *n / (n + 3)*), and each draw gets ~1.5 days of noise (kernel smoothing) so the model doesn't only repeat the past.
+2. **Conditioning on today.** An unpaid invoice hasn't been paid yet, so only futures where it arrives today or later are kept. If a client is later than ever before, the extra wait follows an exponential tail fitted to their late payments.
+3. **Money that never comes.** Each invoice is paid at all with probability from a Beta(49, 1) prior (98%) updated with the client's paid invoices; once it's later than the client's slowest payment ever, that chance halves every 60 days.
+4. **Retainers and new work.** Scheduled retainer invoices are included. Optionally, repeat clients send new work as a Poisson process with their own rate and amounts.
+5. **4,000 futures.** Costs come off day by day. The answer is the share of futures where you can pay for the item and keep your buffer (± the 95% Monte Carlo error), the P10 / P50 / P90 range, the average gap when it falls short, the first date the chance reaches 80% and 95%, and each invoice's *swing*: P(yes | it arrives in time) − P(yes | it doesn't).
+
+Results are seeded, so the same inputs always give the same answer, and the page explains the method in plain English.
+
+### How retainer suggestions work
+
+For each client over the last 180 days PayPilot measures how many months they bought in (*coverage*), how regular the gaps are (1 − coefficient of variation), and how much they spend in an average month and in a typical month they do buy. Only clients who buy at least every ~40 days, in 75%+ of months, and aren't high-risk payers are suggested. The price is a typical month's spend minus 3–10% (smaller when they already buy every month), rounded the way people price things. The card shows the yearly change for you, the monthly saving for them, and how quickly your current retainer clients pay compared with this client.
 
 ---
 
@@ -168,7 +203,8 @@ With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-proces
 2. Edit a rate and click **Approve & send via PayPal**. The slip is stamped **SENT**. Open the sandbox personal account to see the invoice.
 3. Pay it from the sandbox personal account. The dashboard flips to **Paid** through the webhook.
 4. **Follow-ups → Find overdue invoices.** The AI drafts tone-matched reminders. Approve one, and PayPal sends the reminder.
-5. Ask *"How much cash should I expect in the next 30 days?"* or *"How much did I earn this month?"*
+5. **Budget:** ask *"Can I afford a $2,000 laptop next month?"* in the Assistant, or open **Budget** and try a price and date. Watch which invoice decides it.
+6. **Clients → Suggested retainers:** open Danielle's card, write the offer, then click *Danielle said yes* to create the retainer. Run the budget again: it now counts her monthly payment.
 
 > **Tip for demos:** set `DEMO_TIME_OFFSET_DAYS=15` and restart to fast-forward the app's clock, so invoices you just sent become overdue and the follow-up flow runs against real sandbox invoices.
 
@@ -185,7 +221,7 @@ Data is stored in SQLite at `data/paypilot.db`. On free hosting the disk is temp
 ```bash
 npm test
 ```
-These are end-to-end tests with mock PayPal and a scripted model. They cover the propose → approve → PayPal flow, user edits, validation, webhook payment, follow-up escalation and de-duplication, the dashboard maths, request mapping for both LLM providers, and the PayPal invoice payload.
+These are end-to-end tests with mock PayPal and a scripted model. They cover the propose → approve → PayPal flow, user edits, validation, webhook payment, follow-up escalation and de-duplication, the dashboard maths, request mapping for the LLM providers, the PayPal invoice payload, and the Budget Estimator's statistics (ordered percentiles, repeatable results, more cash never lowers the chance, overdue invoices never "paid in the past"), retainer suggestions, and every business type's sample data.
 
 ## Project layout
 
@@ -203,7 +239,11 @@ src/recurring.js     Recurring schedules → invoice drafts
 src/scheduler.js     Background jobs (PayPal sync, overdue scan, recurring)
 src/brief.js         Money brief: computed sections + AI recommendations
 src/notify.js        Notifications: stored + pushed live over Server-Sent Events
-public/              UI (vanilla JS): assistant, dashboard, follow-ups, clients
+src/budget.js        Budget Estimator: Monte Carlo cash model
+src/offers.js        Retainer suggestions: buying-pattern scoring + AI offer emails
+src/business.js      Business types and their presets
+src/personas.js      Sample businesses for the demo (clinic, tutoring, trades, consulting)
+public/              UI (vanilla JS): dashboard, assistant, collections, calendar, analytics, budget, clients, settings
 test/                End-to-end tests
 ```
 
@@ -222,6 +262,12 @@ test/                End-to-end tests
 - The AI cannot execute payments, reminders or cancellations. A human approves every action, including each recurring invoice.
 - Webhook signatures are verified with PayPal before any state changes (sandbox/live).
 - Keys live only in `.env` (git-ignored). Uploaded screenshots are sent to the model for that turn only and are not kept in chat history.
+
+## Sources for the numbers above
+- [Intuit QuickBooks, Small Business Late Payments Report 2025](https://agiled.app/statistics/late-payment-statistics) (summary)
+- [UK Office of the Small Business Commissioner late-payments research, July 2025](https://stealthagents.com/research/small-business-overdue-invoice-statistics-2026) (summary)
+- [FSB / GoCardless Late Payments Report 2025](https://blog-j3o.pages.dev/late-payment-statistics-uk.html) (summary)
+- [MBO Partners State of Independence 2025](https://www.makerstations.io/?p=11005) (summary)
 
 ## License
 [MIT](LICENSE)

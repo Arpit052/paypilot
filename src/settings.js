@@ -5,6 +5,7 @@
 // The PayPal secret is kept server-side only and never sent back to the browser.
 import { config } from './config.js';
 import { kvGet, kvSet } from './db.js';
+import { BUSINESS_TYPES } from './business.js';
 
 const SANDBOX_URL = 'https://api-m.sandbox.paypal.com';
 // What .env said at start-up, so "Disconnect" can fall back to it.
@@ -24,8 +25,9 @@ const envBusiness = {
   signOff: '',
   aiInstructions: '',
   notify: { payment: true, overdue: true, due: true, approval: true, import: true },
+  businessType: 'freelancer',
 };
-const PREF_KEYS = ['currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
+const PREF_KEYS = ['businessType', 'currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
 const envChoseMode = Boolean(process.env.PAYPAL_MODE);
 
 let paypalSource = 'env';
@@ -129,6 +131,17 @@ export function saveBusinessSettings(input = {}) {
   if (input.reminderStyle !== undefined) {
     if (!['warm', 'neutral', 'brief'].includes(input.reminderStyle)) throw httpErr('Unknown reminder style');
     next.reminderStyle = input.reminderStyle;
+  }
+  if (input.businessType !== undefined) {
+    if (!BUSINESS_TYPES[input.businessType]) throw httpErr('Unknown business type');
+    next.businessType = input.businessType;
+    // "Use these defaults": copy the type's terms, reminder style and invoice note
+    if (input.applyPreset) {
+      const t = BUSINESS_TYPES[input.businessType];
+      next.defaultTermsDays = t.terms;
+      next.reminderStyle = t.style;
+      next.defaultNote = t.note;
+    }
   }
   if (input.currency !== undefined) {
     const c = String(input.currency).toUpperCase();

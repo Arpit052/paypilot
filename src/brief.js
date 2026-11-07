@@ -83,7 +83,7 @@ export function briefFacts(today = isoDate()) {
 async function aiRecommendations(facts) {
   const { content } = await complete({
     system:
-      'You are a sharp, friendly CFO assistant for a freelancer. Plain US English. ' +
+      'You are a sharp, friendly CFO assistant for a small business owner. Plain US English. ' +
       'Use ONLY numbers from the JSON; never invent figures. Name clients and invoice numbers.',
     messages: [
       {

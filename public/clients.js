@@ -154,10 +154,310 @@ $('recForm').addEventListener('submit', async (e) => {
     toast(action.result.firstDraftId ? 'Retainer created. The first invoice is waiting for your approval.' : `Retainer created. First invoice on ${fmtDate(action.payload.startDate)}.`);
     e.target.reset();
     closeDrawer();
-    await Promise.all([loadClients(), loadRetainers()]);
+    // ---------------- suggested retainers ----------------
+let offers = [];
+let word = 'monthly retainer';
+const first = (n) => n.split(/\s+/)[0];
+
+function spendBars(o) {
+  const vals = o.pattern.monthly;
+  const max = Math.max(...vals, o.offer.price) || 1;
+  const W = 220, H = 64, gap = 6;
+  const bw = (W - gap * (vals.length - 1)) / vals.length;
+  const y = (v) => H - (v / max) * (H - 6);
+  const bars = vals.map((v, i) => `<rect x="${i * (bw + gap)}" y="${y(v)}" width="${bw}" height="${Math.max(1.5, H - y(v))}" rx="3" fill="${v ? '#3f3f46' : '#1c1c1f'}"/>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H + 2}" class="of-bars" role="img" aria-label="Monthly spend, last ${vals.length} months">${bars}<line x1="0" x2="${W}" y1="${y(o.offer.price)}" y2="${y(o.offer.price)}" stroke="#a78bfa" stroke-dasharray="4 4"/></svg>`;
+}
+
+function renderOffers() {
+  $('offersWrap').classList.toggle('hidden', !offers.length);
+  $('offerList').innerHTML = offers
+    .map((o) => {
+      const p = o.pattern, f = o.offer;
+      const m = (v) => money(Math.round(v), o.currency);
+      const d1 = (v) => (Math.round(v * 10) / 10).toString();
+      const speed = f.payment.retainerClients !== null && f.payment.client !== null
+        ? `<div><dt>Pays now</dt><dd>${f.payment.client <= f.payment.retainerClients + 0.2 ? 'On time' : `${d1(f.payment.client)} days late`}<span> · your retainer clients: ${d1(f.payment.retainerClients)}</span></dd></div>`
+        : `<div><dt>Invoices a year</dt><dd>${f.invoicesNow} → ${f.invoicesPlan}</dd></div>`;
+      return `<article class="of ${o.status}" data-cid="${esc(o.clientId)}">
+        <div class="ret-top"><span class="avatar" aria-hidden="true">${esc(initials(o.client))}</span>
+          <div class="ret-who"><b>${esc(o.client)}</b><span>${esc(o.company || o.email)}</span></div>
+          <span class="ret-state">${o.status === 'offered' ? `<i class="w"></i>Offer sent ${esc(fmtDate(o.offeredAt))}` : `<i class="on"></i>Good fit`}</span></div>
+        <p class="of-why">Worked with you in <b>${p.activeMonths} of the last ${p.months} months</b>, about every ${p.cadenceDays} days${p.usual.length ? `, usually for ${p.usual.slice(0, 2).map((x) => `“${esc(x)}”`).join(' and ')}` : ''}.</p>
+        <div class="of-mid">
+          <div class="of-price"><span>Suggested ${esc(f.word)}</span><b>${esc(m(f.price))}<small> / month</small></b><em>${f.discount}% less than a typical month with you (${esc(m(p.perActiveMonth))})</em></div>
+          <div class="of-chart">${spendBars(o)}<span>Spend per month (last ${p.months}) · <i class="of-key"></i> plan price</span></div>
+        </div>
+        <dl class="ret-facts of-facts">
+          <div><dt>You, per year</dt><dd class="${f.yearChange >= 0 ? 'good-t' : ''}">${f.yearChange >= 0 ? '+' : '−'}${esc(m(Math.abs(f.yearChange)))}<span> · ${f.yearChange >= 0 ? `${esc(m(f.yearNow))} → ${esc(m(f.yearPlan))}` : 'for fixed monthly income'}</span></dd></div>
+          <div><dt>A typical month, for ${esc(first(o.client))}</dt><dd>${esc(m(p.perActiveMonth))} → ${esc(m(f.price))}<span> · −${f.discount}%</span></dd></div>
+          ${speed}
+        </dl>
+        <div class="ret-acts">
+          <button class="btn small" data-of="write">${o.draft ? 'View offer' : 'Write offer'}</button>
+          <button class="btn ghost small" data-of="yes">${esc(first(o.client))} said yes</button>
+          <button class="linkbtn small" data-of="dismiss">Not now</button>
+        </div>
+      </article>`;
+    })
+    .join('');
+}
+async function loadOffers() {
+  const r = await api('/api/offers');
+  offers = r.offers;
+  word = r.word;
+  renderOffers();
+  if (location.hash === '#offers') document.getElementById('offers')?.scrollIntoView({ block: 'start' });
+}
+
+const od = $('offerDrawer');
+const closeOffer = () => od.classList.add('hidden');
+od.addEventListener('click', (e) => e.target.closest('[data-oclose]') && closeOffer());
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closeOffer());
+
+async function openWrite(o, refresh = false) {
+  $('odTitle').textContent = `Offer for ${o.client}`;
+  $('odBody').innerHTML = '<div class="of-loading">Writing the offer…</div>';
+  od.classList.remove('hidden');
+  try {
+    const { draft } = await api(`/api/offers/${encodeURIComponent(o.clientId)}/draft`, { body: { refresh } });
+    $('odBody').innerHTML = `
+      <p class="muted small" style="margin:0 0 4px">Send it from your own email. PayPilot doesn't email clients, so it sounds like you and lands in a thread they know.</p>
+      <label for="odTo">To</label><input id="odTo" value="${esc(o.email)}" readonly>
+      <label for="odSubj">Subject</label><input id="odSubj" value="${esc(draft.subject)}">
+      <label for="odMsg">Message</label><textarea id="odMsg" rows="12">${esc(draft.message)}</textarea>
+      <span class="muted small">${draft.draftedBy === 'ai' ? 'Written by AI from your invoice history. Edit anything.' : 'Written from a template (AI not available). Edit anything.'}</span>
+      <div class="of-acts">
+        <button class="btn small" type="button" id="odCopy">Copy message</button>
+        <a class="btn ghost small" id="odMail" href="#">Open in email app</a>
+        <button class="linkbtn small" type="button" id="odAgain">Rewrite</button>
+      </div>
+      <div class="ret-preview"><span>Sent it?</span><button class="btn ghost small" type="button" id="odSent" style="margin:0;align-self:flex-start">Mark as sent</button><em>You'll see "Offer sent" on the card until ${esc(first(o.client))} replies.</em></div>`;
+    const mail = () => `mailto:${encodeURIComponent(o.email)}?subject=${encodeURIComponent($('odSubj').value)}&body=${encodeURIComponent($('odMsg').value)}`;
+    $('odMail').onclick = (e) => { e.preventDefault(); location.href = mail(); };
+    $('odCopy').onclick = async () => {
+      const text = `Subject: ${$('odSubj').value}\n\n${$('odMsg').value}`;
+      try { await navigator.clipboard.writeText(text); } catch {
+        const t = Object.assign(document.createElement('textarea'), { value: text });
+        document.body.append(t); t.select(); document.execCommand('copy'); t.remove();
+      }
+      toast('Offer copied. Paste it into an email to your client.');
+    };
+    $('odAgain').onclick = () => openWrite(o, true);
+    $('odSent').onclick = async () => {
+      await api(`/api/offers/${encodeURIComponent(o.clientId)}/offered`, { body: {} });
+      toast('Marked as sent');
+      closeOffer();
+      loadOffers();
+    };
+  } catch (err) {
+    $('odBody').innerHTML = `<div class="slip-error">${esc(err.message)}</div>`;
+  }
+}
+
+function openYes(o) {
+  const [y, mo] = cfg.today.split('-').map(Number);
+  const firstNext = new Date(Date.UTC(y, mo, 1)).toISOString().slice(0, 10);
+  $('odTitle').textContent = `Start ${o.client}'s ${o.offer.word}`;
+  $('odBody').innerHTML = `
+    <form id="odYes" class="ret-form" style="gap:6px">
+      <p class="muted small" style="margin:0 0 4px">Great news. This creates the ${esc(o.offer.word)}. On each date the invoice is drafted for you to approve, then sent through PayPal.</p>
+      <div class="two">
+        <div><label for="odPrice">Price per month (${esc(o.currency)})</label><input id="odPrice" type="number" min="1" step="0.01" value="${o.offer.price}" required></div>
+        <div><label for="odStart">First invoice</label><input id="odStart" type="date" value="${firstNext}" min="${cfg.today}" required></div>
+      </div>
+      <div class="ret-preview" id="odPrev"></div>
+      <div class="slip-error" id="odErr" role="alert"></div>
+      <button class="btn" type="submit" style="width:100%">Create ${esc(o.offer.word)}</button>
+    </form>`;
+  const prev = () => {
+    const p = Number($('odPrice').value) || 0;
+    const change = p * 12 - o.offer.yearNow;
+    $('odPrev').innerHTML = `<span>${esc(money(p * 12, o.currency))} a year from ${esc(o.client)}</span><em>${change >= 0 ? `${esc(money(change, o.currency))} more than at today's pace` : `${esc(money(-change, o.currency))} less than today's pace, in exchange for fixed, on-time income`}</em>`;
+  };
+  $('odPrice').addEventListener('input', prev);
+  prev();
+  od.classList.remove('hidden');
+  $('odYes').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const { action } = await api(`/api/offers/${encodeURIComponent(o.clientId)}/accept`, { body: { price: Number($('odPrice').value), startDate: $('odStart').value } });
+      toast(action.result.firstDraftId ? 'Retainer created. The first invoice is waiting for your approval.' : `Retainer created. First invoice on ${fmtDate(action.payload.startDate)}.`);
+      closeOffer();
+      await Promise.all([loadOffers(), loadRetainers()]);
+    } catch (err) {
+      $('odErr').textContent = err.message;
+    }
+  });
+}
+
+$('offerList').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-of]');
+  if (!b) return;
+  const o = offers.find((x) => x.clientId === b.closest('[data-cid]').dataset.cid);
+  if (b.dataset.of === 'write') return openWrite(o);
+  if (b.dataset.of === 'yes') return openYes(o);
+  if (b.dataset.of === 'dismiss') {
+    await api(`/api/offers/${encodeURIComponent(o.clientId)}/dismiss`, { body: {} });
+    toast(`Hidden for 60 days`);
+    loadOffers();
+  }
+});
+
+await Promise.all([loadClients(), loadRetainers(), loadOffers()]);
   } catch (err) {
     $('recErr').textContent = err.message;
   }
 });
 
-await Promise.all([loadClients(), loadRetainers()]);
+// ---------------- suggested retainers ----------------
+let offers = [];
+let word = 'monthly retainer';
+const first = (n) => n.split(/\s+/)[0];
+
+function spendBars(o) {
+  const vals = o.pattern.monthly;
+  const max = Math.max(...vals, o.offer.price) || 1;
+  const W = 220, H = 64, gap = 6;
+  const bw = (W - gap * (vals.length - 1)) / vals.length;
+  const y = (v) => H - (v / max) * (H - 6);
+  const bars = vals.map((v, i) => `<rect x="${i * (bw + gap)}" y="${y(v)}" width="${bw}" height="${Math.max(1.5, H - y(v))}" rx="3" fill="${v ? '#3f3f46' : '#1c1c1f'}"/>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H + 2}" class="of-bars" role="img" aria-label="Monthly spend, last ${vals.length} months">${bars}<line x1="0" x2="${W}" y1="${y(o.offer.price)}" y2="${y(o.offer.price)}" stroke="#a78bfa" stroke-dasharray="4 4"/></svg>`;
+}
+
+function renderOffers() {
+  $('offersWrap').classList.toggle('hidden', !offers.length);
+  $('offerList').innerHTML = offers
+    .map((o) => {
+      const p = o.pattern, f = o.offer;
+      const m = (v) => money(Math.round(v), o.currency);
+      const d1 = (v) => (Math.round(v * 10) / 10).toString();
+      const speed = f.payment.retainerClients !== null && f.payment.client !== null
+        ? `<div><dt>Pays now</dt><dd>${f.payment.client <= f.payment.retainerClients + 0.2 ? 'On time' : `${d1(f.payment.client)} days late`}<span> · your retainer clients: ${d1(f.payment.retainerClients)}</span></dd></div>`
+        : `<div><dt>Invoices a year</dt><dd>${f.invoicesNow} → ${f.invoicesPlan}</dd></div>`;
+      return `<article class="of ${o.status}" data-cid="${esc(o.clientId)}">
+        <div class="ret-top"><span class="avatar" aria-hidden="true">${esc(initials(o.client))}</span>
+          <div class="ret-who"><b>${esc(o.client)}</b><span>${esc(o.company || o.email)}</span></div>
+          <span class="ret-state">${o.status === 'offered' ? `<i class="w"></i>Offer sent ${esc(fmtDate(o.offeredAt))}` : `<i class="on"></i>Good fit`}</span></div>
+        <p class="of-why">Worked with you in <b>${p.activeMonths} of the last ${p.months} months</b>, about every ${p.cadenceDays} days${p.usual.length ? `, usually for ${p.usual.slice(0, 2).map((x) => `“${esc(x)}”`).join(' and ')}` : ''}.</p>
+        <div class="of-mid">
+          <div class="of-price"><span>Suggested ${esc(f.word)}</span><b>${esc(m(f.price))}<small> / month</small></b><em>${f.discount}% less than a typical month with you (${esc(m(p.perActiveMonth))})</em></div>
+          <div class="of-chart">${spendBars(o)}<span>Spend per month (last ${p.months}) · <i class="of-key"></i> plan price</span></div>
+        </div>
+        <dl class="ret-facts of-facts">
+          <div><dt>You, per year</dt><dd class="${f.yearChange >= 0 ? 'good-t' : ''}">${f.yearChange >= 0 ? '+' : '−'}${esc(m(Math.abs(f.yearChange)))}<span> · ${f.yearChange >= 0 ? `${esc(m(f.yearNow))} → ${esc(m(f.yearPlan))}` : 'for fixed monthly income'}</span></dd></div>
+          <div><dt>A typical month, for ${esc(first(o.client))}</dt><dd>${esc(m(p.perActiveMonth))} → ${esc(m(f.price))}<span> · −${f.discount}%</span></dd></div>
+          ${speed}
+        </dl>
+        <div class="ret-acts">
+          <button class="btn small" data-of="write">${o.draft ? 'View offer' : 'Write offer'}</button>
+          <button class="btn ghost small" data-of="yes">${esc(first(o.client))} said yes</button>
+          <button class="linkbtn small" data-of="dismiss">Not now</button>
+        </div>
+      </article>`;
+    })
+    .join('');
+}
+async function loadOffers() {
+  const r = await api('/api/offers');
+  offers = r.offers;
+  word = r.word;
+  renderOffers();
+  if (location.hash === '#offers') document.getElementById('offers')?.scrollIntoView({ block: 'start' });
+}
+
+const od = $('offerDrawer');
+const closeOffer = () => od.classList.add('hidden');
+od.addEventListener('click', (e) => e.target.closest('[data-oclose]') && closeOffer());
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closeOffer());
+
+async function openWrite(o, refresh = false) {
+  $('odTitle').textContent = `Offer for ${o.client}`;
+  $('odBody').innerHTML = '<div class="of-loading">Writing the offer…</div>';
+  od.classList.remove('hidden');
+  try {
+    const { draft } = await api(`/api/offers/${encodeURIComponent(o.clientId)}/draft`, { body: { refresh } });
+    $('odBody').innerHTML = `
+      <p class="muted small" style="margin:0 0 4px">Send it from your own email. PayPilot doesn't email clients, so it sounds like you and lands in a thread they know.</p>
+      <label for="odTo">To</label><input id="odTo" value="${esc(o.email)}" readonly>
+      <label for="odSubj">Subject</label><input id="odSubj" value="${esc(draft.subject)}">
+      <label for="odMsg">Message</label><textarea id="odMsg" rows="12">${esc(draft.message)}</textarea>
+      <span class="muted small">${draft.draftedBy === 'ai' ? 'Written by AI from your invoice history. Edit anything.' : 'Written from a template (AI not available). Edit anything.'}</span>
+      <div class="of-acts">
+        <button class="btn small" type="button" id="odCopy">Copy message</button>
+        <a class="btn ghost small" id="odMail" href="#">Open in email app</a>
+        <button class="linkbtn small" type="button" id="odAgain">Rewrite</button>
+      </div>
+      <div class="ret-preview"><span>Sent it?</span><button class="btn ghost small" type="button" id="odSent" style="margin:0;align-self:flex-start">Mark as sent</button><em>You'll see "Offer sent" on the card until ${esc(first(o.client))} replies.</em></div>`;
+    const mail = () => `mailto:${encodeURIComponent(o.email)}?subject=${encodeURIComponent($('odSubj').value)}&body=${encodeURIComponent($('odMsg').value)}`;
+    $('odMail').onclick = (e) => { e.preventDefault(); location.href = mail(); };
+    $('odCopy').onclick = async () => {
+      const text = `Subject: ${$('odSubj').value}\n\n${$('odMsg').value}`;
+      try { await navigator.clipboard.writeText(text); } catch {
+        const t = Object.assign(document.createElement('textarea'), { value: text });
+        document.body.append(t); t.select(); document.execCommand('copy'); t.remove();
+      }
+      toast('Offer copied. Paste it into an email to your client.');
+    };
+    $('odAgain').onclick = () => openWrite(o, true);
+    $('odSent').onclick = async () => {
+      await api(`/api/offers/${encodeURIComponent(o.clientId)}/offered`, { body: {} });
+      toast('Marked as sent');
+      closeOffer();
+      loadOffers();
+    };
+  } catch (err) {
+    $('odBody').innerHTML = `<div class="slip-error">${esc(err.message)}</div>`;
+  }
+}
+
+function openYes(o) {
+  const [y, mo] = cfg.today.split('-').map(Number);
+  const firstNext = new Date(Date.UTC(y, mo, 1)).toISOString().slice(0, 10);
+  $('odTitle').textContent = `Start ${o.client}'s ${o.offer.word}`;
+  $('odBody').innerHTML = `
+    <form id="odYes" class="ret-form" style="gap:6px">
+      <p class="muted small" style="margin:0 0 4px">Great news. This creates the ${esc(o.offer.word)}. On each date the invoice is drafted for you to approve, then sent through PayPal.</p>
+      <div class="two">
+        <div><label for="odPrice">Price per month (${esc(o.currency)})</label><input id="odPrice" type="number" min="1" step="0.01" value="${o.offer.price}" required></div>
+        <div><label for="odStart">First invoice</label><input id="odStart" type="date" value="${firstNext}" min="${cfg.today}" required></div>
+      </div>
+      <div class="ret-preview" id="odPrev"></div>
+      <div class="slip-error" id="odErr" role="alert"></div>
+      <button class="btn" type="submit" style="width:100%">Create ${esc(o.offer.word)}</button>
+    </form>`;
+  const prev = () => {
+    const p = Number($('odPrice').value) || 0;
+    const change = p * 12 - o.offer.yearNow;
+    $('odPrev').innerHTML = `<span>${esc(money(p * 12, o.currency))} a year from ${esc(o.client)}</span><em>${change >= 0 ? `${esc(money(change, o.currency))} more than at today's pace` : `${esc(money(-change, o.currency))} less than today's pace, in exchange for fixed, on-time income`}</em>`;
+  };
+  $('odPrice').addEventListener('input', prev);
+  prev();
+  od.classList.remove('hidden');
+  $('odYes').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const { action } = await api(`/api/offers/${encodeURIComponent(o.clientId)}/accept`, { body: { price: Number($('odPrice').value), startDate: $('odStart').value } });
+      toast(action.result.firstDraftId ? 'Retainer created. The first invoice is waiting for your approval.' : `Retainer created. First invoice on ${fmtDate(action.payload.startDate)}.`);
+      closeOffer();
+      await Promise.all([loadOffers(), loadRetainers()]);
+    } catch (err) {
+      $('odErr').textContent = err.message;
+    }
+  });
+}
+
+$('offerList').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-of]');
+  if (!b) return;
+  const o = offers.find((x) => x.clientId === b.closest('[data-cid]').dataset.cid);
+  if (b.dataset.of === 'write') return openWrite(o);
+  if (b.dataset.of === 'yes') return openYes(o);
+  if (b.dataset.of === 'dismiss') {
+    await api(`/api/offers/${encodeURIComponent(o.clientId)}/dismiss`, { body: {} });
+    toast(`Hidden for 60 days`);
+    loadOffers();
+  }
+});
+
+await Promise.all([loadClients(), loadRetainers(), loadOffers()]);

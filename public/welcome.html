@@ -32,6 +32,16 @@
         <label for="biz">Business name</label>
         <input id="biz" type="text" maxlength="100" placeholder="e.g. Ortiz Design Studio" required>
         <p class="hint">Shown on every invoice your clients receive.</p>
+        <label for="btype">What kind of work do you do?</label>
+        <select id="btype">
+          <option value="freelancer">Freelancer · design, writing, development</option>
+          <option value="agency">Agency · small team, projects and retainers</option>
+          <option value="clinic">Clinic · physio, therapy, dental, wellness</option>
+          <option value="tutor">Tutoring · tutors, coaches, teachers</option>
+          <option value="trades">Trades and repair · plumbing, HVAC, electrical</option>
+          <option value="consulting">Consulting · advisors, accountants, analysts</option>
+        </select>
+        <p class="hint">Sets sensible payment terms and reminder style. The demo loads sample clients for this kind of business.</p>
         <div class="two">
           <div><label for="cid">PayPal Client ID</label><input id="cid" type="text" spellcheck="false" placeholder="Starts with A…"></div>
           <div><label for="sec">Secret</label><input id="sec" type="password" spellcheck="false" placeholder="Sandbox secret"></div>
@@ -84,7 +94,7 @@
     $('go').disabled = true;
     $('go').textContent = 'Checking with PayPal…';
     try {
-      const r = await post('/api/settings/paypal/connect', { businessName: $('biz').value, clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked, passcode: $('pass').value });
+      const r = await post('/api/settings/paypal/connect', { businessName: $('biz').value, businessType: $('btype').value, clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked, passcode: $('pass').value });
       $('card').innerHTML = `<div class="ok"><div class="tick"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><h2>Connected to PayPal</h2><p class="sub">Sandbox keys verified${r.imported ? `, ${r.imported} invoice${r.imported > 1 ? 's' : ''} imported` : ''}. Invoices you approve now go out through PayPal.</p><a class="btn wide" href="/">Open PayPilot</a></div>`;
     } catch (err) {
       $('err').textContent = err.message;
@@ -99,7 +109,7 @@
     if (!passOk()) return;
     $('demo').disabled = true;
     try {
-      await post('/api/settings/paypal/demo', { businessName: $('biz').value, passcode: $('pass').value });
+      await post('/api/settings/paypal/demo', { businessName: $('biz').value, businessType: $('btype').value, passcode: $('pass').value });
       location.href = '/';
     } catch (err) {
       $('err').textContent = err.message;

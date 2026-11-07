@@ -46,7 +46,7 @@ Invoice #${inv.number}: ${inv.currency} ${inv.total} for ${inv.items.map((i) => 
 Due date: ${inv.dueDate} (${inv.dueDate >= isoDate() ? 'not overdue yet - write a light, friendly heads-up before the due date' : `${daysOverdue} days overdue`}). Reminders already sent: ${inv.reminders.length}${lastTone(inv) ? ` (the last one was ${lastTone(inv)}, so don't sound softer than that)` : ''}.
 Client history: ${st.paidCount} paid invoices, average ${st.avgDaysLate ?? 'n/a'} days late, risk ${st.riskLabel}.
 Mention that they can pay via the PayPal link in the email. ${{ warm: 'Warm, friendly and professional. Max 90 words.', neutral: 'Neutral, matter-of-fact and polite. Max 80 words.', brief: 'Very short and to the point: 2-3 sentences, max 45 words.' }[config.reminderStyle || 'warm']} Never threatening.
-Sign off as: ${config.signOff || [config.ownerName, config.businessName].filter(Boolean).join(', ') || 'no name'}.${config.businessEmail ? ` Questions can go to ${config.businessEmail}.` : ''}${config.aiInstructions ? `\nThe freelancer's own instructions: ${config.aiInstructions}` : ''}
+Sign off as: ${config.signOff || [config.ownerName, config.businessName].filter(Boolean).join(', ') || 'no name'}.${config.businessEmail ? ` Questions can go to ${config.businessEmail}.` : ''}${config.aiInstructions ? `\nThe owner's own instructions: ${config.aiInstructions}` : ''}
 Respond with ONLY JSON: {"subject": "...", "message": "..."}`;
   const { content } = await complete({ system: 'You write concise, professional payment reminder emails. Output JSON only.', messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }], maxTokens: 600 });
   const text = content.filter((c) => c.type === 'text').map((c) => c.text).join('');

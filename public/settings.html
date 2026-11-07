@@ -35,6 +35,8 @@
       <form class="panel set-sec" id="business" data-sec>
         <div class="set-h"><h2>Business</h2><p>Who your invoices and reminders come from.</p></div>
         <div class="set-row"><label for="businessName">Business name<span>On every PayPal invoice</span></label><input id="businessName" name="businessName" maxlength="100" required></div>
+        <div class="set-row top"><span class="lbl">Type of business<span>Tunes payment terms, reminder style, invoice shortcuts and the words the AI uses. Nothing else changes.</span></span>
+          <div><div class="bt-grid" id="btGrid" role="radiogroup" aria-label="Type of business"></div><div class="bt-preset" id="btPreset"></div></div></div>
         <div class="set-row"><label for="ownerName">Your name<span>Used to sign reminders</span></label><input id="ownerName" name="ownerName" maxlength="80" placeholder="e.g. Ana Ortiz"></div>
         <div class="set-row"><label for="businessEmail">Business email<span>Where clients can reply with questions</span></label><input id="businessEmail" name="businessEmail" type="email" maxlength="120" placeholder="hello@yourstudio.com"></div>
         <div class="set-row"><label for="website">Website<span>Optional</span></label><input id="website" name="website" maxlength="120" placeholder="yourstudio.com"></div>
@@ -123,7 +125,7 @@
           <a class="dact" href="/api/invoices.csv" download><b>Export invoices</b><span>CSV for your accountant or spreadsheet</span></a>
           <a class="dact" href="/api/export.json" download><b>Download a backup</b><span>Clients, invoices, schedules and history as JSON</span></a>
           <button class="dact" type="button" id="restoreBtn"><b>Restore removed clients</b><span id="restoreSub">Let PayPal import them again</span></button>
-          <button class="dact danger" type="button" id="resetBtn"><b>Reset demo data</b><span>Start over with fresh sample clients. Settings are kept.</span></button>
+          <button class="dact danger" type="button" id="resetBtn"><b>Reset demo data</b><span id="resetSub">Start over with fresh sample clients. Settings are kept.</span></button>
         </div>
       </section>
     </div>

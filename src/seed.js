@@ -5,9 +5,11 @@
 // Historical invoices are marked source:"seed" (shown as "demo", never sent to PayPal).
 // In demo mode we also add open/overdue invoices so follow-ups can be shown straight away.
 import { config, isoDate, addDays } from './config.js';
-import { upsertClient, logActivity, insertInvoice, findClient, transaction, kvSet, insertSchedule } from './db.js';
+import { upsertClient, logActivity, insertInvoice, transaction, kvSet, insertSchedule } from './db.js';
 import { isMock, mockPut } from './paypal.js';
 import { invoiceTotal } from './analytics.js';
+import { PERSONAS, personaInvoices } from './personas.js';
+import { typeOf } from './business.js';
 
 const CLIENTS = [
   { key: 'ryan', name: 'Ryan Castillo', company: 'Castillo Coffee Roasters', email: 'ryan@castillocoffee.co', net: 15 },
@@ -25,6 +27,7 @@ const HISTORY = [
   ['ryan', 168, 11, [['Logo refresh', 1, 640], ['Brand colour and type sheet', 1, 180]]],
   ['priya', 161, 0, [RETAINER]],
   ['dani', 151, 0, [['Social media templates', 8, 42.5]]],
+  ['dani', 122, 2, [['Class schedule poster', 1, 185], ['Instagram content pack', 6, 32.5]]],
   ['marcus', 141, 2, [['Brand guidelines v2', 1, 1180]]],
   ['ryan', 131, 16, [['Bag label design, 3 blends', 3, 145]]],
   ['priya', 130, 0, [RETAINER]],
@@ -39,6 +42,7 @@ const HISTORY = [
   ['ryan', 63, 19, [['Café menu board', 1, 535], ['Menu photo retouching', 6, 22.5]]],
   ['ben', 58, 0, [['Save-the-date cards', 1, 285]]],
   ['dani', 51, 1, [['Photo retouching', 14, 18.75]]],
+  ['dani', 30, 3, [['Instagram content pack', 12, 32.5], ['Promo flyer, summer bootcamp', 1, 140]]],
   ['priya', 38, 0, [RETAINER]],
 ];
 
@@ -48,9 +52,57 @@ const THIS_MONTH = [
   ['ben', [['Wedding invitation suite', 1, 460], ['Envelope addressing', 120, 1.5]]],
 ];
 
-export function seedDemo() {
-  transaction(seedInner);
+/** Load sample history. The sample business follows the chosen business type. */
+export function seedDemo(persona = typeOf(config.businessType).persona) {
+  transaction(() => (PERSONAS[persona] ? seedPersona(PERSONAS[persona]) : seedInner()));
+  kvSet('demo:persona', PERSONAS[persona] ? persona : 'studio');
   logActivity('seed', 'Demo history loaded');
+}
+
+const linesOf = (arr) => arr.map(([name, quantity, unitPrice]) => ({ name, quantity, unitPrice }));
+
+/** Generic seeding for the clinic, tutoring, trades and consulting samples. */
+function seedPersona(clients) {
+  const today = isoDate();
+  const mock = isMock();
+  const rows = {};
+  for (const c of clients) rows[c.key] = upsertClient({ name: c.name, email: c.email, company: c.company });
+  let seq = 1017;
+  for (const r of personaInvoices(clients)) {
+    const c = r.client;
+    const open = r.late === null;
+    if (open && !mock) continue; // only real PayPal invoices can be open on a connected account
+    const issue = addDays(today, -r.ago);
+    const due = addDays(issue, c.net);
+    const items = linesOf(r.work);
+    const number = String(++seq);
+    const overdueDays = open ? Math.round((Date.parse(today) - Date.parse(due)) / 864e5) : 0;
+    const paypalId = open ? `INV2-MOCK-${number}` : null;
+    const reminded = open ? overdueDays > 5 : r.late > 7;
+    if (open) mockPut(paypalId, { status: 'SENT', reminders: reminded ? 1 : 0 });
+    insertInvoice({
+      paypalId,
+      number,
+      clientId: rows[c.key].id,
+      items,
+      currency: config.currency,
+      total: invoiceTotal(items),
+      status: open ? 'SENT' : 'PAID',
+      issueDate: issue,
+      dueDate: due,
+      paidDate: open ? null : addDays(due, r.late),
+      note: '',
+      payerUrl: open ? `/mock-pay.html?id=${paypalId}` : null,
+      reminders: reminded ? [{ at: open ? addDays(today, -3) : addDays(due, 5), subject: 'Friendly reminder', tone: 'friendly' }] : [],
+      source: open ? 'paypal' : 'seed',
+    });
+  }
+  const [yy, mm] = today.split('-').map(Number);
+  const firstNext = new Date(Date.UTC(yy, mm, 1)).toISOString().slice(0, 10);
+  for (const c of clients.filter((x) => x.retainer)) {
+    insertSchedule({ clientId: rows[c.key].id, items: linesOf([c.retainer.item]), currency: config.currency, frequency: 'monthly', nextRun: firstNext, dueInDays: c.retainer.due });
+  }
+  kvSet('mock:seq', seq);
 }
 
 function seedInner() {

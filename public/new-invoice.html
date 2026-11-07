@@ -32,7 +32,7 @@
           <thead><tr><th>Service *</th><th class="q">Qty</th><th class="p">Rate</th><th class="amt">Amount</th><th class="x"></th></tr></thead>
           <tbody id="lines"></tbody>
         </table>
-        <button type="button" class="add-line" id="addLine">+ Add service</button>
+        <div class="quick-items"><button type="button" class="add-line" id="addLine">+ Add service</button><span class="qi-label" id="qiLabel"></span><div class="qi" id="quickItems"></div></div>
       </fieldset>
 
       <fieldset>
@@ -124,6 +124,23 @@
     render();
   };
   addLine();
+  // shortcuts for the usual work of this kind of business (Settings > Type of business)
+  if (cfg.typeItems?.length) {
+    $('qiLabel').textContent = 'Common for you:';
+    $('quickItems').innerHTML = cfg.typeItems.map((t, i) => `<button type="button" data-qi="${i}">${esc(t.name)}</button>`).join('');
+    $('quickItems').onclick = (e) => {
+      const b = e.target.closest('[data-qi]');
+      if (!b) return;
+      const t = cfg.typeItems[Number(b.dataset.qi)];
+      const rows = [...$('lines').rows];
+      const empty = rows.find((tr) => !tr.querySelector('[data-i=name]').value.trim());
+      if (empty) {
+        empty.querySelector('[data-i=name]').value = t.name;
+        empty.querySelector('[data-i=unitPrice]').value = t.price;
+      } else addLine({ name: t.name, quantity: 1, unitPrice: t.price });
+      render();
+    };
+  }
 
   // ---- dates ----
   const addDays = (d, n) => {

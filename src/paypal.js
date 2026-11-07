@@ -158,6 +158,13 @@ async function api(method, path, body, extraHeaders = {}) {
 }
 
 const real = {
+  /** Available PayPal balance in a currency, or null if PayPal won't share it (needs the Reporting API). */
+  async getBalance(currency) {
+    const r = await api('GET', `/v1/reporting/balances?currency_code=${encodeURIComponent(currency)}`);
+    const b = (r.balances || []).find((x) => x.currency === currency);
+    const v = Number(b?.available_balance?.value ?? b?.total_balance?.value);
+    return Number.isFinite(v) ? v : null;
+  },
   /**
    * Create + send an invoice. `requestId` (the approval action id) makes this idempotent:
    * - PayPal-Request-Id headers let PayPal de-duplicate retried POSTs
@@ -335,6 +342,9 @@ export function nextInvoiceNumber() {
 export { mockPut };
 
 const mock = {
+  async getBalance() {
+    return null; // demo mode has no real balance; you type what you have
+  },
   async listInvoices() {
     return []; // demo invoices already live in PayPilot's own database
   },

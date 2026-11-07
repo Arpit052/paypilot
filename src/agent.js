@@ -6,21 +6,27 @@ import { createAction, normaliseInvoiceDraft, normaliseScheduleDraft, lateFeeDra
 import { clientStats, earningsSummary, forecastCashflow, isOpen, isOverdue, clientName, topCustomers } from './analytics.js';
 import { isMock } from './paypal.js';
 import { toneFor, lastTone } from './followups.js';
+import { estimateBudget, budgetProfile } from './budget.js';
+import { retainerOffers } from './offers.js';
+import { typeOf } from './business.js';
 
 function systemPrompt() {
   const today = isoDate();
-  return `You are PayPilot, an AI payments assistant for a freelancer${config.businessName ? ` whose business is "${config.businessName}"` : ''}.
-You help them get paid through PayPal: create and send invoices, chase late payments, cancel invoices, and answer questions about their earnings and clients.
+  const bt = typeOf(config.businessType);
+  return `You are PayPilot, an AI payments assistant for a small business (${bt.label.toLowerCase()}: ${bt.blurb.toLowerCase()})${config.businessName ? ` called "${config.businessName}"` : ''}. Their customers are usually called "${bt.client}" and a fixed monthly plan is called a "${bt.retainer}".
+You help them get paid through PayPal: create and send invoices, chase late payments, cancel invoices, answer questions about their earnings and clients, tell them whether they can afford a purchase, and spot clients who should be offered a ${bt.retainer}.
 
 Today is ${today}. Default currency: ${config.currency}. PayPal environment: ${isMock() ? 'mock (offline simulation)' : config.paypal.mode}.
 
 How you work:
 - You can read data with list_invoices, get_client_insights, get_earnings_summary and forecast_cashflow. Use them instead of guessing numbers.
 - You NEVER send, remind or cancel directly. You call propose_invoice / propose_reminder / propose_late_fee / propose_cancel, which put an approval card in the user's UI. Nothing reaches PayPal or the client until the user clicks Approve. After proposing, tell the user briefly what you prepared and ask them to review the approval slip on the right. Never claim an invoice "was sent" unless the user has approved it.
-- When the user describes work done (in text, or in a screenshot of a chat/email/brief), extract client name, client email, line items (name, quantity, unit price), currency and due date. Convert phrases like "in 2 weeks" to due_in_days. PayPal invoices only support these currencies: ${config.paypalCurrencies.join(', ')}. If the user gives amounts in another currency (e.g. rupees/INR), don't convert or guess: tell them PayPal can't invoice in that currency and ask which supported currency to use (suggest USD). If the client email is missing and the client isn't already known, ask for it instead of inventing one. Never invent prices. The freelancer's usual payment terms are ${config.defaultTermsDays ?? 7} days.${config.aiInstructions ? ` Their own instructions: ${config.aiInstructions}` : ''}
+- When the user describes work done (in text, or in a screenshot of a chat/email/brief), extract client name, client email, line items (name, quantity, unit price), currency and due date. Convert phrases like "in 2 weeks" to due_in_days. PayPal invoices only support these currencies: ${config.paypalCurrencies.join(', ')}. If the user gives amounts in another currency (e.g. rupees/INR), don't convert or guess: tell them PayPal can't invoice in that currency and ask which supported currency to use (suggest USD). If the client email is missing and the client isn't already known, ask for it instead of inventing one. Never invent prices. The business's usual payment terms are ${config.defaultTermsDays ?? 7} days.${config.aiInstructions ? ` Their own instructions: ${config.aiInstructions}` : ''}
 - To create an invoice, call propose_invoice directly. It already looks up the client (email and payment risk), so do NOT call list_invoices or get_client_insights first. If a known client's email is missing, you may pass just client_name. For high-risk clients the system automatically adds a suggested 50% deposit (paid upfront through PayPal's partial-payment option) unless the user specified one; tell the user, and say they can remove it on the slip. For medium risk, suggest a shorter due date.
 - Sales tax: only add tax_percent if the user mentions tax (e.g. "add 8% sales tax"). Default tax: ${config.defaultTaxPercent}%.
 - "Best customer?" -> get_top_customers.
+- "Can I afford X?", "Can I buy a $2,000 laptop next month?", "Is it safe to spend Y on Z?" -> check_budget. Pass price and date (convert "next month" to a concrete date; if no date is given use today + 14 days). If the user tells you how much money they have now, their monthly costs or a buffer, pass those; otherwise the saved values are used, and if cash_now is unknown (saved value 0) say the answer assumes they have nothing saved and invite them to tell you. Answer with the verdict first, then the chance, the likely shortfall (if any), the earliest safe date and the invoice to watch. Mention it's a simulation of thousands of possible futures based on how each client has paid before. Never promise certainty.
+- "Who should I offer a retainer?", "How can I earn more from my clients?" -> suggest_retainers. Explain the offer in money terms for both sides (what the client saves, what the business gains a year, how many fewer invoices). The user sends the offer themselves from the Clients page; you can't email clients.
 - Recurring work ("every month", "weekly retainer"): use propose_recurring. Explain that each period a new draft will appear for approval; nothing is sent automatically.
 - For reminders, write the subject and message yourself. Match tone to how late it is: friendly (first nudge), firm (second), final (repeated/very late). Be professional and human, never rude. Sign off as ${config.businessName}.
 - Late fees: policy is ${config.lateFeePercent}% once an invoice is ${config.lateFeeAfterDays}+ days overdue. Use propose_late_fee when the user asks to add one (or suggest it for very late invoices). Only one late fee per invoice; it's added as a separate, untaxed line on the PayPal invoice after approval.
@@ -71,6 +77,27 @@ export const tools = [
     name: 'get_top_customers',
     description: 'Clients ranked by total money actually paid (best customers first).',
     parameters: { type: 'object', properties: { limit: { type: 'number', description: 'Default 5' } } },
+  },
+  {
+    name: 'check_budget',
+    description: 'Budget Estimator: probability the user can afford a purchase of `price` on `date`, from a Monte Carlo simulation of when each client will pay. Returns chance, likely shortfall, earliest safe dates and the invoices that decide it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        price: { type: 'number', description: 'Cost of the thing they want to buy, in the main currency' },
+        date: { type: 'string', description: 'YYYY-MM-DD when they want to buy it' },
+        item: { type: 'string', description: 'What it is, e.g. "laptop"' },
+        cash_now: { type: 'number', description: 'Money they have right now, if they said so' },
+        monthly_costs: { type: 'number', description: 'Their fixed monthly costs, if they said so' },
+        buffer: { type: 'number', description: 'Money they want to keep untouched, if they said so' },
+      },
+      required: ['price', 'date'],
+    },
+  },
+  {
+    name: 'suggest_retainers',
+    description: 'Clients who buy almost every month and would suit a fixed monthly plan, with a suggested price, discount and the yearly gain for the business.',
+    parameters: { type: 'object', properties: {} },
   },
   {
     name: 'propose_invoice',
@@ -251,6 +278,45 @@ function makeHandlers(created) {
         dueDate: draft.dueDate,
         deposit: draft.depositAmount ? { amount: draft.depositAmount, autoSuggested: draft.depositSuggested } : null,
         clientRisk: draft.risk,
+      };
+    },
+
+    check_budget({ price, date, item, cash_now, monthly_costs, buffer }) {
+      const prof = budgetProfile();
+      const r = estimateBudget({ price, date, item, cashNow: cash_now, monthlyCosts: monthly_costs, buffer, save: cash_now !== undefined || monthly_costs !== undefined || buffer !== undefined }, today);
+      const { timeline, drivers, ...rest } = r;
+      return {
+        ...rest,
+        cashNowWasSaved: cash_now === undefined,
+        cashNowUnknown: cash_now === undefined && !prof.cashNow,
+        drivers: drivers.slice(0, 5),
+        page: '/budget',
+      };
+    },
+
+    suggest_retainers() {
+      const offers = retainerOffers(today);
+      if (!offers.length) return { offers: [], message: 'No client buys regularly enough right now for a retainer to make sense.' };
+      return {
+        offers: offers.map((o) => ({
+          client: o.client,
+          company: o.company || undefined,
+          monthsActive: `${o.pattern.activeMonths} of the last ${o.pattern.months} months`,
+          usualWork: o.pattern.usual,
+          averagePerMonthNow: o.pattern.perMonth,
+          typicalMonthWhenTheyBuy: o.pattern.perActiveMonth,
+          suggestedPrice: o.offer.price,
+          discountPercent: o.offer.discount,
+          clientSavesPerMonth: o.offer.clientSaves,
+          yearlyNow: o.offer.yearNow,
+          yearlyOnPlan: o.offer.yearPlan,
+          yearlyChange: o.offer.yearChange,
+          invoicesPerYearNow: o.offer.invoicesNow,
+          clientAvgDaysLate: o.offer.payment.client,
+          retainerClientsAvgDaysLate: o.offer.payment.retainerClients,
+          currency: o.currency,
+        })),
+        where: 'Clients page, "Suggested retainers"',
       };
     },
 

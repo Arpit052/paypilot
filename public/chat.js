@@ -218,6 +218,7 @@ $('newChat').onclick = async () => {
 
 // ---- boot ----
 const cfg = await header('chat');
+document.querySelectorAll('#chips [data-persona]').forEach((b) => b.dataset.persona !== (cfg.demoPersona || '') && b.remove());
 if (cfg.llmProvider === 'none') {
   addMsg('err', 'AI is not configured yet. Add <b>ANTHROPIC_API_KEY</b> or <b>OPENAI_API_KEY</b> to your <code>.env</code> file and restart the server.');
 }

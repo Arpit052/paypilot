@@ -4,6 +4,9 @@ const cfg = await header('settings');
 const $ = (id) => document.getElementById(id);
 let S = await api('/api/settings');
 let AP = (await api('/api/autopilot')).autopilot;
+const { types: TYPES } = await api('/api/business-types');
+const TERMS = (d) => (d === 0 ? 'Due on receipt' : `Net ${d}`);
+const STYLE = { warm: 'Warm', neutral: 'Neutral', brief: 'Brief' };
 
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'JPY', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'ILS', 'MXN', 'BRL', 'SGD', 'HKD', 'TWD', 'THB', 'PHP', 'MYR', 'CNY'];
 const NOTIFY = [
@@ -26,10 +29,38 @@ function fill() {
   $('notifyRows').innerHTML = NOTIFY.map(
     ([k, t, d]) => `<label class="set-row switch-row"><span class="lbl">${t}<span>${d}</span></span><input type="checkbox" class="switch" name="notify.${k}" ${b.notify?.[k] !== false ? 'checked' : ''}></label>`
   ).join('');
+  renderTypes();
   renderPaypal(S.paypal);
   renderPlan();
   renderData();
 }
+
+// ---------------- business type ----------------
+function renderTypes() {
+  const cur = S.business.businessType || 'freelancer';
+  $('btGrid').innerHTML = TYPES.map(
+    (t) => `<label class="bt ${t.key === cur ? 'on' : ''}"><input type="radio" name="businessType" value="${t.key}" ${t.key === cur ? 'checked' : ''}><b>${esc(t.label)}</b><span>${esc(t.blurb)}</span></label>`
+  ).join('');
+  showPreset();
+}
+function showPreset() {
+  const key = document.querySelector('[name=businessType]:checked')?.value || 'freelancer';
+  const t = TYPES.find((x) => x.key === key);
+  const b = S.business;
+  const same = b.defaultTermsDays === t.terms && b.reminderStyle === t.style && (b.defaultNote || '') === t.note;
+  document.querySelectorAll('.bt').forEach((el) => el.classList.toggle('on', el.querySelector('input').checked));
+  $('btPreset').innerHTML = `<div class="bt-p-h"><b>Usual for ${esc(t.label.toLowerCase())}</b>${same ? '<span class="muted small">In use</span>' : `<button type="button" class="btn ghost small" id="btApply">Use these defaults</button>`}</div>
+    <dl><div><dt>Terms</dt><dd>${TERMS(t.terms)}</dd></div><div><dt>Reminders</dt><dd>${STYLE[t.style]}</dd></div><div><dt>Monthly plan</dt><dd>${esc(t.retainer[0].toUpperCase() + t.retainer.slice(1))}</dd></div></dl>
+    <p>${esc(t.note)}</p>
+    <div class="bt-items">${t.items.map((i) => `<span>${esc(i.name)} · ${esc(money(i.price, cfg.currency))}</span>`).join('')}</div>`;
+  $('btApply')?.addEventListener('click', async () => {
+    await api('/api/settings/business', { body: { businessType: key, applyPreset: true } });
+    S = await api('/api/settings');
+    toast(`Using ${t.label.toLowerCase()} defaults: ${TERMS(t.terms)}, ${STYLE[t.style].toLowerCase()} reminders`);
+    fill();
+  });
+}
+document.addEventListener('change', (e) => e.target.name === 'businessType' && showPreset());
 
 // ---------------- generic section save ----------------
 function collect(form) {
@@ -185,6 +216,8 @@ async function renderData() {
     <div><dt>Collected</dt><dd>${money(paid.reduce((t, i) => t + (i.currency === cfg.currency ? i.total : 0), 0), cfg.currency)}</dd></div>`;
   $('restoreSub').textContent = S.hiddenClients ? `${S.hiddenClients} removed client${S.hiddenClients > 1 ? 's' : ''} can be imported from PayPal again` : 'No removed clients';
   $('restoreBtn').disabled = !S.hiddenClients;
+  const t = TYPES.find((x) => x.key === (S.business.businessType || 'freelancer'));
+  $('resetSub').textContent = `Start over with sample clients of a ${t.label.toLowerCase()} business. Settings are kept.`;
 }
 $('restoreBtn').onclick = async () => {
   const r = await api('/api/settings/hidden/clear', { body: {} });

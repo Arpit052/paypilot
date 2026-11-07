@@ -27,6 +27,9 @@ import { listNotifications, unreadNotificationCount, markNotificationsRead, dele
 import { applySettings, setupDone, publicSettings, connectPaypal, useDemoMode, disconnectPaypal, saveBusinessSettings } from './src/settings.js';
 import { verifyCredentials } from './src/paypal.js';
 import { isOpen } from './src/analytics.js';
+import { estimateBudget, budgetProfile } from './src/budget.js';
+import { retainerOffers, draftOffer, markOffered, dismissOffer, acceptPayload, markAccepted } from './src/offers.js';
+import { businessTypeList, typeOf, BUSINESS_TYPES } from './src/business.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 const startedAt = Date.now();
@@ -182,8 +185,14 @@ export function createApp() {
       })(),
       lateFeePercent: config.lateFeePercent,
       lateFeeAfterDays: config.lateFeeAfterDays,
+      businessType: config.businessType || 'freelancer',
+      businessTypeLabel: typeOf(config.businessType).label,
+      typeItems: typeOf(config.businessType).items.map(([name, price]) => ({ name, price })),
+      retainerWord: typeOf(config.businessType).retainer,
+      demoPersona: kvGet('demo:persona') || null,
     })
   );
+  api.get('/business-types', (req, res) => res.json({ types: businessTypeList(), current: config.businessType || 'freelancer' }));
 
   // ---- settings: PayPal connection + business details ----
   api.get('/settings', (req, res) => res.json(publicSettings()));
@@ -198,6 +207,7 @@ export function createApp() {
     if (!check.ok) throw httpError(400, check.error);
     connectPaypal({ clientId, clientSecret });
     if (bizName) saveBusinessSettings({ businessName: bizName });
+    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, applyPreset: true });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
@@ -220,6 +230,7 @@ export function createApp() {
   api.post('/settings/paypal/demo', (req, res) => {
     const bizName = String(req.body?.businessName || '').trim();
     if (bizName) saveBusinessSettings({ businessName: bizName });
+    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, applyPreset: true });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
@@ -550,6 +561,41 @@ export function createApp() {
     res.json({ ok: true });
   });
 
+  // ---- Budget Estimator ----
+  api.get('/budget/profile', async (req, res) => {
+    let balance = null;
+    if (req.query.balance && !isMock()) balance = await paypal.getBalance(config.currency).catch(() => null);
+    res.json({ profile: budgetProfile(), currency: config.currency, paypalBalance: balance, demo: isMock() });
+  });
+  api.post('/budget/estimate', (req, res) => res.json(estimateBudget(req.body || {})));
+
+  // ---- retainer offers ----
+  api.get('/offers', (req, res) => res.json({ offers: retainerOffers(), word: typeOf(config.businessType).retainer }));
+  api.post('/offers/:clientId/draft', async (req, res) => res.json({ draft: await draftOffer(req.params.clientId, { refresh: Boolean(req.body?.refresh) }) }));
+  api.post('/offers/:clientId/offered', (req, res) => {
+    markOffered(req.params.clientId);
+    logActivity('offer_sent', `Retainer offer sent to ${getClient(req.params.clientId)?.name || 'client'}`);
+    res.json({ ok: true });
+  });
+  api.post('/offers/:clientId/dismiss', (req, res) => {
+    dismissOffer(req.params.clientId);
+    res.json({ ok: true });
+  });
+  // the client said yes: create the retainer (each invoice still waits for approval)
+  api.post('/offers/:clientId/accept', async (req, res) => {
+    const { offer, payload } = acceptPayload(req.params.clientId, req.body || {});
+    const a = createAction('create_schedule', payload, { origin: 'offer', summary: `Retainer for ${offer.client}` });
+    try {
+      const done = await approveAction(a.id);
+      markAccepted(req.params.clientId, payload.items[0].unitPrice);
+      logActivity('offer_accepted', `${offer.client} accepted a ${offer.offer.word} at ${offer.currency} ${payload.items[0].unitPrice} a month`);
+      res.json({ action: done });
+    } catch (e) {
+      rejectAction(a.id);
+      throw e;
+    }
+  });
+
   api.use((req, res) => res.status(404).json({ error: 'Not found' }));
   app.use('/api', api);
 
@@ -559,6 +605,7 @@ export function createApp() {
   app.get(['/assistant', '/assistant.html'], page('index.html'));
   app.get(['/calendar', '/calendar.html'], page('calendar.html'));
   app.get(['/analytics', '/analytics.html'], page('analytics.html'));
+  app.get(['/budget', '/budget.html'], page('budget.html'));
   app.use(express.static(path.join(config.root, 'public'), { extensions: ['html'], index: false }));
   app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
