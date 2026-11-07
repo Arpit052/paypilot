@@ -4,7 +4,8 @@
 // the sums and counted separately so nothing is silently mixed.
 import { config, isoDate, addDays, daysBetween } from './config.js';
 import { listInvoices, listClients, listSchedules } from './db.js';
-import { isOpen, isPaid, forecastCashflow } from './analytics.js';
+import { isOpen, isPaid } from './analytics.js';
+import { forecastFromModel } from './budget.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -122,7 +123,7 @@ export function analytics({ months = 6 } = {}, today = isoDate()) {
   // concentration + repeat business
   const top = clients[0];
   const repeat = clients.filter((c) => c.invoices >= 2).length;
-  const fc = forecastCashflow(30, today);
+  const fc = forecastFromModel(30, today);
 
   // calendar months, oldest first (the current month is marked partial)
   const monthly = [];

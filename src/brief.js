@@ -3,6 +3,7 @@
 import { config, isoDate, daysBetween } from './config.js';
 import { listInvoices, listClients, listSchedules } from './db.js';
 import { complete, llmAvailable } from './llm.js';
+import { forecastFromModel } from './budget.js';
 import {
   earningsSummary,
   forecastCashflow,
@@ -51,7 +52,7 @@ export function briefFacts(today = isoDate()) {
   }
   const overdueByCustomer = [...byClient.values()].sort((a, b) => b.amount - a.amount);
 
-  const fc = forecastCashflow(30, today);
+  const fc = forecastFromModel(30, today);
   const watchList = listClients()
     .map((c) => ({ client: c.name, ...clientStats(c.id, today) }))
     .filter((c) => ['medium', 'high'].includes(c.riskLabel))

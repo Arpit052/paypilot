@@ -15,7 +15,9 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, tells y
 **What PayPilot does.** It's an AI agent on top of PayPal Invoicing that runs the whole money loop for a small business. The AI proposes; the owner approves every write.
 
 - **Describe work, get a PayPal invoice.** "Bill Marcus for 3 ad creatives at $145 plus a $60 rush fee", or a screenshot of a client's message, becomes a real PayPal invoice slip to review and approve.
-- **Autopilot collections.** Every unpaid invoice gets a plan: a friendly heads-up, then a firm reminder, then a final one with an optional late fee. On each date the AI writes the email in the owner's style and waits for approval. The tone never softens after a firmer reminder.
+- **Pay to unlock.** Attach the final files to an invoice. The client gets a private page that stays locked until PayPal reports the payment, then unlocks by itself. This answers freelancers' biggest fear: handing over the work and never getting paid.
+- **Early-pay discount.** "Pay within 48 hours, get 2% off" as a real PayPal invoice-level discount. PayPilot removes it on PayPal automatically if the window passes. The suggested percentage comes from the client's history, and is zero for clients who already pay on time.
+- **Autopilot collections.** Every unpaid invoice gets a plan: a friendly heads-up, then a firm reminder, then a final one with an optional late fee. On each date the AI writes the email in the owner's style and waits for approval. The tone never softens after a firmer reminder, and the voice follows the client: a warm check-in for a good client, a formal note with terms, days overdue and the late-fee date for a repeat late payer.
 - **Budget Estimator.** "Can I buy a $2,000 laptop on Dec 5?" PayPilot simulates 4,000 possible futures of who pays and when, learned from each client's own payment history: empirical-Bayes blending, conditioning on how late an invoice already is, a Beta prior for non-payment, and Poisson new work. It counts the money that really reaches a freelancer: PayPal's 3.49% + $0.49 fee and the tax set-aside come off every payment, and bills leave on their day of the month. A purchase counts as safe only if the balance stays above the owner's cushion for the 30 days after, so next month's rent is covered too. It answers with:
   - the chance, with its error margin
   - the most they can safely spend that day
@@ -27,6 +29,8 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, tells y
 - **Suggested retainers.** It finds clients who already buy almost every month and prices a monthly plan a little below a typical month with them. It shows both sides: the yearly gain for the business, the client's saving, and how much faster existing retainer clients pay. The AI writes the offer email, and one click creates the retainer when the client says yes. This doesn't just collect money; it helps owners earn more of it, more predictably.
 - **Works for any profession.** The first screen asks what you do: Web Developer, Graphic Designer, Content Writer, Digital Marketer, Video Editor, Consultant, Photographer, Virtual Assistant, or Other in your own words. That sets payment terms, reminder style, invoice notes, one-click line items and the AI's vocabulary. The demo ships matching work for each, sold to the same six realistic clients.
 - **Knows your clients.** Risk labels come from real payment history. Habitual late payers get a 50% deposit via PayPal partial payments, or a deposit note where PayPal doesn't offer split payments.
+- **Know when money lands.** Every invoice shows when it was paid, or when it's likely to be paid, with a range from that client's history. The 30-day forecast has a popover with the exact sum (amount × chance, per invoice).
+- **Tax-ready year end.** A summary for an accountant: gross income, PayPal fees (deductible), net, IRS estimated-tax quarters with due dates, rough self-employment tax, and which 1099 forms to expect under the 2026 thresholds. Exports to PDF and CSV.
 - **See the business.** A dashboard, Collections, a calendar of due dates and planned reminders, and analytics on days to get paid, on-time rate and best-earning work. Every number is computed in code, never guessed by the model.
 - **Real-world details.**
   - Mark as paid for bank transfers, recorded on PayPal too
@@ -41,7 +45,8 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, tells y
 - PayPal REST **Invoicing v2 API**:
   - **create**, with per-line sales tax, **partial payments / deposits**, reference and notes
   - send, get, list (import)
-  - full update (late fees)
+  - full update (late fees, removing an expired early-pay discount)
+  - invoice-level discount (early-pay offers)
   - remind, cancel
   - **record payment** (mark as paid)
 
@@ -75,8 +80,8 @@ Before recording:
 |---|---|---|
 | 0:00–0:15 | Dashboard | "More than half of small businesses are waiting on unpaid invoices, about $17,000 each. PayPilot is an AI money agent on PayPal, and nothing goes out without your approval." |
 | 0:15–0:45 | Assistant: type the Marcus prompt. The slip shows High risk and a 50% deposit. Approve. | "I describe the job. It sees Marcus pays two weeks late and adds a deposit. I approve, and it's a real PayPal invoice." |
-| 0:45–1:00 | Sandbox buyer pays; the bell shows "Payment received" | "The client pays on PayPal and PayPilot knows right away." |
-| 1:00–1:25 | Collections: firm reminder in the drawer, Approve | "Late invoices get Autopilot: friendly, firm, final. The AI writes each one on the right day." |
+| 0:45–1:00 | New invoice with a Figma link (pay to unlock). Open the client's locked page, pay as the sandbox buyer, and the page unlocks | "I attach the final files, and the client's page stays locked until PayPal says they paid. Then it opens by itself. No more handing over work and waiting." |
+| 1:00–1:25 | Collections: Marcus's firm reminder (formal, with terms and the late-fee date), then a good client's warm check-in | "Late invoices get Autopilot, and the AI knows who it's writing to: formal with the repeat late payer, warm with a good client." |
 | 1:25–2:05 | Budget page: add Rent on the 1st and 25% tax, then Estimate. Show the gauge, "Most you can safely spend", "If you wait", and "What decides it"; untick Marcus's invoice. | "Now the question every freelancer has: can I buy this laptop? PayPilot simulates 4,000 futures from how each client really pays, after PayPal fees, tax and my rent on the 1st. Today it's unlikely, but I can safely spend about $1,100, it's safe from the 12th, and Marcus's invoice decides it. If he never pays, here's what happens." |
 | 2:05–2:30 | Clients → Suggested retainers → Rachel: Write offer, then "Rachel said yes" | "It also helps me earn more. Rachel books almost every month, so PayPilot suggests a retainer: she pays less than a typical month, I earn more a year and get paid on a fixed date. One click and it's set up." |
 | 2:30–2:45 | Switch to the Video Editor profile: same clients, editing work, "monthly editing package" | "And it isn't just for designers. A web developer, a writer, a video editor or a VA gets the same agent, with their own terms and language." |

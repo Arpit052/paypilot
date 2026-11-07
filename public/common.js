@@ -78,6 +78,10 @@ export async function copyPayLink(url) {
     document.execCommand('copy');
     t.remove();
   }
+  if (full.includes('/d/')) {
+    toast(/^https?:\/\/(localhost|127\.0\.0\.1)/.test(full) ? 'Unlock page copied. It only opens on this computer until PayPilot is deployed.' : 'Unlock page copied. Send it to your client with the invoice.');
+    return;
+  }
   const demo = full.includes('/mock-pay.html');
   const local = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(full);
   toast(
@@ -142,9 +146,9 @@ export async function header(active) {
   const initials = biz.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
   const navLink = (p) => {
     const badge = p.key === 'followups' && pending ? `<span class="sb-badge" title="${pending} waiting for approval">${pending}</span>` : '';
-    return `<a class="sb-link" href="${p.href}" ${active === p.key ? 'aria-current="page"' : ''} data-tip="${esc(p.label)}">${icon(p.key)}<span class="sb-text">${esc(p.label)}</span>${badge}</a>`;
+    return `<a class="sb-link" href="${p.href}" ${active === p.key || (active === 'tax' && p.key === 'analytics') ? 'aria-current="page"' : ''} data-tip="${esc(p.label)}">${icon(p.key)}<span class="sb-text">${esc(p.label)}</span>${badge}</a>`;
   };
-  const group = (g) => `<div class="sb-label">${g}</div>${PAGES.filter((p) => p.group === g).map(navLink).join('')}`;
+  const group = (g) => `<div class="sb-label">${g}</div>${PAGES.filter((p) => p.group === g).map((p) => navLink(p)).join('')}`;
   const ap = CONFIG.autopilot;
   try {
     if (localStorage.getItem('pp-sb') === 'collapsed') document.body.classList.add('sb-collapsed');
@@ -176,7 +180,7 @@ export async function header(active) {
     </div>`;
   const bar = document.createElement('header');
   bar.className = 'topbar';
-  const title = PAGES.find((p) => p.key === active)?.label || (active === 'new' ? 'New invoice' : '');
+  const title = PAGES.find((p) => p.key === active)?.label || { new: 'New invoice', tax: 'Tax summary' }[active] || '';
   bar.innerHTML = `
     <button class="sb-icon mobile-only" id="sbOpen" aria-label="Open menu">${icon('menu')}</button>
     <div class="crumb"><span class="muted">${esc(biz)}</span><span class="sep">/</span><b>${esc(title)}</b></div>
@@ -499,12 +503,19 @@ export function renderSlip(action, { onDone, onGone } = {}) {
         <div><label>Sales tax %</label><input data-f="taxPercent" class="num" type="number" min="0" max="50" step="0.01" value="${esc(p.taxPercent || 0)}"></div>
         <div><label>Deposit due upfront (${esc(cur)})</label><input data-f="depositAmount" class="num" type="number" min="0" step="0.01" value="${esc(p.depositAmount || 0)}" placeholder="0 = none"></div>
       </div>
+      <div class="row2">
+        <div><label>Early-pay discount</label><select data-f="earlyPayPercent" aria-label="Early-pay discount">${[0, 1, 2, 3, 5].map((v) => `<option value="${v}" ${Number(p.earlyPayPercent || 0) === v ? 'selected' : ''}>${v ? `${v}% off if paid within 48 h` : 'None'}</option>`).join('')}</select></div>
+        <div><label>Final work link (pay to unlock)</label><input data-f="deliveryUrl" type="url" value="${esc(p.deliveryUrl || '')}" placeholder="https://figma.com/… (optional)"></div>
+      </div>
+      ${p.earlyPaySuggested ? `<div class="slip-hint" data-ephint>${p.earlyPaySuggested.percent ? `Suggested: <b>${p.earlyPaySuggested.percent}%</b>. ${esc(p.earlyPaySuggested.reason)}` : `No discount suggested. ${esc(p.earlyPaySuggested.reason)}`}</div>` : ''}
       <div class="sums num">
         <div><span>Subtotal</span><span data-sub></span></div>
+        <div data-discrow><span>Early-pay discount</span><span data-disc></span></div>
         <div data-taxrow><span>Sales tax</span><span data-tax></span></div>
       </div>
       <div class="total"><span>Total due</span><b class="num" data-total></b></div>
       <div class="deposit-line num" data-deprow></div>
+      <div class="deposit-line" data-extrarow></div>
       ${p.risk && ['medium', 'high'].includes(p.risk.label) ? `<div class="risk ${p.risk.label}">This client has ${p.risk.label} payment risk${p.risk.avgDaysLate ? ` and usually pays ${p.risk.avgDaysLate} days late` : ''}.${p.depositSuggested ? ' A 50% deposit was added so you get paid part upfront. Set it to 0 to remove it.' : ' Consider a shorter due date or a deposit.'}</div>` : ''}
       <div class="slip-actions">
         <button class="btn" data-approve>Approve &amp; send via PayPal</button>
@@ -542,12 +553,22 @@ export function renderSlip(action, { onDone, onGone } = {}) {
         tax += r2((a * pct) / 100);
         tr.querySelector('.amt').textContent = money(a, cur);
       });
+      const ep = Number(el.querySelector('[data-f=earlyPayPercent]').value) || 0;
+      const disc = r2((sub * ep) / 100);
+      const taxAfter = r2(tax - (tax * ep) / 100);
       el.querySelector('[data-sub]').textContent = money(sub, cur);
-      el.querySelector('[data-tax]').textContent = money(tax, cur);
+      el.querySelector('[data-disc]').textContent = `−${money(disc, cur)}`;
+      el.querySelector('[data-discrow]').classList.toggle('hidden', !ep);
+      el.querySelector('[data-tax]').textContent = money(ep ? taxAfter : tax, cur);
       el.querySelector('[data-taxrow]').classList.toggle('hidden', !pct);
-      el.querySelector('[data-total]').textContent = money(sub + tax, cur);
+      el.querySelector('[data-total]').textContent = money(sub - disc + (ep ? taxAfter : tax), cur);
       const dep = Number(el.querySelector('[data-f=depositAmount]').value) || 0;
       el.querySelector('[data-deprow]').textContent = dep > 0 ? `${money(dep, cur)} due upfront, ${money(Math.max(sub + tax - dep, 0), cur)} by the due date` : '';
+      const link = el.querySelector('[data-f=deliveryUrl]').value.trim();
+      el.querySelector('[data-extrarow]').textContent = [
+        ep ? `If it isn't paid within 48 hours, PayPilot removes the discount on PayPal and the full ${money(sub + tax, cur)} is due.` : '',
+        link ? 'The client gets a private page that unlocks the final work once this invoice is paid.' : '',
+      ].filter(Boolean).join(' ');
     };
     p.items.forEach(addRow);
     el.querySelector('.add-line').onclick = () => { addRow(); recalc(); };
@@ -561,6 +582,8 @@ export function renderSlip(action, { onDone, onGone } = {}) {
       taxPercent: Number(el.querySelector('[data-f=taxPercent]').value) || 0,
       depositAmount: Number(el.querySelector('[data-f=depositAmount]').value) || 0,
       depositPercent: 0,
+      earlyPayPercent: Number(el.querySelector('[data-f=earlyPayPercent]').value) || 0,
+      deliveryUrl: el.querySelector('[data-f=deliveryUrl]').value.trim(),
       items: items(),
     });
   } else if (action.type === 'create_schedule') {
@@ -593,6 +616,7 @@ export function renderSlip(action, { onDone, onGone } = {}) {
           <div class="slip-from">Invoice #${esc(p.number)} · ${esc(p.client)} · ${money(p.amount, cur)}${p.daysOverdue ? ` · ${p.daysOverdue} days overdue` : ''}</div></div>
         <span class="pill ${esc(p.tone)}">${esc(p.tone)}</span>
       </div>
+      ${p.voiceLabel ? `<div class="slip-voice"><b>${esc(p.voiceLabel)}</b> · ${esc({ trusted: 'written as a warm check-in', late: 'written formally, with your terms and the late-fee date', new: 'written to be clear about how to pay', steady: 'written in your usual style' }[p.voice] || '')}</div>` : ''}
       <label>Subject</label><input data-f="subject" value="${esc(p.subject)}">
       <label>Message</label><textarea data-f="message">${esc(String(p.message || "").replace(/\\n/g, "\n"))}</textarea>
       ${p.draftedBy === 'template' ? '<div class="slip-meta muted">Drafted from a template because the AI was unavailable. Edit it as you like.</div>' : ''}
@@ -663,7 +687,7 @@ export function renderSlip(action, { onDone, onGone } = {}) {
       a.type === 'create_schedule'
         ? `Recurring ${esc(r.frequency)} invoice scheduled. First draft on <b>${esc(fmtDate(r.nextRun))}</b>.`
         : a.type === 'create_invoice'
-        ? `Invoice <b>#${esc(r.number)}</b> sent through PayPal.${r.payerUrl ? ` <button class="linkbtn" data-copylink="${esc(r.payerUrl)}" title="Paste it in a text or WhatsApp. Clients pay faster from a direct link.">Copy pay link</button>` : ''}`
+        ? `Invoice <b>#${esc(r.number)}</b> sent through PayPal.${r.payerUrl ? ` <button class="linkbtn" data-copylink="${esc(r.payerUrl)}" title="Paste it in a text or WhatsApp. Clients pay faster from a direct link.">Copy pay link</button>` : ''}${r.unlockLink ? ` <button class="linkbtn" data-copylink="${esc(r.unlockLink)}" title="The client's page that unlocks the final work once paid">Copy unlock page</button>` : ''}`
         : a.type === 'send_reminder'
           ? `Reminder sent for invoice <b>#${esc(r.number)}</b>.`
           : a.type === 'add_late_fee'
@@ -726,30 +750,40 @@ const PAID_ST = ['PAID', 'MARKED_AS_PAID'];
 const OPEN_ST = ['SENT', 'UNPAID', 'PARTIALLY_PAID'];
 const dayDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 
+function deliveryBox(inv, isOpen) {
+  const d = inv.delivery;
+  if (d)
+    return `<div class="dr-dl ${d.unlockedAt ? 'open' : ''}"><div><b>Pay to unlock</b><span>${d.unlockedAt ? `Unlocked ${fmtDate(d.unlockedAt.slice(0, 10))}. Your client can open the files.` : 'Locked. The client\'s page opens the files as soon as this invoice is paid.'}</span><em>${esc(d.url)}</em></div>
+      <div class="dr-dl-acts"><button class="btn small" type="button" data-copylink="${esc(d.link)}">Copy unlock page</button><a class="btn ghost small" href="${esc(d.link)}" target="_blank" rel="noopener">Preview</a>${d.unlockedAt ? '' : '<button class="linkbtn small" type="button" data-dlrm>Remove</button>'}</div></div>`;
+  if (!isOpen) return '';
+  return `<form class="dr-dl add" data-dladd><div><b>Pay to unlock</b><span>Lock the final files behind this invoice. You get a link to send; it opens the files once the invoice is paid.</span></div>
+    <div class="pf-row"><input name="url" type="url" required placeholder="https://figma.com/… or a Drive / Dropbox link" aria-label="Final work link"><button class="btn small" type="submit">Lock files</button></div><div class="slip-error" data-dlerr></div></form>`;
+}
+
 /** Ordered events for one invoice, built from its saved history. */
 export function invoiceTimeline(inv, today) {
   const ev = [];
   const cur = inv.currency;
   ev.push({
     at: inv.issueDate,
-    icon: '✉️',
+    icon: '',
     title: inv.source === 'import' ? 'Created on PayPal' : inv.source === 'seed' ? 'Invoice issued' : 'Sent through PayPal',
     sub: `${money(inv.total - (inv.items || []).filter((i) => i.lateFee).reduce((s, i) => s + i.unitPrice, 0), cur)} to ${inv.client || 'client'}${inv.depositAmount ? ` · ${money(inv.depositAmount, cur)} deposit requested upfront` : ''}`,
   });
   (inv.reminders || []).forEach((r, n) =>
-    ev.push({ at: r.at, icon: '🔔', title: `${r.tone ? r.tone[0].toUpperCase() + r.tone.slice(1) : 'Payment'} reminder sent`, sub: r.subject || `Reminder ${n + 1}` })
+    ev.push({ at: r.at, icon: '', title: `${r.tone ? r.tone[0].toUpperCase() + r.tone.slice(1) : 'Payment'} reminder sent`, sub: r.subject || `Reminder ${n + 1}` })
   );
-  (inv.items || []).filter((i) => i.lateFee).forEach((i) => ev.push({ at: i.addedAt || today, icon: '⏰', cls: 'late', title: `${i.name} added`, sub: `+${money(i.unitPrice, cur)}, new total ${money(inv.total, cur)}` }));
+  (inv.items || []).filter((i) => i.lateFee).forEach((i) => ev.push({ at: i.addedAt || today, icon: '', cls: 'late', title: `${i.name} added`, sub: `+${money(i.unitPrice, cur)}, new total ${money(inv.total, cur)}` }));
   const paid = PAID_ST.includes(inv.status);
   if (paid && inv.paidDate) {
     const late = dayDiff(inv.dueDate, inv.paidDate);
-    ev.push({ at: inv.paidDate, icon: '💰', cls: 'paid', title: `Paid ${money(inv.total, cur)}`, sub: late > 0 ? `${late} day${late === 1 ? '' : 's'} after the due date` : 'On time 🎉' });
+    ev.push({ at: inv.paidDate, icon: '', cls: 'paid', title: `Paid ${money(inv.total, cur)}`, sub: late > 0 ? `${late} day${late === 1 ? '' : 's'} after the due date` : 'On time' });
   }
-  if (inv.status === 'PARTIALLY_PAID') ev.push({ at: today, icon: '💵', cls: 'paid', title: 'Deposit received', sub: 'Part of this invoice has been paid' });
-  if (inv.status === 'CANCELLED') ev.push({ at: null, icon: '✖', cls: 'late', title: 'Invoice cancelled', sub: '' });
+  if (inv.status === 'PARTIALLY_PAID') ev.push({ at: today, icon: '', cls: 'paid', title: 'Deposit received', sub: 'Part of this invoice has been paid' });
+  if (inv.status === 'CANCELLED') ev.push({ at: null, icon: '', cls: 'late', title: 'Invoice cancelled', sub: '' });
   if (!paid && inv.status !== 'CANCELLED') {
-    if (inv.dueDate < today) ev.push({ at: inv.dueDate, icon: '!', cls: 'late', title: 'Payment due date passed', sub: `${dayDiff(inv.dueDate, today)} days overdue` });
-    else ev.push({ at: inv.dueDate, icon: '⏳', cls: 'future', title: inv.dueDate === today ? 'Due today' : 'Payment due', sub: inv.dueDate === today ? '' : `in ${dayDiff(today, inv.dueDate)} day${dayDiff(today, inv.dueDate) === 1 ? '' : 's'}` });
+    if (inv.dueDate < today) ev.push({ at: inv.dueDate, icon: '', cls: 'late', title: 'Payment due date passed', sub: `${dayDiff(inv.dueDate, today)} days overdue` });
+    else ev.push({ at: inv.dueDate, icon: '', cls: 'future', title: inv.dueDate === today ? 'Due today' : 'Payment due', sub: inv.dueDate === today ? '' : `in ${dayDiff(today, inv.dueDate)} day${dayDiff(today, inv.dueDate) === 1 ? '' : 's'}` });
   }
   const order = (e) => (e.cls === 'future' ? '9999' : e.at || '9998');
   return ev.sort((a, b) => (order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0));
@@ -819,6 +853,7 @@ export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = 
     <div class="dr-num">Invoice #${esc(inv.number)} · <span class="pill ${esc(status)}">${esc(label)}</span></div>
     <div class="dr-amt num">${money(inv.total, cur)}</div>
     <div class="dr-who">${esc(inv.client || '')}${inv.clientEmail ? ` · ${esc(inv.clientEmail)}` : ''}${inv.reference ? ` · Ref ${esc(inv.reference)}` : ''}</div>
+    ${inv.paidDate ? `<div class="dr-when"><span>Paid on</span><b>${fmtDate(inv.paidDate)}</b><em>${inv.paidLateDays > 0 ? `${inv.paidLateDays} days after the due date` : inv.paidLateDays < 0 ? `${-inv.paidLateDays} days early` : inv.paidLateDays === 0 ? 'on the due date' : ''}</em></div>` : isOpen && inv.expected?.date ? `<div class="dr-when exp"><span>Expected around</span><b>${fmtDate(inv.expected.date)}</b><em>8 in 10 times between ${fmtDate(inv.expected.early)} and ${fmtDate(inv.expected.late)} · ${inv.expected.chance}% chance it's paid at all · from ${inv.expected.basedOn} past payment${inv.expected.basedOn === 1 ? '' : 's'}</em></div>` : ''}
     <table class="dr-lines"><tbody>${lines}${inv.taxPercent ? `<tr><td>Sales tax (${esc(inv.taxPercent)}%)</td><td>${money(Math.round(taxable * inv.taxPercent) / 100, cur)}</td></tr>` : ''}</tbody></table>
     <div class="dr-actions">
       ${isOpen && inv.payerUrl ? `<button class="btn small" data-copylink="${esc(inv.payerUrl)}">Copy pay link</button>` : ''}
@@ -826,6 +861,8 @@ export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = 
       ${isOpen ? `<a class="btn ghost small" href="${ask(`Draft a reminder for invoice #${inv.number}`)}">Draft a reminder</a>` : ''}
       ${isOpen && status === 'OVERDUE' && !(inv.items || []).some((i) => i.lateFee) ? `<a class="btn ghost small" href="${ask(`Add a late fee to invoice #${inv.number}`)}">Add late fee</a>` : ''}
     </div>
+    ${inv.earlyPay ? `<div class="dr-ep ${esc(inv.earlyPay.status)}"><b>Early-pay offer</b><span>${inv.earlyPay.percent}% off (${money(inv.earlyPay.amount, cur)}) ${inv.earlyPay.status === 'active' ? `until ${new Date(inv.earlyPay.until).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. After that the full ${money(inv.earlyPay.fullTotal, cur)} applies.` : inv.earlyPay.status === 'used' ? '· paid in time, the discount worked.' : `· ended, the full ${money(inv.earlyPay.fullTotal, cur)} is due.`}</span></div>` : ''}
+    <div data-delivery>${deliveryBox(inv, isOpen)}</div>
     ${isOpen ? `<div class="paid-form" data-paidform>
       <b>Got paid another way?</b>
       <span class="muted">Bank transfer, cash or cheque. ${mock ? '' : 'PayPilot records it on the PayPal invoice too.'}</span>
@@ -843,9 +880,34 @@ export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = 
   drawerEls = [back, dr];
   requestAnimationFrame(() => { back.classList.add('open'); dr.classList.add('open'); });
   back.onclick = closeInvoiceDrawer;
+  const box = dr.querySelector('[data-delivery]');
+  const wire = () => {
+    box.querySelector('[data-dladd]')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const { delivery, local } = await api(`/api/invoices/${encodeURIComponent(inv.id)}/delivery`, { body: { url: e.target.url.value } });
+        inv.delivery = delivery;
+        box.innerHTML = deliveryBox(inv, isOpen);
+        wire();
+        await copyPayLink(delivery.link);
+      } catch (err) {
+        box.querySelector('[data-dlerr]').textContent = err.message;
+      }
+    });
+    box.querySelector('[data-dlrm]')?.addEventListener('click', async () => {
+      await api(`/api/invoices/${encodeURIComponent(inv.id)}/delivery`, { method: 'DELETE' });
+      inv.delivery = null;
+      box.innerHTML = deliveryBox(inv, isOpen);
+      wire();
+    });
+  };
+  wire();
   dr.querySelector('.x').onclick = closeInvoiceDrawer;
   dr.querySelector('.x').focus();
-  dr.querySelector('[data-copylink]')?.addEventListener('click', (e) => copyPayLink(e.currentTarget.dataset.copylink));
+  dr.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-copylink]');
+    if (b) copyPayLink(b.dataset.copylink);
+  });
   dr.querySelector('[data-sim]')?.addEventListener('click', async (e) => {
     e.currentTarget.disabled = true;
     await onSimulatePay?.(inv.paypalId);

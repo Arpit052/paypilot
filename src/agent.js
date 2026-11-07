@@ -5,9 +5,10 @@ import { runToolLoop } from './llm.js';
 import { createAction, normaliseInvoiceDraft, normaliseScheduleDraft, lateFeeDraft, hasLateFee, cleanText } from './actions.js';
 import { clientStats, earningsSummary, forecastCashflow, isOpen, isOverdue, clientName, topCustomers } from './analytics.js';
 import { isMock } from './paypal.js';
-import { toneFor, lastTone } from './followups.js';
-import { estimateBudget, budgetProfile } from './budget.js';
+import { toneFor, lastTone, relationshipOf } from './followups.js';
+import { estimateBudget, budgetProfile, forecastFromModel } from './budget.js';
 import { retainerOffers } from './offers.js';
+import { suggestEarlyPay } from './earlypay.js';
 import { typeOf, professionLabel } from './business.js';
 
 function systemPrompt() {
@@ -23,13 +24,13 @@ How you work:
 - You can read data with list_invoices, get_client_insights, get_earnings_summary and forecast_cashflow. Use them instead of guessing numbers.
 - You NEVER send, remind or cancel directly. You call propose_invoice / propose_reminder / propose_late_fee / propose_cancel, which put an approval card in the user's UI. Nothing reaches PayPal or the client until the user clicks Approve. After proposing, tell the user briefly what you prepared and ask them to review the approval slip on the right. Never claim an invoice "was sent" unless the user has approved it.
 - When the user describes work done (in text, or in a screenshot of a chat/email/brief), extract client name, client email, line items (name, quantity, unit price), currency and due date. Convert phrases like "in 2 weeks" to due_in_days. PayPal invoices only support these currencies: ${config.paypalCurrencies.join(', ')}. If the user gives amounts in another currency (e.g. rupees/INR), don't convert or guess: tell them PayPal can't invoice in that currency and ask which supported currency to use (suggest USD). If the client email is missing and the client isn't already known, ask for it instead of inventing one. Never invent prices. The business's usual payment terms are ${config.defaultTermsDays ?? 7} days.${config.aiInstructions ? ` Their own instructions: ${config.aiInstructions}` : ''}
-- To create an invoice, call propose_invoice directly. It already looks up the client (email and payment risk), so do NOT call list_invoices or get_client_insights first. If a known client's email is missing, you may pass just client_name. For high-risk clients the system automatically adds a suggested 50% deposit (paid upfront through PayPal's partial-payment option) unless the user specified one; tell the user, and say they can remove it on the slip. For medium risk, suggest a shorter due date.
+- To create an invoice, call propose_invoice directly. It already looks up the client (email and payment risk), so do NOT call list_invoices or get_client_insights first. If a known client's email is missing, you may pass just client_name. For high-risk clients the system automatically adds a suggested 50% deposit (paid upfront through PayPal's partial-payment option) unless the user specified one; tell the user, and say they can remove it on the slip. For medium risk, suggest a shorter due date. If the user asks for an early-pay discount, pass early_pay_percent (the slip shows a suggested % from the client's history: 3% for late payers, 2% for medium or new clients, none for on-time clients). If they mention a link to the final files (Figma, Drive, Dropbox), pass delivery_url: the client gets a page that unlocks the files only after paying.
 - Sales tax: only add tax_percent if the user mentions tax (e.g. "add 8% sales tax"). Default tax: ${config.defaultTaxPercent}%.
 - "Best customer?" -> get_top_customers.
 - "Can I afford X?", "Can I buy a $2,000 laptop next month?", "Is it safe to spend Y on Z?" -> check_budget. Pass price and date (convert "next month" to a concrete date; if no date is given use today + 14 days). If the user tells you how much money they have now, their monthly costs or a buffer, pass those; otherwise the saved values are used, and if cash_now is unknown (saved value 0) say the answer assumes they have nothing saved and invite them to tell you. Answer with the verdict first, then the chance, the most they can safely spend on that date (maxSafe.p80), the likely shortfall (if any), the earliest safe date and the invoice to watch. The check already counts their bills, tax set-aside and PayPal fees from the Budget page, and requires the 30 days after buying to stay above their buffer. Mention it's a simulation of thousands of possible futures based on how each client has paid before. Never promise certainty.
 - "Who should I offer a retainer?", "How can I earn more from my clients?" -> suggest_retainers. Explain the offer in money terms for both sides (what the client saves, what the business gains a year, how many fewer invoices). The user sends the offer themselves from the Clients page; you can't email clients.
 - Recurring work ("every month", "weekly retainer"): use propose_recurring. Explain that each period a new draft will appear for approval; nothing is sent automatically.
-- For reminders, write the subject and message yourself. Match tone to how late it is: friendly (first nudge), firm (second), final (repeated/very late). Be professional and human, never rude. Sign off as ${config.businessName}.
+- For reminders, write the subject and message yourself. Match tone to how late it is: friendly (first nudge), firm (second), final (repeated/very late). Match the *voice* to the client's history (call get_client_insights first): a good client who pays on time gets a warm, personal check-in ("Hope all is well! Just floating invoice #…"); a repeat late payer gets a formal, specific note with the invoice number, days overdue, the payment terms (e.g. Net 15), a pay-by date, and the late-fee date if late fees are on (${config.lateFeePercent > 0 ? `${config.lateFeePercent}% after ${config.lateFeeAfterDays} days overdue` : 'late fees are off, so don\'t mention one'}). Be professional and human, never rude. Sign off as ${config.businessName}.
 - Late fees: policy is ${config.lateFeePercent}% once an invoice is ${config.lateFeeAfterDays}+ days overdue. Use propose_late_fee when the user asks to add one (or suggest it for very late invoices). Only one late fee per invoice; it's added as a separate, untaxed line on the PayPal invoice after approval.
 - Risk labels are none (reliable payer), low, medium or high. Days late are whole days.
 - Reply in clear, friendly English (US business tone). Keep replies short and skimmable; use **bold** for key amounts.`;
@@ -128,6 +129,8 @@ export const tools = [
         note: { type: 'string', description: 'Optional friendly note shown on the invoice' },
         tax_percent: { type: 'number', description: 'Sales tax percent, only if the user asked for tax' },
         deposit_percent: { type: 'number', description: 'Upfront deposit as % of total (PayPal partial payment). 0 = no deposit.' },
+        early_pay_percent: { type: 'number', description: 'Discount % (1-10) if the client pays within 48 hours. Only if the user asks for an early-pay discount.' },
+        delivery_url: { type: 'string', description: 'Link to the final work (Figma, Drive, Dropbox). The client only sees it after paying ("pay to unlock").' },
       },
       required: ['client_name', 'items'],
     },
@@ -245,7 +248,7 @@ function makeHandlers(created) {
     },
 
     forecast_cashflow({ days = 30 }) {
-      return forecastCashflow(Math.min(Math.max(Number(days) || 30, 1), 180), today);
+      return forecastFromModel(Math.min(Math.max(Number(days) || 30, 1), 180), today);
     },
 
     propose_invoice(input) {
@@ -253,7 +256,7 @@ function makeHandlers(created) {
       const risk = known ? clientStats(known.id, today) : null;
       // Risk-based deposit: if the client usually pays late and no deposit was specified,
       // suggest collecting 50% upfront (PayPal partial payment).
-      const autoDeposit = input.deposit_percent === undefined && risk?.riskLabel === 'high';
+      const autoDeposit = input.deposit_percent === undefined && !(input.early_pay_percent > 0) && risk?.riskLabel === 'high';
       const draft = normaliseInvoiceDraft({
         clientName: input.client_name || known?.name,
         clientEmail: input.client_email || known?.email,
@@ -265,8 +268,11 @@ function makeHandlers(created) {
         taxPercent: input.tax_percent,
         depositPercent: autoDeposit ? 50 : input.deposit_percent,
         depositSuggested: autoDeposit,
+        earlyPayPercent: input.early_pay_percent,
+        deliveryUrl: input.delivery_url,
       });
       draft.risk = risk ? { label: risk.riskLabel, avgDaysLate: risk.avgDaysLate, overdueCount: risk.overdueCount } : null;
+      draft.earlyPaySuggested = suggestEarlyPay(known?.id, draft.subtotal);
       const a = createAction('create_invoice', draft, {
         summary: `Invoice ${draft.clientName} · ${draft.currency} ${draft.total}`,
       });
@@ -281,6 +287,9 @@ function makeHandlers(created) {
         dueDate: draft.dueDate,
         deposit: draft.depositAmount ? { amount: draft.depositAmount, autoSuggested: draft.depositSuggested } : null,
         clientRisk: draft.risk,
+        earlyPay: draft.earlyPayPercent ? { percent: draft.earlyPayPercent, discount: draft.earlyPayAmount, windowHours: 48 } : null,
+        earlyPaySuggestion: draft.earlyPaySuggested,
+        payToUnlock: Boolean(draft.deliveryUrl),
       };
     },
 
@@ -352,9 +361,10 @@ function makeHandlers(created) {
       const asked = tone;
       tone = toneFor(inv, Math.max(0, daysBetween(inv.dueDate, today)), asked);
       if (tone !== asked) return { error: `A ${lastTone(inv) || tone} reminder was already sent for #${inv.number}, so the next one can't be softer. Rewrite it with tone "${tone}" and call propose_reminder again.` };
+      const rel = relationshipOf(inv.clientId, today);
       const a = createAction(
         'send_reminder',
-        { invoiceId: inv.id, number: inv.number, client: clientName(inv.clientId), amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, tone, subject: cleanText(subject), message: cleanText(message) },
+        { invoiceId: inv.id, number: inv.number, client: clientName(inv.clientId), amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, tone, voice: rel.key, voiceLabel: rel.label, subject: cleanText(subject), message: cleanText(message) },
         { summary: `Reminder #${inv.number} (${tone})` }
       );
       created.push(a);

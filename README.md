@@ -33,6 +33,8 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 | **Screenshot → invoice** | Paste a screenshot of a client's email or chat; a vision model reads it and drafts the invoice. |
 | **Human-in-the-loop** | The AI can only *propose*. Nothing reaches PayPal or a client until you click **Approve & send via PayPal**, and you can edit any field first. |
 | **Real PayPal invoices** | Approved drafts are created and sent with the **PayPal Invoicing v2 API**, with clean numbers (#1042), per-line sales tax, reference/PO and notes. The client gets PayPal's email and payment page. |
+| **Pay to unlock** | Attach the final work (a Figma, Drive or Dropbox link) to an invoice. The client gets a private page that stays **locked until the invoice is paid**; the moment PayPal reports the payment (webhook or the 2-minute check), the page unlocks by itself and you're notified. The real link is never shown before payment. |
+| **Early-pay discount** | "Pay within 48 hours and get 2% off." The invoice goes out with a PayPal invoice-level discount; if it isn't paid in time, PayPilot removes the discount on PayPal (full update) and the normal due date applies. The suggested percentage comes from the client's history: 3% for late payers, 2% for new or slightly late clients, **none** for clients who already pay on time. |
 | **Deposits for risky clients** | If a client usually pays late, a **50% deposit** is added with PayPal's partial-payment option. Where PayPal doesn't offer split payments (e.g. India), the invoice still goes out and the deposit is requested in the note. |
 | **New invoice form** | Bill without the chat, with a live paper-invoice preview. Defaults (currency, terms, tax, note) come from Settings. |
 | **Retainers** | Bill a client the same amount every week or month. Each date drafts the invoice for your approval; cards show next date, billed so far and yearly value. |
@@ -42,6 +44,8 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 | Feature | How it works |
 |---|---|
 | **Autopilot** | Every unpaid invoice gets a follow-up plan: friendly heads-up before the due date, firm reminder after, final reminder (+ optional late fee) later. On each date the AI writes the email in your style and asks for approval. Tone never softens after a firmer reminder. Off = nothing is drafted unless you ask. |
+| **Reminders that know the client** | The tone follows lateness; the *voice* follows the relationship. A good client gets a warm check-in ("Hope all is well! Just floating invoice #1044…"); a repeat late payer gets a formal note with the days overdue, your payment terms (Net 15), a pay-by date and the date the late fee applies. |
+| **Paid on / expected on** | Every invoice shows when the money came in (and how early or late), or for unpaid ones **when it's likely to arrive** with a range ("≈ Nov 14, Nov 12 – 18"), from that client's own payment history. |
 | **Collections** | One list of every unpaid invoice with status, the three-step progress, and the next action; a "Next 14 days" rail shows what Autopilot will do. |
 | **Late fees** | Suggested on very late invoices and added to the PayPal invoice (full update) only after you approve. |
 | **Live payment status** | PayPal webhooks (signature-verified) plus an automatic check every 2 minutes flip invoices to **Paid** and push a notification to every open tab over Server-Sent Events. Invoices you create on paypal.com are imported automatically. |
@@ -52,14 +56,15 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 
 | Feature | How it works |
 |---|---|
-| **Budget Estimator** | *"Can I buy a $2,000 laptop on Dec 5?"* PayPilot plays out 4,000 possible futures of who pays you and when, using each client's own payment history. It counts what really happens to freelance money: **PayPal's fee** (3.49% + $0.49) and the **share you keep for tax** come off every payment, **bills leave on their day** (rent on the 1st), and the purchase only counts as safe if your balance **stays above your cushion for the 30 days after**, so next month's rent is covered too. It answers with the **chance** (and its error margin), **the most you can safely spend** on that date, the **lowest your balance gets**, the **earliest safe date**, what happens **if you wait** a week or a month, and **which invoice decides it**. You can **pay in instalments**, and **untick an invoice** to see what happens if that client never pays. Also in the Assistant. [How the model works](#how-the-budget-estimator-works) |
+| **Budget Estimator** | *"Can I buy a $2,000 laptop on Dec 5?"* PayPilot plays out 4,000 possible futures of who pays you and when, using each client's own payment history. It counts what really happens to freelance money: **PayPal's fee** (3.49% + $0.49) and the **share you keep for tax** come off every payment, **bills leave on their day** (rent on the 1st), and the purchase only counts as safe if your balance **stays above your cushion for the 30 days after**, so next month's rent is covered too. It answers with the **chance** (and its error margin), **the most you can safely spend** on that date, the **lowest your balance gets**, the **earliest safe date**, what happens **if you wait** a week or a month, and **which invoice decides it**. You can **pay in instalments**, and **untick an invoice** to see what happens if that client never pays. The verdict card says it plainly ("Risky on Dec 1 · Safe from Dec 12") and tells the story behind it, with a **day-by-day typical path**: every expected payment and bill, and your balance after each. Before you estimate anything, the page shows the money on its way. Also in the Assistant. [How the model works](#how-the-budget-estimator-works) |
 | **Suggested retainers** | Finds clients who already buy from you nearly every month, prices a monthly plan a little below a typical month with them, and shows both sides of the deal: what you gain a year, what they save, fewer invoices, and how fast your existing retainer clients pay compared with them. The AI writes the offer email in your style; when they say yes, one click creates the retainer. |
 
 **Understand**
 
 | Feature | How it works |
 |---|---|
-| **Dashboard** | Earned this month, waiting, overdue, 30-day forecast, clickable monthly chart, top customers, searchable invoice table with CSV export. |
+| **Dashboard** | Earned this month, waiting, overdue, and the 30-day forecast with an **info popover that shows the exact sum** (each invoice × the chance it's paid in 30 days). Money brief, monthly chart, top customers, searchable invoice table with CSV export. |
+| **Tax summary** | One click from Analytics: gross income, sales tax collected, PayPal fees (deductible), net income, income by IRS estimated-tax quarter with due dates, a rough self-employment tax figure, and which 1099 forms to expect (1099-K from PayPal past $20,000 and 200 payments; 1099-NEC from clients who paid $2,000+ outside PayPal from 2026). Print to PDF or download CSV for your accountant. |
 | **Analytics** | Revenue trend with hover, KPIs vs the previous period (revenue, days to get paid, on-time rate, average invoice), when clients pay, unpaid by age, per-client behaviour with trends, best-earning work, and plain-English insights. |
 | **Calendar** | Due dates, payments received, reminders sent and Autopilot's planned reminders on a month grid, with actions per day. |
 | **Money brief** | A step-by-step report with AI recommendations; numbers are computed in code, the AI only writes the headline and actions. |
@@ -76,9 +81,9 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 | **Connect in the app** | First run asks for a business name and PayPal sandbox keys (checked with PayPal before saving), or opens demo mode. |
 | **Passcode + sign out** | Lock PayPilot with a passcode (scrypt-hashed) and sign out from the sidebar. |
 
-| Budget Estimator | Suggested retainers | Professions |
+| Budget Estimator | Suggested retainers | Tax summary |
 |---|---|---|
-| ![](docs/screenshots/budget.png) | ![](docs/screenshots/retainers.png) | ![](docs/screenshots/business-type.png) |
+| ![](docs/screenshots/budget.png) | ![](docs/screenshots/retainers.png) | ![](docs/screenshots/tax.png) |
 
 | Collections + Autopilot | Analytics | Calendar |
 |---|---|---|
@@ -126,11 +131,13 @@ flowchart LR
 |---|---|---|
 | OAuth 2.0 | `POST /v1/oauth2/token` | Client-credentials token (cached) |
 | Invoicing v2 | `POST /v2/invoicing/generate-next-invoice-number` | Invoice numbering |
-| Invoicing v2 | `POST /v2/invoicing/invoices` | Create draft invoice, with per-line **sales tax** and **partial payment** (deposit) configuration |
+| Invoicing v2 | `POST /v2/invoicing/invoices` | Create draft invoice, with per-line **sales tax**, **partial payment** (deposit) and an invoice-level **early-pay discount** |
 | Invoicing v2 | `POST /v2/invoicing/invoices/{id}/send` | Send to client (PayPal email and payment page) |
 | Invoicing v2 | `GET /v2/invoicing/invoices/{id}` | Poll status and payments |
 | Invoicing v2 | `POST /v2/invoicing/invoices/{id}/remind` | AI-drafted payment reminders |
 | Invoicing v2 | `POST /v2/invoicing/invoices/{id}/cancel` | Cancel an invoice |
+| Invoicing v2 | `PUT /v2/invoicing/invoices/{id}` | Full update: add a late fee, remove an expired early-pay discount |
+| Invoicing v2 | `POST /v2/invoicing/invoices/{id}/payments` | Record a payment made outside PayPal (mark as paid) |
 | Webhooks | `POST /v1/notifications/verify-webhook-signature` | Verify `INVOICING.INVOICE.*` events |
 
 ### AI tools used
@@ -222,7 +229,7 @@ Data is stored in SQLite at `data/paypilot.db`. On free hosting the disk is temp
 ```bash
 npm test
 ```
-These are end-to-end tests with mock PayPal and a scripted model. They cover the propose → approve → PayPal flow, user edits, validation, webhook payment, follow-up escalation and de-duplication, the dashboard maths, request mapping for the LLM providers, the PayPal invoice payload, and the Budget Estimator's statistics (ordered percentiles, repeatable results, more cash never lowers the chance, overdue invoices never "paid in the past"), retainer suggestions, tax / fees / bills / instalments / what-if in the budget, and every profession's sample data.
+These are end-to-end tests with mock PayPal and a scripted model. They cover the propose → approve → PayPal flow, user edits, validation, webhook payment, follow-up escalation and de-duplication, the dashboard maths, request mapping for the LLM providers, the PayPal invoice payload, and the Budget Estimator's statistics (ordered percentiles, repeatable results, more cash never lowers the chance, overdue invoices never "paid in the past"), retainer suggestions, tax / fees / bills / instalments / what-if in the budget, every profession's sample data, payment-date predictions and the forecast sum, reminder voice per client, the tax summary, pay-to-unlock (files hidden until paid) and early-pay discounts (applied, then removed after 48 hours).
 
 ## Project layout
 
@@ -244,6 +251,9 @@ src/budget.js        Budget Estimator: Monte Carlo cash model
 src/offers.js        Retainer suggestions: buying-pattern scoring + AI offer emails
 src/business.js      Professions and their presets
 src/personas.js      Demo clients and the work each profession sells them
+src/tax.js           Year-end tax summary (fees, quarters, 1099 hints) + CSV
+src/delivery.js      Pay to unlock: private file pages that open once an invoice is paid
+src/earlypay.js      Early-pay discounts: suggestion, window, automatic removal
 public/              UI (vanilla JS): dashboard, assistant, collections, calendar, analytics, budget, clients, settings
 test/                End-to-end tests
 ```

@@ -55,7 +55,16 @@ const readBills = () =>
     .filter((b) => b.amount > 0);
 $('addBill').onclick = () => billRow();
 
-const { profile, paypalBalance } = await api('/api/budget/profile?balance=1');
+const { profile, paypalBalance, upcoming } = await api('/api/budget/profile?balance=1');
+// before the first estimate: show what's coming in, so the page is useful straight away
+if (upcoming?.length && !params.get('price')) {
+  const total = upcoming.reduce((t, u) => t + u.amount * u.probability, 0);
+  $('empty').innerHTML = `<div class="bg-up-h"><div><b>Money on its way</b><span>Unpaid invoices and when each is most likely to arrive, from how that client pays. Add a price and a date to check a purchase against it.</span></div><div class="bg-up-t"><em>Expected in 45 days</em><b>${esc(m(total))}</b></div></div>
+    <ul class="bg-up">${upcoming
+      .map((u) => `<li><time>${esc(fmtDate(u.date))}</time><span><b>${esc(u.client)}</b> · #${esc(u.invoice)}</span><i class="bg-bar"><i style="width:${Math.round(u.probability * 100)}%" class="${u.probability >= 0.8 ? 'ok' : u.probability >= 0.5 ? 'mid' : 'low'}"></i></i><em>${Math.round(u.probability * 100)}%</em><b>${esc(m(u.amount))}</b></li>`)
+      .join('')}</ul>`;
+  $('empty').classList.add('bg-upcoming');
+}
 if (profile.cashNow) $('cash').value = profile.cashNow;
 if (profile.everyday) $('everyday').value = profile.everyday;
 if (profile.buffer) $('buffer').value = profile.buffer;
@@ -141,6 +150,12 @@ function render(r) {
         <p>${esc(v.detail)}</p>
       </div>
     </div>
+
+    ${v.pill?.length ? `<div class="panel bg-story">
+      <div class="bg-pills"><span class="bg-pl">Verdict</span>${v.pill.map((p) => `<span class="bg-pill ${p.tone}"><i></i>${esc(p.text)}</span>`).join('')}</div>
+      ${v.story ? `<p>${esc(v.story)}</p>` : ''}
+      ${pathTable(r)}
+    </div>` : ''}
 
     <div class="bg-stats">
       <div><span>Chance on ${esc(target)}</span><b>${pctText(r.chance)}</b><em>± ${r.margin} pts (95% sure)</em></div>
@@ -235,6 +250,20 @@ function render(r) {
     })
   );
   drawChart();
+}
+
+function pathTable(r) {
+  const p = r.path;
+  if (!p?.rows?.length) return '';
+  const buf = r.inputs.buffer;
+  return `<details class="bg-path" ${r.chance < 80 ? 'open' : ''}><summary>Typical path, day by day <span class="muted small">each payment on its most likely date${p.everydayPerDay ? ` · everyday spending of ${esc(m(p.everydayPerDay * 30.44))} a month spread across the days` : ''}</span></summary>
+    <table class="data"><thead><tr><th>Date</th><th>What happens</th><th class="r">Amount</th><th class="r">Balance after</th></tr></thead><tbody>
+    <tr class="bg-p-start"><td>${esc(fmtDate(cfg.today))}</td><td>Today</td><td class="r"></td><td class="r num">${esc(m(r.inputs.cashNow))}</td></tr>
+    ${p.rows
+      .map((x) => `<tr class="k-${x.kind} ${x.balance < buf && x.date >= r.date ? 'below' : ''} ${p.lowest && x.date === p.lowest.date && x.balance === p.lowest.balance ? 'lowest' : ''}"><td>${esc(fmtDate(x.date))}</td><td>${esc(x.label)}${x.kind === 'in' && x.risk === 'high' ? ' <span class="pill high">High</span>' : ''}</td><td class="r num ${x.amount >= 0 ? 'ok-t' : ''}">${x.amount >= 0 ? '+' : '−'}${esc(m(Math.abs(x.amount)))}</td><td class="r num">${esc(m(x.balance))}</td></tr>`)
+      .join('')}
+    <tr class="bg-p-start"><td>${esc(fmtDate(p.endDate))}</td><td>End of the safety window</td><td class="r"></td><td class="r num">${esc(m(p.endBalance))}</td></tr>
+    </tbody></table></details>`;
 }
 
 function rangeBar(r) {

@@ -352,6 +352,15 @@ export function kvSet(key, value) {
   sql().prepare('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, j(value));
 }
 
+export function kvDel(key) {
+  sql().prepare('DELETE FROM kv WHERE key = ?').run(key);
+}
+
+/** All values whose key starts with `prefix` (e.g. every early-pay offer). */
+export function kvList(prefix) {
+  return sql().prepare('SELECT key, value FROM kv WHERE key LIKE ?').all(`${prefix}%`).map((r) => ({ key: r.key, value: pj(r.value, null) }));
+}
+
 // ---------------- recurring schedules ----------------
 const rowSchedule = (r) =>
   r && {

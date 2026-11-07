@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Tax summary</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#09090b">
+</head>
+<body>
+<main>
+  <div class="dash-top tx-top">
+    <div>
+      <h1>Tax summary</h1>
+      <p class="lede" style="margin:0">A year-end summary for you or your accountant: income, PayPal fees, quarters and the 1099 forms to expect.</p>
+    </div>
+    <div class="tx-ctl">
+      <select id="year" aria-label="Tax year"></select>
+      <a class="btn ghost" id="csv" href="#">Download CSV</a>
+      <button class="btn" id="print" type="button">Print or save as PDF</button>
+    </div>
+  </div>
+  <div id="report" class="tx-report" aria-live="polite"></div>
+</main>
+<script type="module" src="/tax.js"></script>
+</body>
+</html>

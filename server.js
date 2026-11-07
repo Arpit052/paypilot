@@ -2,7 +2,7 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
-import { config, isoDate, addDays, addMonths, envFile } from './src/config.js';
+import { config, isoDate, addDays, addMonths, envFile, daysBetween } from './src/config.js';
 import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb, listSchedules, getSchedule, updateSchedule, deleteSchedule, getClient, logActivity } from './src/db.js';
 import { chatWithTranscript, getTranscript, resetSession } from './src/agent.js';
 import { listActions, approveAction, rejectAction, normaliseInvoiceDraft, dropStaleActions, markPaid } from './src/actions.js';
@@ -27,8 +27,11 @@ import { listNotifications, unreadNotificationCount, markNotificationsRead, dele
 import { applySettings, setupDone, publicSettings, connectPaypal, useDemoMode, disconnectPaypal, saveBusinessSettings } from './src/settings.js';
 import { verifyCredentials } from './src/paypal.js';
 import { isOpen } from './src/analytics.js';
-import { estimateBudget, budgetProfile } from './src/budget.js';
+import { estimateBudget, budgetProfile, expectedPayments, forecastFromModel } from './src/budget.js';
 import { retainerOffers, draftOffer, markOffered, dismissOffer, acceptPayload, markAccepted } from './src/offers.js';
+import { taxReport, taxCsv, taxYears } from './src/tax.js';
+import { getDelivery, attachDelivery, removeDelivery, deliveryView, noteOrigin, isLocalBase } from './src/delivery.js';
+import { getEarlyPay, suggestEarlyPay, settleEarlyPay } from './src/earlypay.js';
 import { businessTypeList, typeOf, BUSINESS_TYPES, normalType, professionLabel } from './src/business.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
@@ -68,7 +71,7 @@ function safeEqual(a, b) {
 }
 
 // Routes that must work without a session: login itself, PayPal webhooks, cron, health.
-const PUBLIC_PATHS = [/^\/login(\.html)?$/, /^\/app\.css$/, /^\/common\.js$/, /^\/favicon\.svg$/, /^\/fonts\//, /^\/api\/login$/, /^\/api\/health$/, /^\/api\/webhooks\//, /^\/api\/cron\//];
+const PUBLIC_PATHS = [/^\/d\/[A-Za-z0-9_-]+$/, /^\/api\/d\/[A-Za-z0-9_-]+$/, /^\/login(\.html)?$/, /^\/app\.css$/, /^\/common\.js$/, /^\/favicon\.svg$/, /^\/fonts\//, /^\/api\/login$/, /^\/api\/health$/, /^\/api\/webhooks\//, /^\/api\/cron\//];
 
 function requireLogin(req, res, next) {
   if (!loginEnabled() || PUBLIC_PATHS.some((re) => re.test(req.path))) return next();
@@ -97,7 +100,7 @@ function rateLimit({ perMinute, message }) {
 }
 
 // First run: send people to the "Connect PayPal / Try demo" screen before any page.
-const WELCOME_FREE = /^\/(welcome|login|mock-pay)(\.html)?$/;
+const WELCOME_FREE = /^\/((welcome|login|mock-pay)(\.html)?|d\/[A-Za-z0-9_-]+)$/;
 function welcomeGate(req, res, next) {
   if (req.method !== 'GET' || req.path.startsWith('/api/') || WELCOME_FREE.test(req.path)) return next();
   const isPage = req.path === '/' || req.path.endsWith('.html') || !path.extname(req.path);
@@ -118,8 +121,18 @@ function securityHeaders(req, res, next) {
   next();
 }
 
-function invoiceRow(i, today) {
-  return { ...i, client: clientName(i.clientId), clientEmail: getClient(i.clientId)?.email || '', displayStatus: isOverdue(i, today) ? 'OVERDUE' : i.status };
+function invoiceRow(i, today, expected) {
+  return {
+    ...i,
+    client: clientName(i.clientId),
+    clientEmail: getClient(i.clientId)?.email || '',
+    displayStatus: isOverdue(i, today) ? 'OVERDUE' : i.status,
+    // paid: how many days after the due date (negative = early); unpaid: when it's likely to arrive
+    paidLateDays: i.paidDate ? daysBetween(i.dueDate, i.paidDate) : null,
+    delivery: getDelivery(i.id),
+    earlyPay: getEarlyPay(i.id),
+    expected: (({ within, ...e }) => e)(expected?.get(i.id) || {}),
+  };
 }
 
 function aiLabel() {
@@ -133,6 +146,10 @@ export function createApp() {
   app.set('trust proxy', 1); // correct client IPs / https behind Render's proxy
   app.use(securityHeaders);
   app.use(express.json({ limit: '12mb' })); // screenshots arrive as base64
+  app.use((req, res, next) => {
+    noteOrigin(`${req.protocol}://${req.get('host')}`);
+    next();
+  });
   app.use(requireLogin);
   applySettings();
   app.use(welcomeGate);
@@ -327,7 +344,9 @@ export function createApp() {
   // ---- invoices / dashboard / clients ----
   api.get('/invoices', (req, res) => {
     const today = isoDate();
-    res.json({ invoices: listInvoices().map((i) => invoiceRow(i, today)) });
+    const all = listInvoices();
+    const expected = expectedPayments(all, today);
+    res.json({ invoices: all.map((i) => invoiceRow(i, today, expected)) });
   });
   api.post('/sync', async (req, res) => {
     const imp = await importFromPaypal().catch((e) => ({ imported: 0, errors: [e.message] }));
@@ -348,6 +367,8 @@ export function createApp() {
       dueDate: b.dueDate,
       taxPercent: b.taxPercent,
       depositAmount: b.depositAmount,
+      earlyPayPercent: b.earlyPayPercent,
+      deliveryUrl: b.deliveryUrl,
       reference: b.reference,
       note: b.note,
     });
@@ -367,7 +388,7 @@ export function createApp() {
     res.json({
       today,
       summary: earningsSummary({}, today),
-      forecast: forecastCashflow(30, today),
+      forecast: forecastFromModel(30, today),
       chart: chartSeries(today),
       activity: listActivity(15),
       pendingApprovals: listActions({ status: 'pending' }).length,
@@ -561,11 +582,46 @@ export function createApp() {
     res.json({ ok: true });
   });
 
+  // ---- pay to unlock ----
+  api.post('/invoices/:id/delivery', (req, res) => {
+    const inv = listInvoices().find((i) => i.id === req.params.id);
+    if (!inv) throw httpError(404, 'Invoice not found');
+    if (inv.status === 'CANCELLED') throw httpError(400, 'This invoice is cancelled');
+    res.json({ delivery: attachDelivery(inv.id, { url: req.body?.url, label: req.body?.label }), local: isLocalBase() });
+  });
+  api.delete('/invoices/:id/delivery', (req, res) => {
+    removeDelivery(req.params.id);
+    res.json({ ok: true });
+  });
+  // public, token-protected: what the client's unlock page polls
+  api.get('/d/:token', (req, res) => {
+    const v = deliveryView(req.params.token);
+    if (!v) throw httpError(404, 'This link is not valid any more');
+    res.json(v);
+  });
+
+  // ---- early-pay discount ----
+  api.get('/earlypay/suggest', (req, res) => {
+    const c = req.query.email ? listClients().find((x) => x.email.toLowerCase() === String(req.query.email).toLowerCase()) : null;
+    res.json({ ...suggestEarlyPay(c?.id, Number(req.query.total) || 0), hours: 48 });
+  });
+  api.post('/earlypay/settle', async (req, res) => res.json({ settled: await settleEarlyPay() }));
+
+  // ---- tax summary ----
+  api.get('/tax', (req, res) => res.json({ ...taxReport(req.query.year || isoDate().slice(0, 4)), years: taxYears() }));
+  api.get('/tax.csv', (req, res) => {
+    const year = Number(req.query.year || isoDate().slice(0, 4));
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="paypilot-tax-summary-${year}.csv"`);
+    res.send(taxCsv(year));
+  });
+
   // ---- Budget Estimator ----
   api.get('/budget/profile', async (req, res) => {
     let balance = null;
     if (req.query.balance && !isMock()) balance = await paypal.getBalance(config.currency).catch(() => null);
-    res.json({ profile: budgetProfile(), currency: config.currency, paypalBalance: balance, demo: isMock() });
+    const upcoming = forecastFromModel(45).invoices.filter((r) => r.currency === config.currency).map((r) => ({ date: r.expectedDate, client: r.client, invoice: r.invoice, amount: r.amount, probability: r.probability }));
+    res.json({ profile: budgetProfile(), currency: config.currency, paypalBalance: balance, demo: isMock(), upcoming });
   });
   api.post('/budget/estimate', (req, res) => res.json(estimateBudget(req.body || {})));
 
@@ -606,6 +662,8 @@ export function createApp() {
   app.get(['/calendar', '/calendar.html'], page('calendar.html'));
   app.get(['/analytics', '/analytics.html'], page('analytics.html'));
   app.get(['/budget', '/budget.html'], page('budget.html'));
+  app.get(['/tax', '/tax.html'], page('tax.html'));
+  app.get('/d/:token', page('unlock.html'));
   app.use(express.static(path.join(config.root, 'public'), { extensions: ['html'], index: false }));
   app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 

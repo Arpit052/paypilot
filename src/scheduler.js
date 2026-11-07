@@ -9,6 +9,7 @@ import { scanFollowups } from './followups.js';
 import { notify } from './notify.js';
 import { noteDueDates } from './alerts.js';
 import { runAutopilot } from './autopilot.js';
+import { settleEarlyPay } from './earlypay.js';
 import { listInvoices } from './db.js';
 
 let running = false;
@@ -77,6 +78,10 @@ export function startScheduler() {
   };
   setTimeout(alerts, 8000).unref();
   setInterval(alerts, 30 * 60 * 1000).unref();
+  // early-pay windows: close them within a few minutes of ending
+  const early = () => setupDone() && settleEarlyPay().catch(() => {});
+  setTimeout(early, 12000).unref();
+  setInterval(early, 5 * 60 * 1000).unref();
   const minutes = config.schedulerMinutes;
   if (!(minutes > 0)) return false;
   // first pass shortly after start-up, then on the interval

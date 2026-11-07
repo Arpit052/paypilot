@@ -1,6 +1,6 @@
 // Autonomous follow-ups: find overdue invoices and have the AI draft a reminder
 // whose tone escalates with lateness. Drafts land in the Follow-ups inbox for approval.
-import { config, isoDate, daysBetween } from './config.js';
+import { config, isoDate, daysBetween, addDays } from './config.js';
 import { listInvoices } from './db.js';
 import { complete, llmAvailable } from './llm.js';
 import { createAction, listActions, lateFeeDraft, hasLateFee, cleanText } from './actions.js';
@@ -22,7 +22,33 @@ export function toneFor(inv, daysOverdue, wanted = null) {
   return t;
 }
 
-function templateReminder(inv, tone, daysOverdue) {
+/**
+ * How well we know this client, from their payment history. The reminder's tone (friendly /
+ * firm / final) follows lateness; the *voice* follows the relationship:
+ *   trusted   pays on time      -> warm check-in, assume it slipped through
+ *   late      repeat late payer -> formal and specific: terms, days overdue, late-fee date
+ *   new       no history yet    -> polite and clear about how to pay
+ *   steady    everyone else     -> the owner's chosen style
+ */
+export function relationshipOf(clientId, today = isoDate()) {
+  const st = clientStats(clientId, today);
+  if (!st.paidCount || st.riskLabel === 'new') return { key: 'new', label: 'New client', stats: st };
+  if (st.riskLabel === 'high' || (st.avgDaysLate >= 7 && st.paidCount >= 2)) return { key: 'late', label: 'Repeat late payer', stats: st };
+  if (['none', 'low'].includes(st.riskLabel) && st.paidCount >= 2) return { key: 'trusted', label: 'Good client', stats: st };
+  return { key: 'steady', label: 'Regular client', stats: st };
+}
+
+/** Facts a formal reminder can quote: payment terms and when a late fee applies. */
+function termsFacts(inv, today) {
+  const net = Math.max(0, daysBetween(inv.issueDate, inv.dueDate));
+  const feeOn = config.lateFeePercent > 0 && !hasLateFee(inv) ? addDays(inv.dueDate, config.lateFeeAfterDays) : null;
+  const fee = feeOn ? Math.round(inv.total * config.lateFeePercent) / 100 : 0;
+  return { net, termsText: net ? `Net ${net}` : 'due on receipt', feeOn, fee, feeFuture: feeOn && feeOn > today, payBy: addDays(today, 3) };
+}
+
+const nice = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+function templateReminder(inv, tone, daysOverdue, rel = relationshipOf(inv.clientId)) {
   const name = clientName(inv.clientId).split(' ')[0];
   const amt = new Intl.NumberFormat('en-US', { style: 'currency', currency: inv.currency }).format(inv.total);
   const due = new Date(`${inv.dueDate}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -34,17 +60,43 @@ function templateReminder(inv, tone, daysOverdue) {
     final: `Hi ${name},\n\nThis is a final reminder that invoice #${inv.number} for ${amt} ${daysOverdue > 0 ? `is ${daysOverdue} days overdue` : `is due on ${due}`}. Please settle it within 3 business days. If there's an issue with the invoice, reply and I'll be glad to help resolve it.\n\nRegards,${sign}`,
   }[tone];
   const subject = { friendly: 'Friendly reminder', firm: daysOverdue > 0 ? 'Payment overdue' : 'Payment reminder', final: 'Final reminder' }[tone] + `: invoice #${inv.number}`;
+  const today = isoDate();
+  if (rel.key === 'trusted' && tone !== 'final') {
+    return {
+      subject: `Quick check-in: invoice #${inv.number}`,
+      message: `Hi ${name},\n\nHope all is well! Just floating invoice #${inv.number} for ${amt} back to the top of your inbox${daysOverdue > 0 ? `. It was due on ${due}, which isn't like you, so I'm guessing it slipped through` : ` before it's due on ${due}`}. The PayPal link in this email makes it a one-click payment.\n\nThanks as always!${sign}`,
+    };
+  }
+  if (rel.key === 'late' && daysOverdue > 0) {
+    const t = termsFacts(inv, today);
+    const feeAmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: inv.currency }).format(t.fee);
+    const feeLine = t.feeOn ? (t.feeFuture ? ` As per our ${t.termsText} terms, a ${config.lateFeePercent}% late fee (${feeAmt}) will be added on ${nice(t.feeOn)} if it is still unpaid.` : ` As per our ${t.termsText} terms, a ${config.lateFeePercent}% late fee (${feeAmt}) now applies.`) : ` Our agreed terms were ${t.termsText}.`;
+    return {
+      subject: `${tone === 'final' ? 'Final notice' : 'Overdue'}: invoice #${inv.number}, ${daysOverdue} days past due`,
+      message: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} is now ${daysOverdue} days overdue (due ${due}).${feeLine}\n\nPlease arrange payment by ${nice(t.payBy)} using the PayPal link in this email, or reply today if there is a problem with the invoice.\n\nRegards,${sign}`,
+    };
+  }
   return { subject, message: body };
 }
 
-async function aiReminder(inv, tone, daysOverdue) {
-  const st = clientStats(inv.clientId);
+const VOICE = {
+  trusted: 'This is a good client who normally pays on time. Write a warm, personal check-in using their first name; assume it simply slipped through. Keep it light even if the tone step is firm. No mention of fees.',
+  late: 'This client repeatedly pays late. Be professional, formal and specific: no small talk. State the invoice number, amount, days overdue and the agreed payment terms, give a clear date to pay by, and mention the late fee and the date it applies if one is given below. Firm but never rude or threatening.',
+  new: 'This is a new client with no payment history. Be polite and clear, and explain that they can pay in one click with the PayPal link.',
+  steady: 'A regular client. Use the owner\'s chosen style.',
+};
+
+async function aiReminder(inv, tone, daysOverdue, rel = relationshipOf(inv.clientId)) {
+  const st = rel.stats;
+  const t = termsFacts(inv, isoDate());
   const prompt = `Draft a ${tone} payment reminder email.
 Freelancer business: ${config.businessName || '(not set - sign off without a business name)'}
 Client: ${clientName(inv.clientId)}
 Invoice #${inv.number}: ${inv.currency} ${inv.total} for ${inv.items.map((i) => i.name).join(', ')}
 Due date: ${inv.dueDate} (${inv.dueDate >= isoDate() ? 'not overdue yet - write a light, friendly heads-up before the due date' : `${daysOverdue} days overdue`}). Reminders already sent: ${inv.reminders.length}${lastTone(inv) ? ` (the last one was ${lastTone(inv)}, so don't sound softer than that)` : ''}.
 Client history: ${st.paidCount} paid invoices, average ${st.avgDaysLate ?? 'n/a'} days late, risk ${st.riskLabel}.
+Relationship: ${rel.label}. ${VOICE[rel.key]}
+Payment terms: ${t.termsText}.${t.feeOn ? ` Late fee: ${config.lateFeePercent}% (${inv.currency} ${t.fee}) ${t.feeFuture ? `will be added on ${t.feeOn}` : 'applies now'}.` : ''} Pay-by date to ask for: ${t.payBy}.
 Mention that they can pay via the PayPal link in the email. ${{ warm: 'Warm, friendly and professional. Max 90 words.', neutral: 'Neutral, matter-of-fact and polite. Max 80 words.', brief: 'Very short and to the point: 2-3 sentences, max 45 words.' }[config.reminderStyle || 'warm']} Never threatening.
 Sign off as: ${config.signOff || [config.ownerName, config.businessName].filter(Boolean).join(', ') || 'no name'}.${config.businessEmail ? ` Questions can go to ${config.businessEmail}.` : ''}${config.aiInstructions ? `\nThe owner's own instructions: ${config.aiInstructions}` : ''}
 Respond with ONLY JSON: {"subject": "...", "message": "..."}`;
@@ -75,19 +127,20 @@ export async function scanFollowups({ sync = true } = {}) {
 export async function composeReminder(inv, today = isoDate(), wanted = null) {
   const daysOverdue = Math.max(0, daysBetween(inv.dueDate, today));
   const tone = toneFor(inv, daysOverdue, wanted);
+  const rel = relationshipOf(inv.clientId, today);
   try {
     if (!llmAvailable()) throw new Error('no llm');
-    return { tone, daysOverdue, draft: await aiReminder(inv, tone, daysOverdue), draftedBy: 'ai' };
+    return { tone, daysOverdue, voice: rel.key, voiceLabel: rel.label, draft: await aiReminder(inv, tone, daysOverdue, rel), draftedBy: 'ai' };
   } catch {
-    return { tone, daysOverdue, draft: templateReminder(inv, tone, daysOverdue), draftedBy: 'template' };
+    return { tone, daysOverdue, voice: rel.key, voiceLabel: rel.label, draft: templateReminder(inv, tone, daysOverdue, rel), draftedBy: 'template' };
   }
 }
 
 export async function draftReminder(inv, today = isoDate(), { tone: wanted = null, origin = 'followup' } = {}) {
-  const { tone, daysOverdue, draft, draftedBy } = await composeReminder(inv, today, wanted);
+  const { tone, daysOverdue, draft, draftedBy, voice, voiceLabel } = await composeReminder(inv, today, wanted);
   return createAction(
     'send_reminder',
-    { invoiceId: inv.id, number: inv.number, client: clientName(inv.clientId), amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, daysOverdue, tone, draftedBy, ...draft },
+    { invoiceId: inv.id, number: inv.number, client: clientName(inv.clientId), amount: inv.total, currency: inv.currency, dueDate: inv.dueDate, daysOverdue, tone, voice, voiceLabel, draftedBy, ...draft },
     { origin, summary: `Reminder #${inv.number} (${tone})` }
   );
 }

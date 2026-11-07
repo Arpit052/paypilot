@@ -439,16 +439,84 @@ export function estimateBudget(input = {}, today = isoDate()) {
       otherCurrencyLeftOut: otherCurrency, lowData: M.sample < 10,
     },
   };
+  result.path = typicalPath(result, { today, cashNow, perDay, bills: billList, end, target });
   result.verdict = verdict(result);
   return result;
+}
+
+/**
+ * The story behind the answer: every payment on its most likely date, every bill on its day,
+ * and the running balance after each one, from today to the end of the safety window.
+ */
+function typicalPath(r, { today, cashNow, perDay, bills, end, target }) {
+  const ev = [];
+  for (const d of r.drivers) {
+    if (!d.likelyDate || d.chancePaidEver < 50) continue;
+    const t = daysBetween(today, d.likelyDate);
+    if (t > end) continue;
+    ev.push({ t, kind: 'in', label: d.kind === 'retainer' ? `${d.client} pays the retainer` : `${d.client} pays #${d.number}`, amount: d.net, client: d.client, number: d.number, risk: d.risk });
+  }
+  for (const b of bills) if (b.t <= end) ev.push({ t: b.t, kind: 'bill', label: b.name, amount: -b.amount });
+  for (let k = 0; k < r.instalments; k++) {
+    const t = target + WINDOW * k;
+    if (t <= end) ev.push({ t, kind: 'buy', label: r.instalments > 1 ? `${r.item || 'Purchase'}, payment ${k + 1} of ${r.instalments}` : r.item || 'Your purchase', amount: -r.instalment });
+  }
+  // same day: money in first, then bills, then the purchase
+  const order = { in: 0, bill: 1, buy: 2 };
+  ev.sort((a, b) => a.t - b.t || order[a.kind] - order[b.kind]);
+  let bal = cashNow;
+  let last = 0;
+  const rows = [];
+  for (const e of ev) {
+    bal += -perDay * (e.t - last) + e.amount;
+    last = e.t;
+    rows.push({ ...e, date: addDays(today, e.t), balance: r2(bal) });
+  }
+  const endBal = r2(bal - perDay * (end - last));
+  const after = rows.filter((x) => x.t >= target);
+  const low = after.reduce((m, x) => (!m || x.balance < m.balance ? x : m), null);
+  return { rows, endBalance: endBal, endDate: addDays(today, end), everydayPerDay: r2(perDay), lowest: low ? { date: low.date, balance: low.balance, label: low.label, kind: low.kind } : null };
 }
 
 const pct = (c) => (c >= 99.5 ? 'Over 99%' : c < 0.5 ? 'Under 1%' : `${Math.round(c)}%`);
 const fmt = (cur, v) => `${cur} ${Math.round(v).toLocaleString('en-US')}`;
 const nice = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
+/** "Safe on X, risky on Y" plus the one-paragraph story of why. */
+function storyOf(r) {
+  const p = r.path;
+  const buf = r.inputs.buffer;
+  const lowRow = p?.lowest;
+  const pill = [];
+  if (r.chance >= 80) pill.push({ tone: 'safe', text: `Safe on ${nice(r.date)}` });
+  else {
+    if (lowRow && lowRow.balance < buf) pill.push({ tone: 'risky', text: `Risky on ${nice(lowRow.date)}` });
+    else pill.push({ tone: 'risky', text: `Risky on ${nice(r.date)}` });
+    if (r.safeDates.p80) pill.push({ tone: 'safe', text: `Safe from ${nice(r.safeDates.p80)}` });
+  }
+  if (!lowRow) return { pill, story: '' };
+  const spend = `If you spend ${fmt(r.currency, r.price)} on ${nice(r.date)}${r.instalments > 1 ? ` (${r.instalments} payments)` : ''}`;
+  if (lowRow.balance >= buf) {
+    return { pill, story: `${spend}, your balance in a typical month is lowest on ${nice(lowRow.date)}${lowRow.kind === 'bill' ? ` after ${lowRow.label}` : ''}, at ${fmt(r.currency, lowRow.balance)}, still above your ${fmt(r.currency, buf)} line.` };
+  }
+  // money that would have saved it, but is likely to land after the low point
+  const lateIn = p.rows.filter((x) => x.kind === 'in' && x.date > lowRow.date).sort((a, b) => b.amount - a.amount)[0];
+  const cause = lowRow.kind === 'bill' ? ` when ${lowRow.label} (${fmt(r.currency, -p.rows.find((x) => x.date === lowRow.date && x.kind === 'bill').amount)}) leaves` : '';
+  const why = lateIn ? `, because ${lateIn.client}'s payment${lateIn.number ? ` (#${lateIn.number})` : ''} is only likely around ${nice(lateIn.date)}${lateIn.risk === 'high' ? ', given how late they usually pay' : ''}` : '';
+  let fix = '';
+  if (r.safeDates.p80) {
+    const cushion = p.rows.filter((x) => x.kind === 'in' && x.date > lowRow.date && x.date <= r.safeDates.p80).map((x) => x.client.split(' ')[0]);
+    fix = ` By ${nice(r.safeDates.p80)}${cushion.length ? `, ${[...new Set(cushion)].slice(0, 3).join(' and ')}'s payment${cushion.length > 1 ? 's' : ''} should have cleared and` : ''} you'd stay above your ${fmt(r.currency, buf)} line in 8 out of 10 futures.`;
+  }
+  return { pill, story: `${spend}, your projected balance on ${nice(lowRow.date)} is ${fmt(r.currency, lowRow.balance)}${cause}${why}.${fix}` };
+}
+
 /** Plain-English answer built from the numbers (no AI needed, so it's always available). */
 export function verdict(r) {
+  return { ...verdictCore(r), ...storyOf(r) };
+}
+
+function verdictCore(r) {
   const key = r.drivers
     .filter((d) => d.kind === 'invoice' && (d.impact ?? 0) >= 15 && d.chanceByDate < 97)
     .sort((a, b) => b.impact * (100 - b.chanceByDate) - a.impact * (100 - a.chanceByDate))[0];
@@ -476,4 +544,69 @@ export function verdict(r) {
     headline: r.chance < 0.5 ? `Not yet. Very unlikely by ${nice(r.date)}.` : `Not yet. Only a ${Math.round(r.chance)}% chance on ${nice(r.date)}.`,
     detail: `In a typical future you'd dip about ${fmt(r.currency, r.shortfall.likely)} below your buffer ${r.instalments > 1 ? 'while you pay it off' : 'in the month after buying'}, and ${fmt(r.currency, r.shortfall.badCase)} in a bad month.${r.chanceWithNewWork - r.chance >= 20 ? ` That counts only money already invoiced; if your regular clients keep sending work at their usual pace, the chance is ${pct(r.chanceWithNewWork).toLowerCase()}.` : when}${cap}${keyText}`,
   };
+}
+
+/**
+ * When each unpaid invoice is likely to be paid, from the same per-client model the Budget
+ * Estimator uses (400 seeded draws per invoice). Returns Map(invoiceId -> { date, early, late,
+ * chance }) where date is the median, early/late the 10th/90th percentile, and chance the
+ * probability it's paid at all. Dates are never in the past.
+ */
+export function expectedPayments(invoices, today = isoDate()) {
+  const M = learn(today);
+  const out = new Map();
+  const N = 400;
+  for (const inv of invoices) {
+    if (!isOpen(inv)) continue;
+    const s = delaySampler(M, inv.clientId);
+    const lateNow = Math.max(0, daysBetween(inv.dueDate, today));
+    const rnd = mulberry32(hash(`${inv.id}:${today}`));
+    const minDelay = daysBetween(inv.dueDate, today);
+    const days = [];
+    for (let k = 0; k < N; k++) days.push(Math.max(0, daysBetween(today, inv.dueDate) + s.draw(rnd, minDelay)));
+    days.sort((a, b) => a - b);
+    const ever = collectChance(M, inv.clientId, lateNow, s.slowest);
+    const within = (d) => (days.filter((x) => x <= d).length / N) * ever;
+    out.set(inv.id, {
+      date: addDays(today, Math.round(quantile(days, 0.5))),
+      early: addDays(today, Math.round(quantile(days, 0.1))),
+      late: addDays(today, Math.round(quantile(days, 0.9))),
+      chance: Math.round(ever * 100),
+      within30: Math.round(within(30) * 100),
+      within: within,
+      basedOn: s.own,
+    });
+  }
+  return out;
+}
+
+/**
+ * Money expected in the next `days`: each unpaid invoice counts for its amount times the
+ * chance it's paid within that time (from the per-client timing model). Same shape as the
+ * older forecastCashflow, plus the working, so the UI can show the exact sum.
+ */
+export function forecastFromModel(days = 30, today = isoDate()) {
+  const open = listInvoices().filter(isOpen);
+  const pred = expectedPayments(open, today);
+  const rows = open
+    .map((inv) => {
+      const p = pred.get(inv.id);
+      const due = amountDue(inv);
+      const probability = Math.round(p.within(days) * 100) / 100;
+      return {
+        invoice: inv.number,
+        client: getClient(inv.clientId)?.name || 'Unknown',
+        amount: due,
+        currency: inv.currency,
+        expectedDate: p.date,
+        range: [p.early, p.late],
+        probability,
+        expectedValue: r2(due * probability),
+        basedOn: p.basedOn,
+      };
+    })
+    .filter((r) => r.probability > 0)
+    .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate));
+  const by = (f) => rows.reduce((m, r) => ((m[r.currency] = r2((m[r.currency] || 0) + f(r))), m), {});
+  return { horizonDays: days, expected: by((r) => r.expectedValue), bestCase: by((r) => r.amount), invoices: rows, method: 'amount × chance paid within the period, from each client\'s payment history' };
 }

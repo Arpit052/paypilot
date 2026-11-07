@@ -1,4 +1,5 @@
 // Keeps local invoice state in sync with PayPal: polling + webhooks.
+import { unlockFor } from './delivery.js';
 import { isoDate } from './config.js';
 import { listInvoices, getInvoiceByPaypalId, updateInvoice, logActivity, upsertClient, findClient, insertInvoice, kvGet } from './db.js';
 import { paypal, notOnCurrentPaypal, isMock } from './paypal.js';
@@ -12,7 +13,8 @@ export function applyStatus(inv, status, paidDate) {
   const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: inv.currency }).format(inv.total);
   if (['PAID', 'MARKED_AS_PAID'].includes(status)) {
     updateInvoice(inv.id, { status, paidDate: paidDate || isoDate() });
-    logActivity('invoice_paid', `💰 ${who} paid invoice #${inv.number} (${inv.currency} ${inv.total})`);
+    logActivity('invoice_paid', `${who} paid invoice #${inv.number} (${inv.currency} ${inv.total})`);
+    unlockFor(inv); // pay to unlock: release the final files
     notify({ kind: 'payment', title: `Payment received: ${amount}`, body: `${who} paid invoice #${inv.number}.`, link: '/dashboard', invoiceId: inv.id });
   } else if (status === 'PARTIALLY_PAID') {
     updateInvoice(inv.id, { status });

@@ -1,9 +1,11 @@
 // Human-in-the-loop: the AI only *proposes* actions that move money or contact
 // clients. Nothing reaches PayPal until the user approves the action card.
 import { config, isoDate, addDays } from './config.js';
-import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction } from './db.js';
+import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction, kvSet, kvGet } from './db.js';
 import { paypal, PayPalError, notOnCurrentPaypal, isMock } from './paypal.js';
 import { invoiceTotals, isOpen } from './analytics.js';
+import { cleanWorkUrl, newToken, attachDelivery, unlockLink, noteLine as deliveryNote } from './delivery.js';
+import { earlyPayTerms, noteLineFor as earlyNote, saveEarlyPay } from './earlypay.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -86,6 +88,11 @@ export function normaliseInvoiceDraft(d) {
   depositAmount = round2(depositAmount);
   if (depositAmount < 0) throw invalid('Deposit cannot be negative');
   if (depositAmount >= total) throw invalid('Deposit must be less than the invoice total');
+  // pay to unlock: the final work, shown to the client only once this invoice is paid
+  const deliveryUrl = cleanWorkUrl(d.deliveryUrl ?? d.delivery_url ?? '');
+  // early-pay discount (percent off the subtotal if paid within 48 hours)
+  const earlyPayPercent = Math.min(10, Math.max(0, round2(Number(d.earlyPayPercent ?? d.early_pay_percent ?? 0) || 0)));
+  if (earlyPayPercent && depositAmount) throw invalid('Use either a deposit or an early-pay discount on one invoice, not both');
   return {
     ...base,
     issueDate,
@@ -96,6 +103,10 @@ export function normaliseInvoiceDraft(d) {
     total,
     depositAmount,
     depositSuggested: Boolean(d.depositSuggested) && depositAmount > 0,
+    deliveryUrl,
+    deliveryLabel: String(d.deliveryLabel || '').trim().slice(0, 80),
+    earlyPayPercent,
+    earlyPayAmount: earlyPayPercent ? round2((subtotal * earlyPayPercent) / 100) : 0,
   };
 }
 
@@ -126,6 +137,15 @@ const executors = {
   async create_invoice(payload, requestId) {
     const draft = normaliseInvoiceDraft(payload);
     const client = upsertClient({ name: draft.clientName, email: draft.clientEmail, company: draft.company });
+    // the token is fixed per approval, so a retry puts the same unlock link in the note
+    const token = draft.deliveryUrl ? kvGet(`dtok-for:${requestId}`) || newToken() : null;
+    if (token && requestId) kvSet(`dtok-for:${requestId}`, token);
+    const ep = draft.earlyPayPercent ? earlyPayTerms(draft.subtotal, draft.earlyPayPercent) : null;
+    const fullTotal = draft.total;
+    const notes = [draft.note];
+    if (ep) notes.push(earlyNote({ amount: ep.amount, until: ep.until, currency: draft.currency, fullTotal, dueDate: draft.dueDate }));
+    if (token) notes.push(deliveryNote(token));
+    const note = notes.filter(Boolean).join('\n\n');
     const pp = await paypal.createAndSendInvoice({
       client,
       issueDate: draft.issueDate < isoDate() ? draft.issueDate : undefined, // today -> let PayPal default it
@@ -133,23 +153,27 @@ const executors = {
       items: draft.items,
       currency: draft.currency,
       dueDate: draft.dueDate,
-      note: draft.note,
+      note,
       taxPercent: draft.taxPercent,
       depositAmount: draft.depositAmount,
+      discountAmount: ep ? ep.amount : 0,
       requestId,
     });
+    const discounted = ep && !pp.discountRefused;
+    // local total after the discount (tax is charged on the discounted subtotal)
+    const afterDiscount = discounted ? round2(fullTotal - ep.amount - (draft.taxPercent ? round2((ep.amount * draft.taxPercent) / 100) : 0)) : fullTotal;
     const inv = insertInvoice({
       paypalId: pp.paypalId,
       number: pp.number,
       clientId: client.id,
       items: draft.items,
       currency: draft.currency,
-      total: pp.total || draft.total, // PayPal's own total wins if it computed one
+      total: pp.total || afterDiscount, // PayPal's own total wins if it computed one
       status: pp.status,
       issueDate: draft.issueDate || pp.issueDate || isoDate(),
       dueDate: draft.dueDate,
       paidDate: null,
-      note: draft.note,
+      note,
       payerUrl: pp.payerUrl,
       reminders: [],
       source: 'paypal',
@@ -157,15 +181,19 @@ const executors = {
       depositAmount: draft.depositAmount,
       reference: draft.reference,
     });
+    if (token) attachDelivery(inv.id, { url: draft.deliveryUrl, label: draft.deliveryLabel, token });
+    if (discounted) saveEarlyPay(inv.id, { percent: ep.percent, amount: ep.amount, until: ep.until, fullTotal, discountedTotal: inv.total });
     logActivity(
       'invoice_sent',
-      `Invoice #${inv.number} for ${draft.currency} ${inv.total} sent to ${client.name}${draft.depositAmount ? ` (deposit ${draft.currency} ${draft.depositAmount} due upfront)` : ''}`
+      `Invoice #${inv.number} for ${draft.currency} ${inv.total} sent to ${client.name}${draft.depositAmount ? ` (deposit ${draft.currency} ${draft.depositAmount} due upfront)` : ''}${discounted ? ` with a ${ep.percent}% early-pay discount for 48 hours` : ''}${token ? ', final files locked until paid' : ''}`
     );
     return {
       invoiceId: inv.id,
       number: inv.number,
       paypalId: inv.paypalId,
       payerUrl: inv.payerUrl,
+      ...(token ? { unlockLink: unlockLink(token) } : {}),
+      ...(ep && pp.discountRefused ? { notice: "PayPal didn't accept the early-pay discount on this account, so the invoice went out at the full price." } : {}),
       ...(pp.depositAsNote
         ? { notice: `Your PayPal account's country doesn't support split payments, so the ${draft.currency} ${draft.depositAmount} deposit was added to the invoice as a note. The client pays the full amount through PayPal.` }
         : {}),
@@ -281,6 +309,7 @@ export async function markPaid(invoiceId, { method = 'bank', date, note } = {}) 
   }
   const { applyStatus } = await import('./sync.js');
   applyStatus(inv, 'MARKED_AS_PAID', paidDate);
+  kvSet(`paidVia:${inv.id}`, method); // for the tax report: paid outside PayPal
   logActivity('marked_paid', `Invoice #${inv.number} marked as paid (${method})`);
   return { number: inv.number, status: 'MARKED_AS_PAID', paidDate };
 }

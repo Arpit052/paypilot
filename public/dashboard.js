@@ -28,7 +28,22 @@ function renderFigures() {
     card('paidThisMonth', 'Earned this month', moneyMap(s.earned, cur), `${s.paidInvoices} paid invoice${s.paidInvoices === 1 ? '' : 's'}`) +
     card('open', 'Waiting to be paid', moneyMap(s.outstanding, cur), `${s.openInvoices} open`) +
     card('overdue', 'Overdue', moneyMap(s.overdue, cur), s.overdueInvoices ? `${s.overdueInvoices} invoice${s.overdueInvoices > 1 ? 's' : ''} late` : 'Nothing late', s.overdueInvoices ? 'late' : '') +
-    card('expected30', 'Expected in 30 days', moneyMap(data.dash.forecast.expected, cur), "Weighted by each client's habits");
+    `<div class="fig-wrap">${card('expected30', 'Expected in 30 days', moneyMap(data.dash.forecast.expected, cur), "Weighted by each client's habits")}
+      <button class="fig-info" type="button" aria-label="How this number is worked out" aria-describedby="figPop">i</button>
+      <div class="fig-pop" id="figPop" role="tooltip">${forecastWorking()}</div></div>`;
+}
+
+function forecastWorking() {
+  const f = data.dash.forecast;
+  const rows = f.invoices.filter((r) => r.currency === cur);
+  if (!rows.length) return '<b>Nothing expected</b><p>No unpaid invoices are likely to be paid in the next 30 days.</p>';
+  const total = rows.reduce((t, r) => t + r.expectedValue, 0);
+  return `<b>How this number is worked out</b>
+    <p>Each unpaid invoice counts for its amount times the chance it's paid in the next 30 days. The chance comes from how that client has paid before.</p>
+    <table><tbody>${rows
+      .map((r) => `<tr><td>${esc(r.client)} <span>#${esc(r.invoice)}</span></td><td class="r">${money(r.amount, cur)}</td><td class="x">×</td><td class="r">${Math.round(r.probability * 100)}%</td><td class="r"><b>${money(r.expectedValue, cur)}</b></td></tr>`)
+      .join('')}</tbody><tfoot><tr><td colspan="4">Expected in 30 days</td><td class="r"><b>${money(Math.round(total * 100) / 100, cur)}</b></td></tr></tfoot></table>
+    <p class="fig-pop-n">Likely dates: ${rows.map((r) => `${esc(r.client.split(' ')[0])} ${fmtDate(r.expectedDate)}`).join(' · ')}</p>`;
 }
 
 $('figures').addEventListener('click', (e) => {
@@ -146,6 +161,7 @@ const COLS = [
   ['work', 'Work'],
   ['issueDate', 'Issued'],
   ['dueDate', 'Due'],
+  ['money', 'Paid / expected'],
   ['displayStatus', 'Invoice status'],
   ['total', 'Amount', 'r'],
 ];
@@ -154,7 +170,20 @@ function sortVal(i, key) {
   if (key === 'work') return i.items.map((x) => x.name).join(', ').toLowerCase();
   if (key === 'total') return i.total;
   if (key === 'number') return Number(String(i.number).replace(/\D/g, '')) || 0;
+  if (key === 'money') return i.paidDate || i.expected?.date || '';
   return String(i[key] ?? '').toLowerCase();
+}
+
+// when the money came in, or when it's likely to
+function moneyDate(i) {
+  if (i.paidDate) {
+    const d = i.paidLateDays;
+    const t = d === null ? '' : d <= 0 ? (d < 0 ? `${-d}d early` : 'on time') : `${d}d late`;
+    return `<span class="md paid">${fmtDate(i.paidDate)}</span><span class="md-s ${d > 0 ? 'late' : 'ok'}">${t}</span>`;
+  }
+  if (i.expected?.date && OPEN.includes(i.status))
+    return `<span class="md exp" title="Likely ${fmtDate(i.expected.date)}; 8 in 10 times between ${fmtDate(i.expected.early)} and ${fmtDate(i.expected.late)}. ${i.expected.chance}% chance it's paid at all, based on ${i.expected.basedOn} past payment${i.expected.basedOn === 1 ? '' : 's'} from this client.">≈ ${fmtDate(i.expected.date)}</span><span class="md-s">${i.expected.early === i.expected.late ? 'likely' : `${fmtDate(i.expected.early)} – ${fmtDate(i.expected.late)}`}</span>`;
+  return '<span class="muted">—</span>';
 }
 
 function renderTable() {
@@ -197,6 +226,7 @@ function renderTable() {
             <td class="muted">${esc(i.items.map((x) => x.name).join(', ')).slice(0, 60)}</td>
             <td>${fmtDate(i.issueDate)}</td>
             <td>${fmtDate(i.dueDate)}</td>
+            <td>${moneyDate(i)}</td>
             <td><span class="pill ${i.displayStatus}">${i.displayStatus === 'OVERDUE' ? 'Overdue' : i.displayStatus.charAt(0) + i.displayStatus.slice(1).toLowerCase().replace(/_/g, ' ')}</span>${i.source === 'seed' ? ' <span class="muted" title="Demo history, not on PayPal">demo</span>' : i.source === 'import' ? ' <span class="muted" title="Created on PayPal, imported by PayPilot">imported</span>' : ''}${i.depositAmount ? ` <span class="muted" title="Deposit due upfront">deposit ${money(i.depositAmount, i.currency)}</span>` : ''}</td>
             <td class="r num">${money(i.total, i.currency)}</td>
             <td class="r">${

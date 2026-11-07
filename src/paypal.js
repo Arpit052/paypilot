@@ -23,7 +23,7 @@ function money(currency, value) {
 }
 
 /** Build a PayPal v2 invoice body from our internal shape. Exported for tests. */
-export function buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note, taxPercent = 0, depositAmount = 0, reference = '' }) {
+export function buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note, taxPercent = 0, depositAmount = 0, reference = '', discountAmount = 0 }) {
   const body = {
     detail: {
       currency_code: currency,
@@ -63,6 +63,8 @@ export function buildInvoiceBody({ number, client, items, currency, issueDate, d
   if (number) body.detail.invoice_number = number;
   if (note) body.detail.note = String(note).slice(0, 4000);
   if (reference) body.detail.reference = String(reference).slice(0, 120);
+  // early-pay discount: an invoice-level discount PayPal applies before tax
+  if (discountAmount > 0) body.amount = { breakdown: { discount: { invoice_discount: { amount: money(currency, discountAmount) } } } };
   return body;
 }
 
@@ -171,7 +173,7 @@ const real = {
    * - progress is checkpointed locally, so a retry after a partial failure resumes
    *   (reuses the same number / invoice id) instead of creating a duplicate.
    */
-  async createAndSendInvoice({ client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, requestId }) {
+  async createAndSendInvoice({ client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, discountAmount = 0, requestId }) {
     const ck = requestId ? `idem:${requestId}` : null;
     const state = (ck && kvGet(ck)) || {};
     const save = () => ck && kvSet(ck, state);
@@ -190,9 +192,9 @@ const real = {
         state.depositAsNote = true;
         const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(depositAmount);
         const line = `Deposit: please pay ${fmt} upfront so work can begin. The balance is due by ${dueDate}.`;
-        return buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note: note ? `${note}\n\n${line}` : line, taxPercent, depositAmount: 0, reference });
+        return buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note: note ? `${note}\n\n${line}` : line, taxPercent, depositAmount: 0, reference, discountAmount: state.noDiscount ? 0 : discountAmount });
       };
-      const body = depositAmount > 0 && kvGet(noSplitKey) ? asNote() : buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference });
+      const body = depositAmount > 0 && kvGet(noSplitKey) ? asNote() : buildInvoiceBody({ number: state.number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, discountAmount });
       let created;
       let payload = body;
       for (let attempt = 0; ; attempt++) {
@@ -203,6 +205,13 @@ const real = {
           if (depositAmount > 0 && e.status === 400 && /partial/i.test(e.message) && !state.depositAsNote) {
             kvSet(noSplitKey, true);
             payload = asNote();
+            continue;
+          }
+          // PayPal refused the discount: send at the full price rather than not at all
+          if (discountAmount > 0 && !state.noDiscount && e.status === 400 && /discount/i.test(e.message)) {
+            state.noDiscount = true;
+            const { amount, ...rest } = payload;
+            payload = rest;
             continue;
           }
           // that number is already used on this PayPal account (e.g. made on paypal.com): take the next one
@@ -233,7 +242,19 @@ const real = {
       state.payerUrl = fresh?.detail?.metadata?.recipient_view_url || state.payerUrl;
       save();
     }
-    return { paypalId: state.id, number: state.number, status: 'SENT', payerUrl: state.payerUrl, issueDate: isoDate(), total: state.total, depositAsNote: Boolean(state.depositAsNote) };
+    return { paypalId: state.id, number: state.number, status: 'SENT', payerUrl: state.payerUrl, issueDate: isoDate(), total: state.total, depositAsNote: Boolean(state.depositAsNote), discountRefused: Boolean(state.noDiscount) };
+  },
+
+  /** Early-pay window over: take the invoice-level discount off (full update) and re-notify the client. */
+  async removeDiscount(paypalId, { requestId } = {}) {
+    const raw = await api('GET', `/v2/invoicing/invoices/${paypalId}`);
+    if (!raw.amount?.breakdown?.discount?.invoice_discount) return { total: Number(raw.amount?.value) || null, already: true };
+    const body = { id: raw.id, detail: raw.detail, invoicer: raw.invoicer, primary_recipients: raw.primary_recipients, items: raw.items, configuration: raw.configuration };
+    const updated = await api('PUT', `/v2/invoicing/invoices/${paypalId}?send_to_recipient=true&send_to_invoicer=true`, body, {
+      Prefer: 'return=representation',
+      ...(requestId ? { 'PayPal-Request-Id': `${requestId}-nodiscount` } : {}),
+    });
+    return { total: Number(updated.amount?.value) || null };
   },
 
   async getInvoice(paypalId) {
@@ -348,13 +369,13 @@ const mock = {
   async listInvoices() {
     return []; // demo invoices already live in PayPilot's own database
   },
-  async createAndSendInvoice({ client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, requestId }) {
+  async createAndSendInvoice({ client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, discountAmount = 0, requestId }) {
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(client.email)) throw new PayPalError('Invalid recipient email', 422);
     const done = requestId && kvGet(`idem:${requestId}`);
     if (done) return done; // idempotent retry
     const number = mockNextNumber();
     const paypalId = `INV2-MOCK-${number}`;
-    mockPut(paypalId, { status: 'SENT', reminders: 0, body: buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference }) });
+    mockPut(paypalId, { status: 'SENT', reminders: 0, discount: discountAmount || 0, body: buildInvoiceBody({ number, client, items, currency, issueDate, dueDate, note, taxPercent, depositAmount, reference, discountAmount }) });
     const result = { paypalId, number, status: 'SENT', payerUrl: `/mock-pay.html?id=${paypalId}`, issueDate: isoDate() };
     if (requestId) kvSet(`idem:${requestId}`, result);
     return result;
@@ -363,6 +384,14 @@ const mock = {
     const inv = mockGet(paypalId);
     if (!inv) throw new PayPalError('Invoice not found', 404);
     return { status: inv.status, paidDate: inv.paidDate || null, payerUrl: `/mock-pay.html?id=${paypalId}` };
+  },
+  async removeDiscount(paypalId) {
+    const inv = mockGet(paypalId);
+    if (!inv) throw new PayPalError('Invoice not found', 404);
+    if (!inv.discount) return { total: null, already: true };
+    inv.discount = 0;
+    mockPut(paypalId, inv);
+    return { total: null };
   },
   async addLateFee(paypalId, { amount }) {
     const inv = mockGet(paypalId);

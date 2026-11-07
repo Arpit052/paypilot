@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Your files</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#09090b">
+  <style>
+    body { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .ul { width: 100%; max-width: 440px; padding: 30px 30px 26px; border-radius: 18px; background: #0f0f11; border: 1px solid #222226; text-align: center; }
+    .ul-ic { width: 54px; height: 54px; margin: 0 auto 18px; border-radius: 16px; display: grid; place-items: center; background: #17171a; border: 1px solid #26262b; color: #d4d4d8; }
+    .ul.open .ul-ic { color: var(--paid); background: var(--paid-bg); border-color: transparent; }
+    .ul-from { font-size: 12.5px; color: var(--ink-3); letter-spacing: .02em; }
+    .ul h1 { font-size: 22px; margin: 6px 0 8px; letter-spacing: -0.02em; }
+    .ul p { margin: 0 0 20px; color: var(--ink-2); font-size: 14px; line-height: 1.55; }
+    .ul-inv { display: flex; justify-content: space-between; padding: 12px 14px; border-radius: 12px; background: #0a0a0b; border: 1px solid #1f1f23; font-size: 13.5px; margin-bottom: 18px; }
+    .ul-inv span { color: var(--ink-3); }
+    .ul-inv b { font-variant-numeric: tabular-nums; }
+    .ul .btn { width: 100%; justify-content: center; padding: 12px 16px; font-size: 14.5px; }
+    .ul-foot { margin-top: 16px; font-size: 12px; color: var(--ink-3); }
+    .ul-wait { display: inline-flex; align-items: center; gap: 8px; }
+    .ul-wait i { width: 7px; height: 7px; border-radius: 50%; background: var(--due); animation: ulp 1.6s ease-in-out infinite; }
+    @keyframes ulp { 50% { opacity: .3; } }
+    @media (prefers-reduced-motion: reduce) { .ul-wait i { animation: none; } }
+  </style>
+</head>
+<body>
+  <div class="ul" id="card" aria-live="polite"><p>Loading…</p></div>
+<script type="module">
+  const token = location.pathname.split('/').pop();
+  const card = document.getElementById('card');
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const money = (v, c) => new Intl.NumberFormat('en-US', { style: 'currency', currency: c }).format(v);
+  const lock = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  const open = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>';
+  let timer = null;
+  async function load() {
+    let v;
+    try {
+      const r = await fetch(`/api/d/${encodeURIComponent(token)}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'This link is not valid any more');
+      v = await r.json();
+    } catch (e) {
+      card.innerHTML = `<div class="ul-ic">${lock}</div><h1>Link not available</h1><p>${esc(e.message)}. Ask the sender for a new link.</p>`;
+      clearInterval(timer);
+      return;
+    }
+    const inv = `<div class="ul-inv"><span>Invoice #${esc(v.number)}</span><b>${esc(money(v.total, v.currency))}</b></div>`;
+    if (v.paid) {
+      card.className = 'ul open';
+      card.innerHTML = `<div class="ul-ic">${open}</div><div class="ul-from">From ${esc(v.business)}</div><h1>Thank you, your files are ready</h1><p>The invoice is paid, so the final work is unlocked${v.label ? `: ${esc(v.label)}` : ''}.</p>${inv}<a class="btn" href="${esc(v.url)}" target="_blank" rel="noopener noreferrer">Open your files</a><div class="ul-foot">Keep this page: the link stays here.</div>`;
+      clearInterval(timer);
+    } else {
+      card.className = 'ul';
+      card.innerHTML = `<div class="ul-ic">${lock}</div><div class="ul-from">From ${esc(v.business)}</div><h1>Your files are ready</h1><p>${v.label ? `${esc(v.label)} is` : 'The final work is'} waiting here and unlocks by itself as soon as the invoice is paid.</p>${inv}${v.payUrl ? `<a class="btn" href="${esc(v.payUrl)}" target="_blank" rel="noopener">Pay with PayPal</a>` : ''}<div class="ul-foot"><span class="ul-wait"><i></i>Waiting for payment. This page updates on its own.</span></div>`;
+    }
+  }
+  load();
+  timer = setInterval(load, 10000);
+</script>
+</body>
+</html>

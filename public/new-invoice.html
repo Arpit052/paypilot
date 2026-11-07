@@ -60,6 +60,8 @@
         <div class="form-grid">
           <div><label for="tax">Sales tax %</label><input id="tax" type="number" min="0" max="50" step="0.01" value="0"></div>
           <div><label for="deposit">Deposit due upfront</label><input id="deposit" type="number" min="0" step="0.01" value="0"></div>
+          <div><label for="early">Early-pay discount</label><select id="early"><option value="0">None</option><option value="1">1% off if paid within 48 h</option><option value="2">2% off if paid within 48 h</option><option value="3">3% off if paid within 48 h</option><option value="5">5% off if paid within 48 h</option></select><span class="hint" id="earlyHint"></span></div>
+          <div><label for="delivery">Final work link <span class="muted">(pay to unlock)</span></label><input id="delivery" type="url" placeholder="https://figma.com/… or Drive link"><span class="hint">Your client sees a locked page that opens the link once this invoice is paid.</span></div>
           <div class="full"><label for="ref">Reference / PO number (optional)</label><input id="ref" placeholder="e.g. PO-2291"></div>
           <div class="full"><label for="note">Note to customer (optional)</label><textarea id="note" rows="2" placeholder="Thanks for your business!"></textarea></div>
         </div>
@@ -170,14 +172,32 @@
   // ---- live preview ----
   function totals() {
     const pct = Number($('tax').value) || 0;
+    const ep = Number($('early').value) || 0;
     let sub = 0, tax = 0;
     for (const it of items()) {
       const a = r2((it.quantity || 0) * (it.unitPrice || 0));
       sub += a;
       tax += r2((a * pct) / 100);
     }
-    return { sub: r2(sub), tax: r2(tax), total: r2(sub + tax), pct };
+    const disc = r2((sub * ep) / 100);
+    const taxAfter = ep ? r2(tax - (tax * ep) / 100) : tax;
+    return { sub: r2(sub), tax: taxAfter, disc, ep, full: r2(sub + tax), total: r2(sub - disc + taxAfter), pct };
   }
+  // suggested early-pay discount from the client's history
+  let sugTimer;
+  const suggest = () => {
+    clearTimeout(sugTimer);
+    sugTimer = setTimeout(async () => {
+      const t = totals();
+      if (!$('email').value.includes('@') || !t.sub) return ($('earlyHint').textContent = '');
+      const sg = await api(`/api/earlypay/suggest?email=${encodeURIComponent($('email').value)}&total=${t.sub}`).catch(() => null);
+      if (!sg) return;
+      $('earlyHint').innerHTML = sg.percent ? `Suggested: <b>${sg.percent}%</b>. ${esc(sg.reason)} <button type="button" class="linkbtn" id="useEarly">Use it</button>` : esc(sg.reason);
+      document.getElementById('useEarly')?.addEventListener('click', () => { $('early').value = String(sg.percent); render(); });
+    }, 350);
+  };
+  $('email').addEventListener('input', suggest);
+  $('lines').addEventListener('input', suggest);
   function render() {
     const cur = $('currency').value;
     [...$('lines').rows].forEach((tr, i) => {
@@ -194,8 +214,10 @@
       <table class="items"><thead><tr><th>Service</th><th class="q">Qty</th><th class="amt">Amount</th></tr></thead><tbody>
         ${lines.length ? lines.map((i) => `<tr><td>${esc(i.name)}</td><td class="q num">${i.quantity}</td><td class="amt num">${money(r2(i.quantity * i.unitPrice), cur)}</td></tr>`).join('') : '<tr><td colspan="3" class="muted">Add a service</td></tr>'}
       </tbody></table>
-      <div class="sums num"><div><span>Subtotal</span><span>${money(t.sub, cur)}</span></div>${t.pct ? `<div><span>Sales tax (${t.pct}%)</span><span>${money(t.tax, cur)}</span></div>` : ''}</div>
+      <div class="sums num"><div><span>Subtotal</span><span>${money(t.sub, cur)}</span></div>${t.ep ? `<div><span>Early-pay discount (${t.ep}%)</span><span>−${money(t.disc, cur)}</span></div>` : ''}${t.pct ? `<div><span>Sales tax (${t.pct}%)</span><span>${money(t.tax, cur)}</span></div>` : ''}</div>
       <div class="total"><span>Total due</span><b class="num">${money(t.total, cur)}</b></div>
+      ${t.ep ? `<div class="deposit-line">If paid within 48 hours. After that the full ${money(t.full, cur)} applies, due ${fmtDate($('due').value)}.</div>` : ''}
+      ${$('delivery').value.trim() ? '<div class="deposit-line">Final files unlock for the client once this is paid.</div>' : ''}
       ${dep > 0 ? `<div class="deposit-line num">${money(dep, cur)} due upfront, ${money(Math.max(t.total - dep, 0), cur)} by the due date</div>` : ''}
       ${$('note').value ? `<p class="muted" style="margin:12px 0 0;font-size:13px">${esc($('note').value)}</p>` : ''}`;
   }
@@ -214,6 +236,8 @@
       dueDate: $('due').value,
       taxPercent: Number($('tax').value) || 0,
       depositAmount: Number($('deposit').value) || 0,
+      earlyPayPercent: Number($('early').value) || 0,
+      deliveryUrl: $('delivery').value.trim(),
       reference: $('ref').value,
       note: $('note').value,
       sendNow,
@@ -231,9 +255,10 @@
         const res = r.action.result;
         $('preview').insertAdjacentHTML('beforeend', '<div class="stamp">SENT</div>');
         $('done').innerHTML = `<div class="panel done-card"><b>Invoice #${esc(res.number)} sent through PayPal.</b><p class="muted">It's now on your dashboard as <b>Sent</b>. When ${esc($('name').value)} pays, it changes to <b>Paid</b> automatically and you'll get a notification.</p>
-          <div class="slip-actions"><a class="btn" href="/dashboard">Go to dashboard</a>${res.payerUrl ? `<button class="btn ghost" type="button" id="copyPay">Copy pay link</button>` : ''}<a class="btn ghost" href="/new-invoice">New invoice</a></div></div>`;
+          <div class="slip-actions"><a class="btn" href="/dashboard">Go to dashboard</a>${res.payerUrl ? `<button class="btn ghost" type="button" id="copyPay">Copy pay link</button>` : ''}${res.unlockLink ? `<button class="btn ghost" type="button" id="copyUnlock">Copy unlock page</button>` : ''}<a class="btn ghost" href="/new-invoice">New invoice</a></div></div>`;
         $('form').querySelectorAll('input,select,textarea,button').forEach((x) => (x.disabled = true));
         document.getElementById('copyPay')?.addEventListener('click', () => copyPayLink(res.payerUrl));
+        document.getElementById('copyUnlock')?.addEventListener('click', () => copyPayLink(res.unlockLink));
       } else {
         toast('Saved as a draft in your approval tray');
         setTimeout(() => (location.href = '/assistant'), 900);
