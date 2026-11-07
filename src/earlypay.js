@@ -6,13 +6,13 @@
 //
 // The suggested percentage follows the client's history: there's no point paying a client
 // who already pays on time, and a late payer is worth a slightly bigger nudge.
-import { config, isoDate } from './config.js';
+import { config, isoDate, cents } from './config.js';
 import { kvGet, kvSet, kvList, getInvoice, updateInvoice, logActivity } from './db.js';
 import { clientStats, isOpen } from './analytics.js';
 import { paypal, notOnCurrentPaypal } from './paypal.js';
 import { notify } from './notify.js';
 
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => cents(n);
 export const EARLY_HOURS = 48;
 
 /** Suggested discount for a client (0 = don't bother). */

@@ -8,7 +8,7 @@
 //
 // Nothing is sent from here. PayPilot writes the offer; you send it from your own email.
 // When the client says yes, one click creates the retainer (each invoice still waits for approval).
-import { config, isoDate, addDays, daysBetween } from './config.js';
+import { config, isoDate, addDays, daysBetween, cents } from './config.js';
 import { listClients, listInvoices, listSchedules, kvGet, kvSet, getClient } from './db.js';
 import { isPaid, clientStats } from './analytics.js';
 import { complete, llmAvailable } from './llm.js';
@@ -17,7 +17,7 @@ import { typeOf, professionLabel } from './business.js';
 
 const LOOKBACK = 180; // days of history we learn from
 const MONTH = 30.44;
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => cents(n);
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 const sd = (xs) => {
   if (xs.length < 2) return 0;

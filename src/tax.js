@@ -8,12 +8,12 @@
 //     pass $20,000 and 200 transactions; clients who paid you outside PayPal $2,000+ in 2026
 //     ($600 before 2026) generally send a 1099-NEC
 //   - a rough self-employment tax figure and the user's own set-aside from the Budget page
-import { config, isoDate } from './config.js';
+import { config, isoDate, cents } from './config.js';
 import { listInvoices, getClient, kvGet } from './db.js';
 import { isPaid, invoiceTotals } from './analytics.js';
 import { PAYPAL_FEE, budgetProfile } from './budget.js';
 
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => cents(n);
 const NEC_THRESHOLD = (year) => (year >= 2026 ? 2000 : 600);
 const K_THRESHOLD = { amount: 20000, count: 200 };
 const SE_BASE = 0.9235; // SE tax applies to 92.35% of net earnings

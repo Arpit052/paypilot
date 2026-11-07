@@ -10,7 +10,7 @@
 //   - an optional AI growth plan written from these facts (deterministic plan otherwise)
 //
 // Amounts are in the main currency only, like the Analytics page.
-import { config, isoDate, addDays, daysBetween } from './config.js';
+import { config, isoDate, addDays, daysBetween, cents } from './config.js';
 import { listInvoices, listClients, listSchedules, kvGet, kvSet } from './db.js';
 import { isOpen, isPaid, clientStats } from './analytics.js';
 import { retainerOffers } from './offers.js';
@@ -18,7 +18,7 @@ import { complete, llmAvailable } from './llm.js';
 import { normalType, professionLabel } from './business.js';
 import { INDUSTRIES, learnLabels, learnedAreas, industrySource } from './labels.js';
 
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => cents(n);
 const sum = (xs, f = (x) => x) => xs.reduce((t, x) => t + f(x), 0);
 const avg = (xs) => (xs.length ? sum(xs) / xs.length : null);
 const median = (xs) => {

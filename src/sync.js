@@ -1,13 +1,27 @@
 // Keeps local invoice state in sync with PayPal: polling + webhooks.
 import { unlockFor } from './delivery.js';
-import { isoDate } from './config.js';
-import { listInvoices, getInvoiceByPaypalId, updateInvoice, logActivity, upsertClient, findClient, insertInvoice, kvGet } from './db.js';
+import { isoDate, cents } from './config.js';
+import { listInvoices, getInvoice, getInvoiceByPaypalId, updateInvoice, logActivity, upsertClient, findClient, insertInvoice, kvGet } from './db.js';
 import { paypal, notOnCurrentPaypal, isMock } from './paypal.js';
 import { isOpen, clientName } from './analytics.js';
 import { notify } from './notify.js';
 
-export function applyStatus(inv, status, paidDate) {
-  if (!status || status === inv.status) return false;
+// Once an invoice is paid or cancelled, only a refund can move it again. PayPal can deliver
+// events late or out of order (an UPDATED/SENT after PAID), and those must not reopen it.
+const SETTLED = new Set(['PAID', 'MARKED_AS_PAID', 'CANCELLED', 'REFUNDED', 'PARTIALLY_REFUNDED', 'MARKED_AS_REFUNDED']);
+const AFTER_PAID = new Set(['REFUNDED', 'PARTIALLY_REFUNDED', 'MARKED_AS_REFUNDED', 'PAID', 'MARKED_AS_PAID']);
+export function allowedMove(from, to) {
+  if (!to || from === to) return false;
+  if (!SETTLED.has(from)) return true;
+  if (from === 'CANCELLED') return false;
+  if (['PAID', 'MARKED_AS_PAID'].includes(from)) return AFTER_PAID.has(to) && !['PAID', 'MARKED_AS_PAID'].includes(to);
+  return to === 'REFUNDED' || to === 'MARKED_AS_REFUNDED'; // partial refund → full refund
+}
+
+export function applyStatus(staleInv, status, paidDate) {
+  // re-read: a webhook may have updated it while a poll was waiting on PayPal
+  const inv = getInvoice(staleInv.id) || staleInv;
+  if (!allowedMove(inv.status, status)) return false;
   const was = inv.status;
   const who = clientName(inv.clientId);
   const amount = new Intl.NumberFormat('en-US', { style: 'currency', currency: inv.currency }).format(inv.total);
@@ -28,7 +42,7 @@ export function applyStatus(inv, status, paidDate) {
 }
 
 const SKIP_ON_IMPORT = new Set(['DRAFT', 'SCHEDULED', 'CANCELLED']);
-const num = (m) => Math.round(Number(m?.value || 0) * 100) / 100;
+const num = (m) => cents(Number(m?.value || 0));
 
 /** Turn a full PayPal invoice into PayPilot's shape (plus the recipient for the client record). */
 export function fromPaypalInvoice(raw) {

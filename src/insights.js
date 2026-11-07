@@ -2,12 +2,12 @@
 // client, aging of unpaid money and the services that earn the most.
 // Amounts are in the main currency (config.currency); other currencies are left out of
 // the sums and counted separately so nothing is silently mixed.
-import { config, isoDate, addDays, daysBetween } from './config.js';
+import { config, isoDate, addDays, daysBetween, cents } from './config.js';
 import { listInvoices, listClients, listSchedules } from './db.js';
 import { isOpen, isPaid } from './analytics.js';
 import { forecastFromModel } from './budget.js';
 
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => cents(n);
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
 function windowStats(invs, from, to) {

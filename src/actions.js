@@ -1,8 +1,8 @@
 // Human-in-the-loop: the AI only *proposes* actions that move money or contact
 // clients. Nothing reaches PayPal until the user approves the action card.
-import { config, isoDate, addDays } from './config.js';
+import { config, isoDate, addDays, cents } from './config.js';
 import { logActivity, upsertClient, findInvoice, insertInvoice, updateInvoice, insertAction, insertSchedule, getAction as dbGetAction, listActions as dbListActions, updateAction, transitionAction, kvSet, kvGet } from './db.js';
-import { paypal, PayPalError, notOnCurrentPaypal, isMock } from './paypal.js';
+import { paypal, PayPalError, friendlyPaypalError, notOnCurrentPaypal, isMock } from './paypal.js';
 import { invoiceTotals, isOpen } from './analytics.js';
 import { cleanWorkUrl, newToken, attachDelivery, unlockLink, noteLine as deliveryNote } from './delivery.js';
 import { earlyPayTerms, noteLineFor as earlyNote, saveEarlyPay } from './earlypay.js';
@@ -21,7 +21,7 @@ export function getAction(id) {
   return dbGetAction(id);
 }
 
-const round2 = (n) => Math.round(n * 100) / 100;
+const round2 = (n) => cents(n);
 
 /** AI models sometimes return "\\n" as text instead of a line break. Turn those into real breaks. */
 export function cleanText(t) {
@@ -56,8 +56,9 @@ function normaliseLines(d) {
   if (!items.length) throw invalid('At least one line item is required');
   if (items.length > 100) throw invalid('An invoice can have at most 100 line items');
   for (const it of items) {
-    if (!(it.quantity > 0)) throw invalid(`Quantity for "${it.name}" must be positive`);
-    if (!(it.unitPrice > 0)) throw invalid(`Price for "${it.name}" must be positive`);
+    if (!(it.quantity > 0) || !Number.isFinite(it.quantity)) throw invalid(`Quantity for "${it.name}" must be a positive number`);
+    if (!(it.unitPrice > 0) || !Number.isFinite(it.unitPrice)) throw invalid(`Price for "${it.name}" must be a positive amount`);
+    if (it.quantity > 1e6 || it.unitPrice * it.quantity > 9999999.99) throw invalid(`"${it.name}" is too large for one invoice line`);
   }
   const taxPercent = round2(Number(d.taxPercent ?? d.tax_percent ?? config.defaultTaxPercent) || 0);
   if (taxPercent < 0 || taxPercent > 50) throw invalid('Sales tax must be between 0% and 50%');
@@ -332,9 +333,11 @@ export async function approveAction(id, edits) {
     return updateAction(id, { payload, status: 'approved', result, error: null, decidedAt: new Date().toISOString() });
   } catch (e) {
     // back to pending so the user can fix & retry
-    updateAction(id, { status: 'pending', error: e.message });
-    const status = e instanceof PayPalError ? (e.status < 500 ? 400 : 502) : e instanceof TypeError ? 502 : 400;
-    throw Object.assign(new Error(e.message), { status });
+    const msg = e instanceof PayPalError ? friendlyPaypalError(e) : e.message;
+    if (e instanceof PayPalError) console.error(`  [action ${id}] ${e.message}`);
+    updateAction(id, { status: 'pending', error: msg });
+    const status = e instanceof PayPalError ? (e.status < 500 && !e.network ? 400 : 502) : e instanceof TypeError ? 502 : 400;
+    throw Object.assign(new Error(msg), { status });
   }
 }
 

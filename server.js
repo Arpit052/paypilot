@@ -14,7 +14,7 @@ import { noteDueDates } from './src/alerts.js';
 import { calendarMonth } from './src/calendar.js';
 import { analytics } from './src/insights.js';
 import { runAutopilot, saveAutopilotSettings, autopilotSettings, comingUp } from './src/autopilot.js';
-import { paypal, isMock } from './src/paypal.js';
+import { paypal, isMock, PayPalError, friendlyPaypalError } from './src/paypal.js';
 import { llmAvailable } from './src/llm.js';
 import { seedDemo } from './src/seed.js';
 import { seedSample, sampleInfo, removeSample } from './src/sample.js';
@@ -800,9 +800,15 @@ export function createApp() {
   // one error handler for everything (Express 5 forwards async errors here)
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    // PayPal errors: plain sentence for the user, the raw API message only in the log
+    if (err instanceof PayPalError) {
+      console.error(`  [${req.id || '-'}] ${req.method} ${req.path} ${err.message}`);
+      const status = err.status === 401 || err.status === 403 || err.status === 404 || err.status === 422 || err.status === 400 ? 400 : 502;
+      return res.status(status).json({ error: friendlyPaypalError(err), requestId: req.id });
+    }
     const status = err.status || err.statusCode || 500;
     if (status >= 500) console.error(`  [${req.id || '-'}] ${req.method} ${req.path} ${err.message}`);
-    res.status(status).json({ error: status === 400 && err.type === 'entity.parse.failed' ? 'Invalid JSON' : err.message, requestId: req.id });
+    res.status(status).json({ error: status === 400 && err.type === 'entity.parse.failed' ? 'Invalid JSON' : !err.status && !err.statusCode ? 'Something went wrong on our side. Try again.' : err.message, requestId: req.id });
   });
   return app;
 }

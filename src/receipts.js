@@ -2,14 +2,14 @@
 // printable page. PayPal emails its own receipt when a client pays through PayPal; payments
 // made outside PayPal (bank transfer, cash, cheque) need one from you, so those are tracked
 // until you mark them sent. Opening the link marks the receipt as viewed.
-import { config, isoDate } from './config.js';
+import { config, isoDate, cents } from './config.js';
 import { kvGet, kvSet, listInvoices, getInvoice, getClient, logActivity } from './db.js';
 import { isPaid, invoiceTotals } from './analytics.js';
 import { newToken, publicBase } from './delivery.js';
 import { getEarlyPay } from './earlypay.js';
 
 const PAID = ['PAID', 'MARKED_AS_PAID'];
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => cents(n);
 
 /** The receipt record for a paid invoice, created on first use. */
 export function ensureReceipt(inv) {

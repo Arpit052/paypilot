@@ -12,6 +12,48 @@ export class PayPalError extends Error {
   }
 }
 
+/**
+ * What the user reads when PayPal refuses something: a plain sentence, never a raw API path.
+ * The full technical message stays in the server log.
+ */
+export function friendlyPaypalError(e) {
+  if (!(e instanceof PayPalError)) return e?.message || 'Something went wrong talking to PayPal.';
+  if (e.friendly) return e.message;
+  const det = Array.isArray(e.details?.details) ? e.details.details : [];
+  const txt = det.map((d) => `${d.field || ''} ${d.issue || ''} ${d.description || ''}`).join(' ').toLowerCase();
+  const s = e.status;
+  // our own short messages (mock PayPal, local checks) are already readable
+  if (!/^PayPal (GET|POST|PUT|PATCH|DELETE) \//.test(e.message) && s >= 400 && s < 500 && s !== 401 && s !== 429 && !e.network) return e.message;
+  if (s === 408 || e.timeout) return "PayPal didn't answer in time. Nothing was changed on our side, so you can try again.";
+  if (s === 401) return "PayPal didn't accept the saved keys. Reconnect PayPal in Settings.";
+  if (s === 403) return "PayPal says this app isn't allowed to do that. Check that Invoicing is enabled for your app on developer.paypal.com.";
+  if (s === 404) return "PayPal couldn't find this invoice. It may have been deleted on paypal.com.";
+  if (s === 429) return 'PayPal is busy right now. Wait a few seconds and try again.';
+  if (s >= 500) return 'PayPal is having a problem right now. Try again in a minute.';
+  if (/currency/.test(txt)) return "PayPal doesn't accept that currency for this account. Pick another currency.";
+  if (/email/.test(txt)) return "PayPal didn't accept the client's email address. Check it and try again.";
+  if (/due_date|invoice_date|date/.test(txt)) return "PayPal didn't accept one of the dates. Check the issue and due dates.";
+  if (/amount|value|price|quantity/.test(txt)) return "PayPal didn't accept one of the amounts. Check prices and quantities.";
+  if (/duplicate|already/.test(txt)) return 'PayPal says this was already done.';
+  if (/status|cannot|not_allowed|invalid_state/.test(txt) || /status/i.test(e.details?.message || '')) return "PayPal won't do that for an invoice in its current state.";
+  const m = String(e.details?.message || '').replace(/https?:\S+/g, '').trim();
+  return m && !/\/v\d\//.test(m) ? `PayPal said: ${m}` : "PayPal didn't accept this. Check the details and try again.";
+}
+
+const TIMEOUT_MS = () => Number(process.env.PAYPAL_TIMEOUT_MS || 20000);
+const RETRY_MS = () => Number(process.env.PAYPAL_RETRY_MS || 800);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** fetch with a deadline: a hung PayPal must never hang a page or the scheduler. */
+async function timedFetch(url, opts) {
+  try {
+    return await fetch(url, { ...opts, signal: AbortSignal.timeout(TIMEOUT_MS()) });
+  } catch (e) {
+    const timeout = e?.name === 'TimeoutError' || e?.name === 'AbortError';
+    throw Object.assign(new PayPalError(timeout ? "PayPal didn't answer in time." : "Couldn't reach PayPal.", timeout ? 408 : 503), { timeout, network: true });
+  }
+}
+
 function splitName(full) {
   const parts = String(full || '').trim().split(/\s+/);
   if (parts.length <= 1) return { given_name: parts[0] || 'Client' };
@@ -83,7 +125,7 @@ async function getToken() {
   const { clientId, clientSecret, baseUrl } = config.paypal;
   if (token && tokenFor === clientId && Date.now() < tokenExp - 60000) return token;
   if (!clientId || !clientSecret) throw new PayPalError('PayPal credentials missing (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET).', 500);
-  const res = await fetch(`${baseUrl}/v1/oauth2/token`, {
+  const res = await timedFetch(`${baseUrl}/v1/oauth2/token`, {
     method: 'POST',
     headers: {
       Authorization: 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64'),
@@ -134,9 +176,39 @@ export async function verifyCredentials(clientId, clientSecret, baseUrl = 'https
   return { ok: true, appId: json.app_id || null };
 }
 
+/**
+ * One PayPal REST call, with the retry rules:
+ * - reads (GET) retry on 429, 5xx, timeouts and network errors (up to 3 tries)
+ * - writes retry only on 429/503 (PayPal didn't process it) and only with a PayPal-Request-Id,
+ *   so PayPal de-duplicates; a 500 or timeout on a write may have gone through, so no blind retry
+ * - a 401 mid-session (token expired or revoked) gets one fresh token and one more try
+ */
 async function api(method, path, body, extraHeaders = {}) {
-  const t = await getToken();
-  const res = await fetch(`${config.paypal.baseUrl}${path}`, {
+  const read = method === 'GET';
+  const idempotent = read || Boolean(extraHeaders['PayPal-Request-Id']);
+  let refreshed = false;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await apiOnce(method, path, body, extraHeaders);
+    } catch (e) {
+      if (!(e instanceof PayPalError)) throw e;
+      if (e.status === 401 && !refreshed && !e.auth) {
+        refreshed = true;
+        token = null;
+        continue;
+      }
+      const retryable = read ? e.status === 429 || e.status >= 500 || e.network : idempotent && (e.status === 429 || e.status === 503) && !e.timeout;
+      if (!retryable || attempt >= 3) throw e;
+      await sleep(Math.min(5000, (e.retryAfter ?? 0) * 1000 || RETRY_MS() * 2 ** (attempt - 1)));
+    }
+  }
+}
+
+async function apiOnce(method, path, body, extraHeaders) {
+  const t = await getToken().catch((e) => {
+    throw Object.assign(e, { auth: true });
+  });
+  const res = await timedFetch(`${config.paypal.baseUrl}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${t}`,
@@ -154,7 +226,10 @@ async function api(method, path, body, extraHeaders = {}) {
   }
   if (!res.ok) {
     const detail = json.details?.map((d) => `${d.field || ''} ${d.issue || ''} ${d.description || ''}`.trim()).join('; ');
-    throw new PayPalError(`PayPal ${method} ${path} failed (${res.status}): ${json.message || ''} ${detail || ''}`.trim(), res.status, json);
+    const err = new PayPalError(`PayPal ${method} ${path} failed (${res.status}): ${json.message || ''} ${detail || ''}`.trim(), res.status, json);
+    const ra = Number(res.headers.get('retry-after'));
+    if (Number.isFinite(ra) && res.headers.get('retry-after') !== null) err.retryAfter = ra;
+    throw err;
   }
   return json;
 }
@@ -329,6 +404,8 @@ const real = {
 
   async verifyWebhook(headers, event) {
     if (!config.paypal.webhookId) return false;
+    // PayPal always signs its webhooks; without these headers it's not from PayPal
+    if (!headers['paypal-transmission-sig'] || !headers['paypal-transmission-id'] || !headers['paypal-cert-url']) return false;
     const r = await api('POST', '/v1/notifications/verify-webhook-signature', {
       auth_algo: headers['paypal-auth-algo'],
       cert_url: headers['paypal-cert-url'],

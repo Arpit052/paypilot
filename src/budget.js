@@ -26,7 +26,7 @@
 //  7. Buying in instalments checks every instalment and the month after the last one.
 // Result: probability, a range (P10 / P50 / P90), the likely shortfall, the earliest date it
 // becomes safe, and which invoices decide the answer.
-import { config, isoDate, addDays, addMonths, daysBetween } from './config.js';
+import { config, isoDate, addDays, addMonths, daysBetween, cents } from './config.js';
 import { listInvoices, listSchedules, listClients, kvGet, kvSet, getClient } from './db.js';
 import { isOpen, isPaid, clientStats, invoiceTotals } from './analytics.js';
 
@@ -34,7 +34,7 @@ const SIMS = 4000;
 const SMOOTH_SD = 1.5; // days of noise added to each historical delay
 const PRIOR_WEIGHT = 3; // how many "pretend" data points the shared pool counts as
 const HALF_LIFE = 60; // days past the client's slowest payment for the chance of payment to halve
-const r2 = (n) => Math.round(n * 100) / 100;
+const r2 = (n) => cents(n);
 const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 // ---------- small, seeded random number toolkit (same inputs -> same answer) ----------
@@ -296,7 +296,10 @@ export function estimateBudget(input = {}, today = isoDate()) {
   }
 
   // ---- simulate ----
-  const seed = hash(JSON.stringify([today, price, date, cashNow, everyday, buffer, taxPct, fees, bills, n, [...exclude], streams.map((s) => [s.id, s.amount]), M.sample]));
+  // Common random numbers: the seed depends only on the book, not on the price, cash, tax, fees,
+  // buffer, spending or date you type. Every input then runs against the same 4,000 futures, so
+  // nudging one number moves the answer only in the direction it should (never by noise).
+  const seed = hash(JSON.stringify([today, [...exclude], streams.map((s) => [s.id, s.amount]), M.sample]));
   const rnd = mulberry32(seed);
   const S = SIMS;
   const arrivedBy = streams.map(() => new Uint8Array(S)); // arrived by the purchase date

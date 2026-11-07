@@ -1,5 +1,5 @@
 // Business insights computed from invoice history: client risk, earnings, cash-flow forecast.
-import { config, isoDate, addDays, daysBetween } from './config.js';
+import { config, isoDate, addDays, daysBetween, cents } from './config.js';
 import { listInvoices, getClient } from './db.js';
 
 export const OPEN_STATUSES = ['SENT', 'UNPAID', 'PARTIALLY_PAID', 'PAYMENT_PENDING', 'SCHEDULED'];
@@ -10,12 +10,12 @@ export const isPaid = (inv) => PAID_STATUSES.includes(inv.status);
 export const isOverdue = (inv, today = isoDate()) => isOpen(inv) && inv.dueDate < today;
 
 export function invoiceTotal(items) {
-  return Math.round(items.reduce((s, it) => s + Number(it.quantity) * Number(it.unitPrice), 0) * 100) / 100;
+  return cents(items.reduce((s, it) => s + cents(Number(it.quantity) * Number(it.unitPrice)), 0));
 }
 
 /** Subtotal, sales tax (per line, like PayPal) and grand total. */
 export function invoiceTotals(items, taxPercent = 0) {
-  const r = (n) => Math.round(n * 100) / 100;
+  const r = cents;
   let subtotal = 0;
   let tax = 0;
   for (const it of items) {

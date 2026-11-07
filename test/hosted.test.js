@@ -57,3 +57,9 @@ test('B5: hosted demo blocks changes that would affect every judge', async () =>
   }
   assert.equal((await call('/api/config')).data.hostedDemo, true);
 });
+
+test('a forged PayPal webhook is refused on a real account', async () => {
+  const r = await call('/api/webhooks/paypal', { event_type: 'INVOICING.INVOICE.PAID', resource: { invoice: { id: 'INV2-ANY', status: 'PAID' } } });
+  assert.ok(r.status >= 400, `status ${r.status}`);
+  assert.equal(r.data.ok, undefined);
+});

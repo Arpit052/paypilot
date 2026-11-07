@@ -163,3 +163,14 @@ export function addMonths(dateStr, months) {
 export function daysBetween(a, b) {
   return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
 }
+
+/**
+ * Round money to cents, half away from zero, without binary floating point surprises:
+ * 1.005 -> 1.01 and 0.575 -> 0.58 (plain Math.round(x * 100) / 100 gives 1.00 and 0.57).
+ */
+export function cents(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return x;
+  const scaled = Number((Math.abs(x) * 100).toPrecision(12));
+  return (Math.sign(x) * Math.round(scaled)) / 100 || 0;
+}
