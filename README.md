@@ -1,8 +1,12 @@
 # PayPilot: an AI money agent for freelancers and small businesses, built on PayPal
 
-**Web developers, designers, writers, marketers, video editors, consultants, photographers, virtual assistants and every other independent professional have the same problem: the work is done, but the money isn't in. PayPilot turns a plain-English description (or a screenshot) into a PayPal invoice, chases late payers with reminders whose tone escalates, tells you whether you can afford a purchase from how each client really pays, and spots clients who should be on a monthly retainer.** Nothing goes out without your approval.
+**Web developers, designers, writers, marketers, video editors, consultants, photographers, virtual assistants and every other independent professional have the same problem: the work is done, but the money isn't in. PayPilot turns a plain-English description (or a screenshot) into a PayPal invoice, chases late payers with reminders whose tone escalates, tells you whether you can afford a purchase from how each client really pays, tracks every receipt you owe, and learns from your history which clients, industries and kinds of work to grow.** Nothing goes out without your approval.
 
 Built for the *Build What's Next with PayPal and AI* hackathon.
+
+![PayPilot landing page](docs/screenshots/landing.png)
+
+Open the app and you land on a page that explains what PayPilot does, section by section as you scroll; **Log in** or **Get started** takes you into the setup portal.
 
 ![Assistant drafting a PayPal invoice](docs/screenshots/assistant.png)
 
@@ -59,6 +63,14 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 | **Budget Estimator** | *"Can I buy a $2,000 laptop on Dec 5?"* PayPilot plays out 4,000 possible futures of who pays you and when, using each client's own payment history. It counts what really happens to freelance money: **PayPal's fee** (3.49% + $0.49) and the **share you keep for tax** come off every payment, **bills leave on their day** (rent on the 1st), and the purchase only counts as safe if your balance **stays above your cushion for the 30 days after**, so next month's rent is covered too. It answers with the **chance** (and its error margin), **the most you can safely spend** on that date, the **lowest your balance gets**, the **earliest safe date**, what happens **if you wait** a week or a month, and **which invoice decides it**. You can **pay in instalments**, and **untick an invoice** to see what happens if that client never pays. The verdict card says it plainly ("Risky on Dec 1 · Safe from Dec 12") and tells the story behind it, with a **day-by-day typical path**: every expected payment and bill, and your balance after each. Before you estimate anything, the page shows the money on its way. Also in the Assistant. [How the model works](#how-the-budget-estimator-works) |
 | **Suggested retainers** | Finds clients who already buy from you nearly every month, prices a monthly plan a little below a typical month with them, and shows both sides of the deal: what you gain a year, what they save, fewer invoices, and how fast your existing retainer clients pay compared with them. The AI writes the offer email in your style; when they say yes, one click creates the retainer. |
 
+**Track, as a business**
+
+| Feature | How it works |
+|---|---|
+| **Receipts** | Every paid invoice gets a numbered receipt (R-1042). PayPal emails its own when a client pays through PayPal; bank transfers and cash recorded with *Mark paid* get none, and a company's accounts team usually needs one. The Receipts page shows which receipts still **need sending**, emails them in one click, and shows when the client **opened** the receipt (the owner's own preview isn't counted). Each receipt has a private, printable page. |
+| **Your client's view** | From any invoice: see exactly what the client gets, step by step. The invoice email from PayPal, the payment page (card or PayPal), the receipt (watermarked as a preview until paid) and, if files are attached, the locked or unlocked files page. Also offered right after you send a new invoice. |
+| **Growth** | PayPilot learns from a year of invoices and tells you where to focus. **Client segments** (Champions, Loyal, Valuable but slow, Slipping away, New, One-off) from each client's own buying rhythm; a **client map** of value against lateness; **industries** ranked by value per client and on-time payment, with a 3-month trend; **work areas** grouped for your profession (a web developer's *Integrations and APIs*, a designer's *Print and packaging*) with what's rising and what stopped; **income concentration** (Herfindahl index) and **days sales outstanding** now vs 90 days ago. **Opportunities** come with their basis and an amount only when the amount follows from your book. A **90-day plan** is written by the AI from those figures, or from rules when there is no AI. Set each client's industry right on the page. Also in the Assistant ("Where should I focus?"). [How it works](docs/ARCHITECTURE.md#growth-srcgrowthjs) |
+
 **Understand**
 
 | Feature | How it works |
@@ -93,15 +105,21 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 |---|---|---|
 | ![](docs/screenshots/dashboard.png) | ![](docs/screenshots/clients.png) | ![](docs/screenshots/settings.png) |
 
+| Growth | Receipts | Your client's view |
+|---|---|---|
+| ![](docs/screenshots/growth.png) | ![](docs/screenshots/receipts.png) | ![](docs/screenshots/client-view.png) |
+
 ---
 
 ## Architecture
+
+A longer walkthrough of the design (approval queue, payment model, growth analysis, public token pages, security) is in **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ```mermaid
 flowchart LR
   U[Business owner<br/>text / screenshot] --> UI[Web UI<br/>chat + approval tray]
   UI -->|/api/chat| AG[AI agent<br/>tool-calling loop]
-  AG <-->|tools| T{{list_invoices<br/>get_client_insights<br/>get_earnings_summary<br/>forecast_cashflow<br/>check_budget<br/>suggest_retainers<br/>propose_invoice<br/>propose_reminder<br/>propose_cancel}}
+  AG <-->|tools| T{{list_invoices<br/>get_client_insights<br/>get_earnings_summary<br/>forecast_cashflow<br/>get_top_customers<br/>check_budget<br/>suggest_retainers<br/>get_growth_insights<br/>propose_invoice<br/>propose_recurring<br/>propose_reminder<br/>propose_late_fee<br/>propose_cancel}}
   AG <--> LLM[(Gemini via @google/genai<br/>or Claude / OpenAI-compatible)]
   T -->|propose_*| Q[Pending actions]
   Q -->|user approves| EX[Executor]
@@ -121,6 +139,8 @@ flowchart LR
 - **Resilient AI:** if the primary Gemini model is rate-limited or overloaded, PayPilot falls back to other Gemini models (each has its own quota) and handles thought signatures across models.
 - **Background jobs:** a scheduler (default every 6 h) syncs payment status from PayPal, creates due recurring drafts, and drafts reminders for overdue invoices. Everything still waits for approval.
 - **Optional passcode login** (`APP_PASSWORD`) with an HMAC-signed, HttpOnly session cookie. Webhooks, cron and `/api/health` stay public.
+- **Traceable requests:** every response carries an `X-Request-Id` (yours is echoed back if you send one), and errors and slow API calls are logged with it.
+- **CI and containers:** GitHub Actions runs the full suite on Node 22 and 24 with no secrets; a `Dockerfile` builds a small non-root image with a health check.
 - Per-IP rate limiting on AI endpoints, a strict Content-Security-Policy and other security headers, verified PayPal webhooks, and dates computed in the business time zone (`APP_TIMEZONE`).
 
 **Agent design.** The model gets **read tools** (invoices, client insights, earnings, forecast) and **proposal tools**. Proposal tools validate the draft (email format, positive amounts, due date not in the past) and create a *pending action*. They never call PayPal. Only the `/api/actions/:id/approve` endpoint, triggered by a human click, runs the PayPal calls. So even if the model gets confused or receives a prompt injection through a screenshot, it can't move money or message a client.
@@ -147,7 +167,8 @@ flowchart LR
   - **Vision** (`src/agent.js`): reads client emails and chat screenshots to draft invoices.
   - **Generation** (`src/followups.js`): writes reminder emails using the client's payment history and the escalation tone.
 - **Deterministic analytics** (`src/analytics.js`): risk scoring and the probability-weighted forecast, so the numbers the AI reports come from data, not guesses.
-- **Statistics** (`src/budget.js`, `src/offers.js`): a Monte Carlo cash model and a buying-pattern score. The AI calls them as tools (`check_budget`, `suggest_retainers`) and explains the result; it never makes the numbers up.
+- **Statistics** (`src/budget.js`, `src/offers.js`, `src/growth.js`): a Monte Carlo cash model, a buying-pattern score, and growth analysis (segments, sector and work-area trends, concentration, DSO). The AI calls them as tools (`check_budget`, `suggest_retainers`, `get_growth_insights`) and explains the result; it never makes the numbers up.
+- **Planning** (`src/growth.js`, `src/brief.js`): the AI writes the Money brief and the 90-day Growth plan from a JSON of computed facts, with deterministic fallbacks.
 
 ### How the Budget Estimator works
 
@@ -213,12 +234,17 @@ With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-proces
 4. **Follow-ups → Find overdue invoices.** The AI drafts tone-matched reminders. Approve one, and PayPal sends the reminder.
 5. **Budget:** ask *"Can I afford a $2,000 laptop next month?"* in the Assistant, or open **Budget** and try a price and date. Watch which invoice decides it.
 6. **Clients → Suggested retainers:** open Rachel's card, write the offer, then click *Rachel said yes* to create the retainer. Run the budget again: it now counts her monthly payment.
+7. **Receipts:** William Evans's company pays by bank transfer, so his newest payment still needs a receipt. Click **Email**, then open the receipt link as the client would.
+8. **Any invoice → How your client sees it:** walk through the email, the payment page and the receipt from the client's side.
+9. **Growth:** see that Software & SaaS is your best sector, that Sofia Martinez is slipping away, and the 90-day plan.
 
 > **Tip for demos:** set `DEMO_TIME_OFFSET_DAYS=15` and restart to fast-forward the app's clock, so invoices you just sent become overdue and the follow-up flow runs against real sandbox invoices.
 
 ---
 
 ## Deploy (hosted demo)
+
+**Docker:** `docker build -t paypilot . && docker run -p 3000:3000 -v paypilot-data:/data --env-file .env paypilot`
 
 **Render:** New → Blueprint → select this repo (`render.yaml` is included). Add your keys in the dashboard. Scheduled follow-ups: create a Render Cron Job (or any cron service) that calls `GET https://<app>/api/cron/followups?key=<CRON_SECRET>` daily.
 
@@ -229,7 +255,7 @@ Data is stored in SQLite at `data/paypilot.db`. On free hosting the disk is temp
 ```bash
 npm test
 ```
-These are end-to-end tests with mock PayPal and a scripted model. They cover the propose → approve → PayPal flow, user edits, validation, webhook payment, follow-up escalation and de-duplication, the dashboard maths, request mapping for the LLM providers, the PayPal invoice payload, and the Budget Estimator's statistics (ordered percentiles, repeatable results, more cash never lowers the chance, overdue invoices never "paid in the past"), retainer suggestions, tax / fees / bills / instalments / what-if in the budget, every profession's sample data, payment-date predictions and the forecast sum, reminder voice per client, the tax summary, pay-to-unlock (files hidden until paid) and early-pay discounts (applied, then removed after 48 hours).
+These are end-to-end tests with mock PayPal and a scripted model. They cover the propose → approve → PayPal flow, user edits, validation, webhook payment, follow-up escalation and de-duplication, the dashboard maths, request mapping for the LLM providers, the PayPal invoice payload, and the Budget Estimator's statistics (ordered percentiles, repeatable results, more cash never lowers the chance, overdue invoices never "paid in the past"), retainer suggestions, tax / fees / bills / instalments / what-if in the budget, every profession's sample data, payment-date predictions and the forecast sum, reminder voice per client, the tax summary, pay-to-unlock (files hidden until paid) and early-pay discounts (applied, then removed after 48 hours), the landing page and routing, receipts (who needs one, sending, public links, previews not counted as views), the client's view, growth insights (segments, sectors, work areas per profession, honest opportunities, the AI plan and its fallback), client industries and request ids. The same suite runs in GitHub Actions on every push.
 
 ## Project layout
 
@@ -254,7 +280,13 @@ src/personas.js      Demo clients and the work each profession sells them
 src/tax.js           Year-end tax summary (fees, quarters, 1099 hints) + CSV
 src/delivery.js      Pay to unlock: private file pages that open once an invoice is paid
 src/earlypay.js      Early-pay discounts: suggestion, window, automatic removal
-public/              UI (vanilla JS): dashboard, assistant, collections, calendar, analytics, budget, clients, settings
+src/receipts.js      Numbered receipts: who needs one, sending, public receipt pages
+src/growth.js        Growth: segments, industries, work areas, concentration, DSO, opportunities, AI plan
+public/landing.*     The public landing page
+public/              UI (vanilla JS): dashboard, assistant, collections, receipts, clients, analytics, growth, budget, calendar, settings, client view
+docs/ARCHITECTURE.md How the parts fit, and why
+.github/workflows/   CI: npm test on Node 22 and 24
+Dockerfile           Production image (non-root, health check, /data volume)
 test/                End-to-end tests
 ```
 

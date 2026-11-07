@@ -292,7 +292,7 @@ function renderBrief(b) {
   const f = b.facts;
   const L = f.lifetime;
   const tm = f.thisMonth;
-  const bold = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/#(\d{3,})/g, '<a href="/?inv=$1" class="br-inv">#$1</a>');
+  const bold = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/#(\d{3,})/g, '<a href="/dashboard?inv=$1" class="br-inv">#$1</a>');
   const delta = tm.changePct === null ? '' : tm.changePct === 0 ? '<span class="br-d">same as last month</span>' : `<span class="br-d ${tm.changePct > 0 ? 'up' : 'down'}">${tm.changePct > 0 ? '▲' : '▼'} ${Math.abs(tm.changePct)}% vs ${esc(tm.lastMonthLabel.split(' ')[0])}</span>`;
   const ai = b.ai
     ? `<div class="br-ai"><div class="br-ai-h"><span class="br-ai-tag">PayPilot's take</span>${b.ai.headline ? `<p>${bold(b.ai.headline)}</p>` : ''}</div>
@@ -308,7 +308,7 @@ function renderBrief(b) {
     </div>
     <div class="br-cols">
       <div class="br-col"><h3>Top customers</h3>${f.topCustomers.length ? `<ul class="br-list">${f.topCustomers.map((c, i) => `<li><span class="br-rank">${i + 1}</span><div class="br-who"><b>${esc(c.client)}</b><span>${c.invoices} invoices · ${c.share}% of revenue</span><i style="width:${(c.share / maxTop) * 100}%"></i></div><span class="br-amt">${money(c.totalPaid, c.currency)}</span></li>`).join('')}</ul>` : '<p class="muted small">No payments yet.</p>'}</div>
-      <div class="br-col"><h3>Late money</h3>${f.overdue.byCustomer.length ? `<ul class="br-list">${f.overdue.byCustomer.map((o) => `<li><span class="br-dot"></span><div class="br-who"><b>${esc(o.client)}</b><span>${o.invoices.map((x) => `<a href="/?inv=${esc(x)}" class="br-inv">#${esc(x)}</a>`).join(', ')} · ${o.maxDaysOverdue} day${o.maxDaysOverdue === 1 ? '' : 's'} late · ${o.remindersSent ? `${o.remindersSent} reminder${o.remindersSent === 1 ? '' : 's'} sent` : 'not reminded yet'}</span></div><span class="br-amt late-t">${money(o.amount, o.currency)}</span></li>`).join('')}</ul>` : '<p class="muted small">Nothing is overdue. Nice.</p>'}
+      <div class="br-col"><h3>Late money</h3>${f.overdue.byCustomer.length ? `<ul class="br-list">${f.overdue.byCustomer.map((o) => `<li><span class="br-dot"></span><div class="br-who"><b>${esc(o.client)}</b><span>${o.invoices.map((x) => `<a href="/dashboard?inv=${esc(x)}" class="br-inv">#${esc(x)}</a>`).join(', ')} · ${o.maxDaysOverdue} day${o.maxDaysOverdue === 1 ? '' : 's'} late · ${o.remindersSent ? `${o.remindersSent} reminder${o.remindersSent === 1 ? '' : 's'} sent` : 'not reminded yet'}</span></div><span class="br-amt late-t">${money(o.amount, o.currency)}</span></li>`).join('')}</ul>` : '<p class="muted small">Nothing is overdue. Nice.</p>'}
         ${f.watchList.length ? `<h3 style="margin-top:18px">Clients to watch</h3><ul class="br-list">${f.watchList.map((w) => `<li><span class="pill ${w.risk}">${RISK_TEXT[w.risk]}</span><div class="br-who"><b>${esc(w.client)}</b><span>usually ${esc(daysLateText(w.avgDaysLate).toLowerCase())}</span></div>${w.outstanding ? `<span class="br-amt">${money(w.outstanding, cur)} owed</span>` : ''}</li>`).join('')}</ul>` : ''}
       </div>
     </div>`;

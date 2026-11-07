@@ -32,6 +32,9 @@ import { retainerOffers, draftOffer, markOffered, dismissOffer, acceptPayload, m
 import { taxReport, taxCsv, taxYears } from './src/tax.js';
 import { getDelivery, attachDelivery, removeDelivery, deliveryView, noteOrigin, isLocalBase } from './src/delivery.js';
 import { getEarlyPay, suggestEarlyPay, settleEarlyPay } from './src/earlypay.js';
+import { growthReport, growthPlan, INDUSTRIES } from './src/growth.js';
+import { setClientIndustry } from './src/db.js';
+import { listReceipts, markReceiptSent, receiptView, documentFor, ensureReceipt } from './src/receipts.js';
 import { businessTypeList, typeOf, BUSINESS_TYPES, normalType, professionLabel } from './src/business.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
@@ -71,7 +74,7 @@ function safeEqual(a, b) {
 }
 
 // Routes that must work without a session: login itself, PayPal webhooks, cron, health.
-const PUBLIC_PATHS = [/^\/d\/[A-Za-z0-9_-]+$/, /^\/api\/d\/[A-Za-z0-9_-]+$/, /^\/login(\.html)?$/, /^\/app\.css$/, /^\/common\.js$/, /^\/favicon\.svg$/, /^\/fonts\//, /^\/api\/login$/, /^\/api\/health$/, /^\/api\/webhooks\//, /^\/api\/cron\//];
+const PUBLIC_PATHS = [/^\/$/, /^\/landing\.(css|js)$/, /^\/landing\//, /^\/app$/, /^\/r\/[A-Za-z0-9_-]+$/, /^\/api\/r\/[A-Za-z0-9_-]+$/, /^\/d\/[A-Za-z0-9_-]+$/, /^\/api\/d\/[A-Za-z0-9_-]+$/, /^\/login(\.html)?$/, /^\/app\.css$/, /^\/common\.js$/, /^\/favicon\.svg$/, /^\/fonts\//, /^\/api\/login$/, /^\/api\/health$/, /^\/api\/webhooks\//, /^\/api\/cron\//];
 
 function requireLogin(req, res, next) {
   if (!loginEnabled() || PUBLIC_PATHS.some((re) => re.test(req.path))) return next();
@@ -100,7 +103,7 @@ function rateLimit({ perMinute, message }) {
 }
 
 // First run: send people to the "Connect PayPal / Try demo" screen before any page.
-const WELCOME_FREE = /^\/((welcome|login|mock-pay)(\.html)?|d\/[A-Za-z0-9_-]+)$/;
+const WELCOME_FREE = /^\/((welcome|login|mock-pay)(\.html)?|d\/[A-Za-z0-9_-]+|r\/[A-Za-z0-9_-]+|app)?$/;
 function welcomeGate(req, res, next) {
   if (req.method !== 'GET' || req.path.startsWith('/api/') || WELCOME_FREE.test(req.path)) return next();
   const isPage = req.path === '/' || req.path.endsWith('.html') || !path.extname(req.path);
@@ -145,6 +148,19 @@ export function createApp() {
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // correct client IPs / https behind Render's proxy
   app.use(securityHeaders);
+  // request id + timing: every response carries X-Request-Id, slow or failed API calls are logged
+  app.use((req, res, next) => {
+    const id = String(req.get('x-request-id') || crypto.randomBytes(6).toString('hex')).slice(0, 64);
+    req.id = id;
+    res.setHeader('X-Request-Id', id);
+    const t0 = process.hrtime.bigint();
+    res.on('finish', () => {
+      if (!req.path.startsWith('/api/') || req.path === '/api/events') return;
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      if (res.statusCode >= 500 || ms > 1500 || process.env.LOG_REQUESTS) console.log(`  [${id}] ${req.method} ${req.path} ${res.statusCode} ${ms.toFixed(0)}ms`);
+    });
+    next();
+  });
   app.use(express.json({ limit: '12mb' })); // screenshots arrive as base64
   app.use((req, res, next) => {
     noteOrigin(`${req.protocol}://${req.get('host')}`);
@@ -542,6 +558,13 @@ export function createApp() {
     res.json(collections());
   });
   api.get('/analytics', (req, res) => res.json(analytics({ months: req.query.months })));
+  api.get('/growth', (req, res) => res.json({ ...growthReport(), industryOptions: INDUSTRIES }));
+  api.post('/growth/plan', async (req, res) => res.json(await growthPlan({ refresh: !!req.body?.refresh })));
+  api.post('/clients/:id/industry', (req, res) => {
+    if (!getClient(req.params.id)) return res.status(404).json({ error: 'Client not found' });
+    const industry = String(req.body?.industry || '').trim().slice(0, 60);
+    res.json({ client: setClientIndustry(req.params.id, industry) });
+  });
   api.get('/calendar', (req, res) => res.json(calendarMonth(String(req.query.month || ''))));
   api.get('/autopilot', (req, res) => res.json({ autopilot: autopilotSettings(), lateFeePercent: config.lateFeePercent }));
   api.post('/autopilot', (req, res) => res.json({ autopilot: saveAutopilotSettings(req.body || {}) }));
@@ -609,6 +632,38 @@ export function createApp() {
     res.json(v);
   });
 
+  // ---- receipts ----
+  api.get('/receipts', (req, res) => res.json(listReceipts({ year: req.query.year })));
+  api.post('/receipts/:invoiceId/sent', (req, res) => res.json({ receipt: markReceiptSent(req.params.invoiceId, req.body?.via) }));
+  // public, token-protected receipt page data
+  api.get('/r/:token', (req, res) => {
+    const v = receiptView(req.params.token, { owner: req.query.preview === '1' });
+    if (!v) throw httpError(404, 'This receipt link is not valid');
+    res.json(v);
+  });
+
+  // ---- how the client sees an invoice: email, payment page, receipt, files ----
+  api.get('/invoices/:id/client-view', (req, res) => {
+    const inv = listInvoices().find((i) => i.id === req.params.id);
+    if (!inv) throw httpError(404, 'Invoice not found');
+    const c = getClient(inv.clientId);
+    const rec = ensureReceipt(inv);
+    res.json({
+      document: documentFor(inv, rec?.number),
+      status: inv.status,
+      payerUrl: inv.payerUrl,
+      demo: isMock(),
+      email: {
+        from: `${config.businessName || 'Your business'} via PayPal`,
+        to: c?.email || '',
+        subject: `${config.businessName || 'Your business'} sent you an invoice: #${inv.number}`,
+      },
+      receiptLink: rec ? `/r/${rec.token}?preview=1` : null,
+      delivery: getDelivery(inv.id),
+      earlyPay: getEarlyPay(inv.id),
+    });
+  });
+
   // ---- early-pay discount ----
   api.get('/earlypay/suggest', (req, res) => {
     const c = req.query.email ? listClients().find((x) => x.email.toLowerCase() === String(req.query.email).toLowerCase()) : null;
@@ -666,13 +721,25 @@ export function createApp() {
 
   // Dashboard is the home page; the Assistant lives at /assistant
   const page = (f) => (req, res) => res.sendFile(path.join(config.root, 'public', f));
-  app.get('/', page('dashboard.html'));
+  // public landing page; the app itself lives under /dashboard
+  app.get('/', page('landing.html'));
+  // "Log in" on the landing page: set up first, then sign in, then the dashboard
+  app.get('/app', (req, res) => {
+    if (!setupDone()) return res.redirect(302, '/welcome');
+    if (loginEnabled() && !safeEqual(readCookie(req, SESSION_COOKIE) || '', sessionToken())) return res.redirect(302, '/login.html');
+    res.redirect(302, '/dashboard');
+  });
+  app.get(['/dashboard', '/dashboard.html'], page('dashboard.html'));
   app.get(['/assistant', '/assistant.html'], page('index.html'));
   app.get(['/calendar', '/calendar.html'], page('calendar.html'));
   app.get(['/analytics', '/analytics.html'], page('analytics.html'));
   app.get(['/budget', '/budget.html'], page('budget.html'));
   app.get(['/tax', '/tax.html'], page('tax.html'));
   app.get('/d/:token', page('unlock.html'));
+  app.get('/r/:token', page('receipt.html'));
+  app.get(['/receipts', '/receipts.html'], page('receipts.html'));
+  app.get(['/client-view', '/client-view.html'], page('client-view.html'));
+  app.get(['/growth', '/growth.html'], page('growth.html'));
   app.use(express.static(path.join(config.root, 'public'), { extensions: ['html'], index: false }));
   app.use((req, res) => res.status(404).json({ error: 'Not found' }));
 
@@ -680,8 +747,8 @@ export function createApp() {
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
     const status = err.status || err.statusCode || 500;
-    if (status >= 500) console.error(`  [${req.method} ${req.path}] ${err.message}`);
-    res.status(status).json({ error: status === 400 && err.type === 'entity.parse.failed' ? 'Invalid JSON' : err.message });
+    if (status >= 500) console.error(`  [${req.id || '-'}] ${req.method} ${req.path} ${err.message}`);
+    res.status(status).json({ error: status === 400 && err.type === 'entity.parse.failed' ? 'Invalid JSON' : err.message, requestId: req.id });
   });
   return app;
 }

@@ -78,7 +78,7 @@ test('seed demo history', async () => {
   const r = await call('/api/demo/seed', {});
   assert.equal(r.status, 200);
   const { data } = await call('/api/clients');
-  assert.equal(data.clients.length, 5);
+  assert.equal(data.clients.length, 6);
   const jake = data.clients.find((c) => c.name === 'Marcus Vance');
   assert.equal(jake.riskLabel, 'high', 'late payer should be high risk');
   const emily = data.clients.find((c) => c.name === 'Kiran Deshmukh');

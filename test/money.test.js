@@ -39,7 +39,7 @@ const est = (b) => call('/api/budget/estimate', { save: false, ...b });
 
 test('setup demo', async () => {
   assert.equal((await call('/api/settings/paypal/demo', { businessName: 'Test Studio' })).status, 200);
-  assert.equal((await call('/api/clients')).data.clients.length, 5);
+  assert.equal((await call('/api/clients')).data.clients.length, 6);
 });
 
 test('budget: probabilities are sane, repeatable and move the right way', async () => {

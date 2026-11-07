@@ -86,7 +86,7 @@ function renderDay(ev) {
               <span>${esc(e.client)}${e.number ? ` · #${esc(e.number)}` : ''} · ${esc(money(e.amount, e.currency))}${e.kind === 'recurring' ? ` · ${esc(e.frequency)}` : ''}</span>
               ${e.kind === 'planned' ? `<span class="muted small">${e.state === 'waiting' ? 'Draft is ready in Collections' : 'Autopilot writes it this day for your OK'}</span>` : ''}
               <div class="cd-acts">
-                ${e.invoiceId ? `<a class="linkbtn small" href="/?inv=${esc(e.invoiceId)}">Open invoice</a>` : ''}
+                ${e.invoiceId ? `<a class="linkbtn small" href="/dashboard?inv=${esc(e.invoiceId)}">Open invoice</a>` : ''}
                 ${(e.kind === 'due' || e.kind === 'overdue') && e.payerUrl ? `<button class="linkbtn small" data-copy="${esc(e.payerUrl)}">Copy pay link</button>` : ''}
                 ${e.kind === 'planned' && e.state === 'waiting' ? `<a class="linkbtn small" href="/followups">Review draft</a>` : ''}
                 ${e.kind === 'due' || e.kind === 'overdue' ? markPaidButton(e.invoiceId) : ''}

@@ -145,6 +145,9 @@ const ICON = {
   calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   analytics: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
   budget: '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3"/><path d="M3 5v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M21 12h-4a2 2 0 0 0 0 4h4z"/>',
+  receipts: '<path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 1 .7V2l-1 .7-3-2-3 2-3-2-3 2-3-2z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  growth: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
   clients: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   new: '<path d="M12 5v14M5 12h14"/>',
@@ -157,13 +160,15 @@ const ICON = {
 export const icon = (name, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name] || ''}</svg>`;
 
 const PAGES = [
-  { key: 'dashboard', href: '/', label: 'Dashboard', group: 'Platform' },
-  { key: 'chat', href: '/assistant', label: 'Assistant', group: 'Platform' },
-  { key: 'followups', href: '/followups', label: 'Collections', group: 'Platform' },
-  { key: 'calendar', href: '/calendar', label: 'Calendar', group: 'Platform' },
-  { key: 'analytics', href: '/analytics', label: 'Analytics', group: 'Platform' },
-  { key: 'budget', href: '/budget', label: 'Budget', group: 'Platform' },
-  { key: 'clients', href: '/clients', label: 'Clients', group: 'Platform' },
+  { key: 'dashboard', href: '/dashboard', label: 'Dashboard', group: 'Money' },
+  { key: 'chat', href: '/assistant', label: 'Assistant', group: 'Money' },
+  { key: 'followups', href: '/followups', label: 'Collections', group: 'Money' },
+  { key: 'receipts', href: '/receipts', label: 'Receipts', group: 'Money' },
+  { key: 'clients', href: '/clients', label: 'Clients', group: 'Money' },
+  { key: 'analytics', href: '/analytics', label: 'Analytics', group: 'Insights' },
+  { key: 'growth', href: '/growth', label: 'Growth', group: 'Insights' },
+  { key: 'budget', href: '/budget', label: 'Budget', group: 'Insights' },
+  { key: 'calendar', href: '/calendar', label: 'Calendar', group: 'Insights' },
   { key: 'settings', href: '/settings', label: 'Settings', group: 'System' },
 ];
 
@@ -190,12 +195,12 @@ export async function header(active) {
   side.id = 'sidebar';
   side.innerHTML = `
     <div class="sb-top">
-      <a class="brand" href="/" aria-label="PayPilot home">${LOGO}<span class="sb-text">${WORDMARK}</span></a>
+      <a class="brand" href="/dashboard" aria-label="PayPilot dashboard">${LOGO}<span class="sb-text">${WORDMARK}</span></a>
       <button class="sb-icon" id="sbToggle" aria-label="Toggle sidebar" title="Toggle sidebar">${icon('panel', 17)}</button>
     </div>
     <button class="sb-search" id="openSearch" aria-label="Search" data-tip="Search">${icon('search', 16)}<span class="sb-text">Search…</span><kbd class="sb-text">${/Mac/.test(navigator.platform) ? '⌘' : 'Ctrl'} K</kbd></button>
     <a class="sb-new" href="/new-invoice" ${active === 'new' ? 'aria-current="page"' : ''} data-tip="New invoice">${icon('new', 17)}<span class="sb-text">New invoice</span></a>
-    <nav class="sb-nav" aria-label="Main">${group('Platform')}${group('System')}</nav>
+    <nav class="sb-nav" aria-label="Main">${group('Money')}${group('Insights')}${group('System')}</nav>
     <div class="sb-fill"></div>
     ${ap ? `<a class="sb-card" href="/followups" data-tip="Autopilot">
       <span class="sb-card-h">${icon('bolt', 15)}<span class="sb-text">Autopilot ${ap.enabled ? 'on' : 'off'}</span><i class="${ap.enabled ? 'on' : ''}"></i></span>
@@ -210,7 +215,7 @@ export async function header(active) {
     </div>`;
   const bar = document.createElement('header');
   bar.className = 'topbar';
-  const title = PAGES.find((p) => p.key === active)?.label || { new: 'New invoice', tax: 'Tax summary' }[active] || '';
+  const title = PAGES.find((p) => p.key === active)?.label || { new: 'New invoice', tax: 'Tax summary', clientview: "Your client's view" }[active] || '';
   bar.innerHTML = `
     <button class="sb-icon mobile-only" id="sbOpen" aria-label="Open menu">${icon('menu')}</button>
     <div class="crumb"><span class="muted">${esc(biz)}</span><span class="sep">/</span><b>${esc(title)}</b></div>
@@ -265,7 +270,7 @@ export async function header(active) {
           sub: 'Leaves this PayPal account. Your invoices and settings stay on this computer.',
           run: async () => {
             const r = await api('/api/session/end', { body: {} });
-            location.href = r.welcome ? '/welcome' : '/';
+            location.href = r.welcome ? '/welcome' : '/dashboard';
           },
         },
         { label: 'Lock with a passcode instead', sub: 'Next time, Sign out locks PayPilot and asks for the passcode.', run: () => (location.href = '/settings#security') },
@@ -310,7 +315,7 @@ function searchResults(q, idx) {
   const invoices = idx.invoices
     .filter((i) => has(i.number, `#${i.number}`, i.client, i.reference, ...(i.items || []).map((x) => x.name)))
     .slice(0, 6)
-    .map((i) => ({ label: `#${i.number} · ${i.client}`, hint: `${money(i.total, i.currency)} · ${(i.displayStatus || i.status).toLowerCase().replace(/_/g, ' ')}`, href: `/?inv=${i.id}`, ic: 'followups' }));
+    .map((i) => ({ label: `#${i.number} · ${i.client}`, hint: `${money(i.total, i.currency)} · ${(i.displayStatus || i.status).toLowerCase().replace(/_/g, ' ')}`, href: `/dashboard?inv=${i.id}`, ic: 'followups' }));
   if (invoices.length) out.push({ section: 'Invoices', items: invoices });
   if (clients.length) out.push({ section: 'Clients', items: clients });
   if (pages.length || acts.length) out.push({ section: 'Pages & actions', items: [...pages, ...acts] });
@@ -905,6 +910,8 @@ export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = 
       ${isOpen && mock && inv.paypalId ? `<button class="btn ghost small" data-sim title="Demo only: pretend the client paid through PayPal">Simulate PayPal payment</button>` : ''}
       ${isOpen ? `<a class="btn ghost small" href="${ask(`Draft a reminder for invoice #${inv.number}`)}">Draft a reminder</a>` : ''}
       ${isOpen && status === 'OVERDUE' && !(inv.items || []).some((i) => i.lateFee) ? `<a class="btn ghost small" href="${ask(`Add a late fee to invoice #${inv.number}`)}">Add late fee</a>` : ''}
+      ${inv.status !== 'CANCELLED' && inv.status !== 'DRAFT' ? `<a class="btn ghost small" href="/client-view?inv=${encodeURIComponent(inv.id)}">How your client sees it</a>` : ''}
+      ${['PAID', 'MARKED_AS_PAID'].includes(inv.status) ? `<a class="btn ghost small" href="/receipts?inv=${encodeURIComponent(inv.id)}">Receipt</a>` : ''}
     </div>
     ${inv.earlyPay ? `<div class="dr-ep ${esc(inv.earlyPay.status)}"><b>Early-pay offer</b><span>${inv.earlyPay.percent}% off (${money(inv.earlyPay.amount, cur)}) ${inv.earlyPay.status === 'active' ? `until ${new Date(inv.earlyPay.until).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. After that the full ${money(inv.earlyPay.fullTotal, cur)} applies.` : inv.earlyPay.status === 'used' ? '· paid in time, the discount worked.' : `· ended, the full ${money(inv.earlyPay.fullTotal, cur)} is due.`}</span></div>` : ''}
     <div data-delivery>${deliveryBox(inv, isOpen)}</div>

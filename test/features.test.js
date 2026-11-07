@@ -199,7 +199,7 @@ test('sign out without a passcode returns to the start screen and keeps the data
   assert.equal(r.status, 200);
   // here PAYPAL_MODE=mock comes from the environment, so setup stays done; with keys
   // entered in the app (the normal case) the start screen comes back
-  const home = await fetch(base + '/', { redirect: 'manual' });
+  const home = await fetch(base + '/dashboard', { redirect: 'manual' });
   if (r.data.welcome) assert.match(home.headers.get('location') || '', /welcome/);
   else assert.equal(home.status, 200);
   await call('/api/settings/paypal/demo', { businessName: 'Test Studio' });

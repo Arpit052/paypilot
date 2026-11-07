@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Growth</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#09090b">
+</head>
+<body>
+<main>
+  <div class="dash-top">
+    <div>
+      <h1>Growth</h1>
+      <p class="lede" style="margin:0">What a year of invoices says about where to focus: which clients, which industries, which work.</p>
+    </div>
+  </div>
+
+  <section class="panel gr-plan" id="plan" aria-live="polite">
+    <div class="gr-plan-h">
+      <div><span class="gr-eyebrow">Your 90-day plan</span><p class="gr-head" id="planHead">Reading your history…</p></div>
+      <button class="btn ghost small" id="planBtn" type="button">Write a new plan</button>
+    </div>
+    <ol class="gr-steps" id="planSteps"></ol>
+    <p class="muted small gr-src" id="planSrc"></p>
+  </section>
+
+  <section class="an-kpis gr-kpis" id="kpis"></section>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="sec-head"><div><h2>Opportunities</h2><p class="muted small" style="margin:2px 0 0">From your own numbers. An amount is shown only when it follows from your book; the basis is under each card.</p></div></div>
+    <div class="gr-opps" id="opps"></div>
+  </section>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="sec-head"><div><h2>Industries</h2><p class="muted small" style="margin:2px 0 0">Your clients grouped by the sector they work in. The score weighs yearly value per client (60%) against paying on time (40%).</p></div></div>
+    <div class="table-wrap" id="industries"></div>
+  </section>
+
+  <div class="gr-grid2">
+    <section class="panel">
+      <h2>Client map</h2>
+      <p class="muted small an-help">Each dot is a client: what they billed in the last year against how late they usually pay. Bigger dots buy more often. Hover for details.</p>
+      <div class="gr-map" id="map"></div>
+    </section>
+    <section class="panel">
+      <h2>Client segments</h2>
+      <p class="muted small an-help">Grouped by how recently and how often they buy, what they are worth, and how they pay.</p>
+      <div id="segments"></div>
+    </section>
+  </div>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="sec-head"><div><h2>Work areas</h2><p class="muted small" style="margin:2px 0 0">What you sell, grouped for your profession. "Trend" compares the last 3 full months with the 3 before.</p></div></div>
+    <div class="table-wrap" id="areas"></div>
+  </section>
+
+  <section class="panel" style="margin-top:18px">
+    <div class="sec-head"><div><h2>Clients</h2><p class="muted small" style="margin:2px 0 0">Set each client's industry so the sector view stays accurate.</p></div></div>
+    <div class="table-wrap" id="clients"></div>
+  </section>
+</main>
+<script type="module" src="/growth.js"></script>
+</body>
+</html>

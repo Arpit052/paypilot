@@ -7,18 +7,22 @@
 // Historical invoices are marked source:"seed" (shown as "demo", never sent to PayPal).
 // In demo mode we also add open/overdue invoices so follow-ups can be shown straight away.
 import { config, isoDate, addDays } from './config.js';
-import { upsertClient, logActivity, insertInvoice, transaction, kvSet, insertSchedule } from './db.js';
+import { upsertClient, logActivity, insertInvoice, transaction, kvSet, insertSchedule, listInvoices, updateInvoice } from './db.js';
+import { ensureReceipt } from './receipts.js';
+import { listClients } from './db.js';
+const listClientsByEmail = (email) => listClients().find((c) => c.email.toLowerCase() === email.toLowerCase());
 import { isMock, mockPut } from './paypal.js';
 import { invoiceTotal } from './analytics.js';
 import { personaFor, personaInvoices } from './personas.js';
 import { normalType } from './business.js';
 
 const CLIENTS = [
-  { key: 'ryan', name: 'Marcus Vance', role: 'Founder & CEO', company: 'Apex Growth Lab', email: 'marcus@apexgrowthlab.io', net: 15 },
-  { key: 'priya', name: 'Kiran Deshmukh', role: 'Principal Engineer', company: 'Overcast Labs', email: 'kiran@overcastlabs.io', net: 15 },
-  { key: 'marcus', name: 'William Evans', role: 'Head of Brand', company: 'Voltline Energy', email: 'william@voltlineenergy.com', net: 30 },
-  { key: 'dani', name: 'Rachel Adams', role: 'Operations Director', company: 'Summit Peak Consulting', email: 'rachel@summitpeakconsulting.com', net: 15 },
-  { key: 'ben', name: 'Daniel Brooks', role: '', company: '', email: 'daniel.brooks@fastmail.com', net: 15 },
+  { key: 'ryan', name: 'Marcus Vance', role: 'Founder & CEO', company: 'Apex Growth Lab', industry: 'Marketing & agencies', email: 'marcus@apexgrowthlab.io', net: 15 },
+  { key: 'priya', name: 'Kiran Deshmukh', role: 'Principal Engineer', company: 'Overcast Labs', industry: 'Software & SaaS', email: 'kiran@overcastlabs.io', net: 15 },
+  { key: 'marcus', name: 'William Evans', role: 'Head of Brand', company: 'Voltline Energy', industry: 'Energy & utilities', email: 'william@voltlineenergy.com', net: 30 },
+  { key: 'dani', name: 'Rachel Adams', role: 'Operations Director', company: 'Summit Peak Consulting', industry: 'Professional services', email: 'rachel@summitpeakconsulting.com', net: 15 },
+  { key: 'sofia', name: 'Sofia Martinez', role: 'Marketing Manager', company: 'Lumen Health', industry: 'Healthcare', email: 'sofia@lumenhealth.co', net: 15 },
+  { key: 'ben', name: 'Daniel Brooks', role: '', company: '', industry: 'Private clients', email: 'daniel.brooks@fastmail.com', net: 15 },
 ];
 
 const RETAINER = ['Monthly design retainer (product UI + marketing)', 1, 725];
@@ -26,17 +30,21 @@ const RETAINER = ['Monthly design retainer (product UI + marketing)', 1, 725];
 // [client, issued N days ago, days late when paid, line items, extra]
 const HISTORY = [
   ['marcus', 176, 2, [['Can artwork adaptations', 4, 162.5]]],
+  // a clinic's marketing team: paid on time every few weeks, then went quiet (Growth: slipping away)
+  ['sofia', 158, 0, [['Patient brochure layout', 1, 420]]],
   ['ryan', 168, 11, [['Logo refresh', 1, 640], ['Brand colour and type sheet', 1, 180]]],
   ['priya', 161, 0, [RETAINER]],
   ['dani', 151, 0, [['LinkedIn post templates', 8, 42.5]]],
   ['dani', 122, 2, [['Workshop flyer', 1, 185], ['Social content pack', 6, 32.5]]],
   ['marcus', 141, 2, [['Brand guidelines v2', 1, 1180]]],
+  ['sofia', 121, 0, [['Clinic waiting-room posters', 3, 95], ['Social content pack', 6, 32.5]]],
   ['ryan', 131, 16, [['Ad creative set, 3 campaigns', 3, 145]]],
   ['priya', 130, 0, [RETAINER]],
   ['priya', 113, 0, [['Onboarding screens, 6 views', 1, 418], ['Empty-state illustrations', 1, 95]]],
   ['marcus', 105, 2, [['Event booth graphics', 2, 240], ['Print-ready file prep', 2, 45]]],
   ['priya', 99, 1, [RETAINER]],
   ['ryan', 96, 9, [['Landing page design, revisions', 1, 312.5]]],
+  ['sofia', 84, 0, [['Health-check campaign ads', 4, 120]]],
   ['dani', 86, 4, [['Workshop flyer', 1, 185], ['Poster printing, 24 × 36 in', 3, 28]]],
   ['ryan', 72, null, [['Investor one-pager', 1, 535]], { cancelled: true, note: 'Duplicate - replaced by the next invoice' }],
   ['marcus', 70, 2, [['Campaign landing page layout', 1, 387.5]]],
@@ -67,9 +75,27 @@ const OPEN = [
 ];
 
 /** Load sample history. The sample business follows the chosen business type. */
+/**
+ * A brand team's accounts department pays by bank transfer (ACH), not PayPal, like most
+ * companies. Those payments are recorded as "marked paid", and PayPal sends no receipt for
+ * them, so receipts are tracked: the older ones were sent, the newest still needs one.
+ */
+function markBankPayer(clientId) {
+  const paid = listInvoices({ clientId }).filter((i) => i.status === 'PAID' && i.source === 'seed').sort((a, b) => a.paidDate.localeCompare(b.paidDate));
+  paid.forEach((inv, k) => {
+    updateInvoice(inv.id, { status: 'MARKED_AS_PAID' });
+    kvSet(`paidVia:${inv.id}`, 'bank');
+    const r = ensureReceipt({ ...inv, status: 'MARKED_AS_PAID' });
+    if (k < paid.length - 1) kvSet(`receipt:${inv.id}`, { ...r, sentAt: `${addDays(inv.paidDate, 1)}T10:00:00.000Z`, sentVia: 'email', viewedAt: k < paid.length - 2 ? `${addDays(inv.paidDate, 2)}T09:00:00.000Z` : null });
+  });
+}
+
 export function seedDemo(profession = normalType(config.businessType)) {
   const persona = personaFor(profession);
   transaction(() => (persona ? seedPersona(persona) : seedInner()));
+  const bank = (persona ? persona.find((c) => c.key === 'william') : CLIENTS.find((c) => c.key === 'marcus'))?.email;
+  const row = bank && listClientsByEmail(bank);
+  if (row) markBankPayer(row.id);
   kvSet('demo:persona', persona ? profession : 'graphic_designer');
   logActivity('seed', 'Demo history loaded');
 }
@@ -81,7 +107,7 @@ function seedPersona(clients) {
   const today = isoDate();
   const mock = isMock();
   const rows = {};
-  for (const c of clients) rows[c.key] = upsertClient({ name: c.name, email: c.email, company: c.company, role: c.role });
+  for (const c of clients) rows[c.key] = upsertClient({ name: c.name, email: c.email, company: c.company, role: c.role, industry: c.industry });
   let seq = 1017;
   for (const r of personaInvoices(clients)) {
     const c = r.client;
@@ -123,7 +149,7 @@ function seedPersona(clients) {
 function seedInner() {
   const today = isoDate();
   const byKey = {};
-  for (const c of CLIENTS) byKey[c.key] = { ...c, row: upsertClient({ name: c.name, email: c.email, company: c.company, role: c.role }) };
+  for (const c of CLIENTS) byKey[c.key] = { ...c, row: upsertClient({ name: c.name, email: c.email, company: c.company, role: c.role, industry: c.industry }) };
   const lines = (arr) => arr.map(([name, quantity, unitPrice]) => ({ name, quantity, unitPrice }));
 
   const open = isMock() ? OPEN : [];

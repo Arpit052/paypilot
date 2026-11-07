@@ -32,7 +32,7 @@
     go.disabled = true;
     const res = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: document.getElementById('pw').value }) });
     go.disabled = false;
-    if (res.ok) location.href = '/';
+    if (res.ok) location.href = '/dashboard';
     else err.textContent = (await res.json().catch(() => ({}))).error || 'Sign in failed.';
   });
 </script>

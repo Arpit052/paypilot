@@ -8,6 +8,7 @@ import { isMock } from './paypal.js';
 import { toneFor, lastTone, relationshipOf } from './followups.js';
 import { estimateBudget, budgetProfile, forecastFromModel } from './budget.js';
 import { retainerOffers } from './offers.js';
+import { growthSummary } from './growth.js';
 import { suggestEarlyPay } from './earlypay.js';
 import { typeOf, professionLabel } from './business.js';
 
@@ -29,6 +30,7 @@ How you work:
 - "Best customer?" -> get_top_customers.
 - "Can I afford X?", "Can I buy a $2,000 laptop next month?", "Is it safe to spend Y on Z?" -> check_budget. Pass price and date (convert "next month" to a concrete date; if no date is given use today + 14 days). If the user tells you how much money they have now, their monthly costs or a buffer, pass those; otherwise the saved values are used, and if cash_now is unknown (saved value 0) say the answer assumes they have nothing saved and invite them to tell you. Answer with the verdict first, then the chance, the most they can safely spend on that date (maxSafe.p80), the likely shortfall (if any), the earliest safe date and the invoice to watch. The check already counts their bills, tax set-aside and PayPal fees from the Budget page, and requires the 30 days after buying to stay above their buffer. Mention it's a simulation of thousands of possible futures based on how each client has paid before. Never promise certainty.
 - "Who should I offer a retainer?", "How can I earn more from my clients?" -> suggest_retainers. Explain the offer in money terms for both sides (what the client saves, what the business gains a year, how many fewer invoices). The user sends the offer themselves from the Clients page; you can't email clients.
+- "Where should I focus?", "Which clients or industries are best?", "How do I grow?", "What work should I push?" -> get_growth_insights. Name the industry and work area, back every claim with its number (billed, % on time, days to pay, trend vs the 3 months before), and give 2-3 concrete next steps from its opportunities. Point to the Growth page for the full picture.
 - Recurring work ("every month", "weekly retainer"): use propose_recurring. Explain that each period a new draft will appear for approval; nothing is sent automatically.
 - For reminders, write the subject and message yourself. Match tone to how late it is: friendly (first nudge), firm (second), final (repeated/very late). Match the *voice* to the client's history (call get_client_insights first): a good client who pays on time gets a warm, personal check-in ("Hope all is well! Just floating invoice #…"); a repeat late payer gets a formal, specific note with the invoice number, days overdue, the payment terms (e.g. Net 15), a pay-by date, and the late-fee date if late fees are on (${config.lateFeePercent > 0 ? `${config.lateFeePercent}% after ${config.lateFeeAfterDays} days overdue` : 'late fees are off, so don\'t mention one'}). Be professional and human, never rude. Sign off as ${config.businessName}.
 - Late fees: policy is ${config.lateFeePercent}% once an invoice is ${config.lateFeeAfterDays}+ days overdue. Use propose_late_fee when the user asks to add one (or suggest it for very late invoices). Only one late fee per invoice; it's added as a separate, untaxed line on the PayPal invoice after approval.
@@ -101,6 +103,11 @@ export const tools = [
   {
     name: 'suggest_retainers',
     description: 'Clients who buy almost every month and would suit a fixed monthly plan, with a suggested price, discount and the yearly gain for the business.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'get_growth_insights',
+    description: 'What the last 12 months of invoices say about growth: client segments (champions, slipping away...), industries ranked by value and payment speed, work areas with their 3-month trend, income concentration, days sales outstanding, and concrete opportunities.',
     parameters: { type: 'object', properties: {} },
   },
   {
@@ -304,6 +311,10 @@ function makeHandlers(created) {
         drivers: drivers.slice(0, 5),
         page: '/budget',
       };
+    },
+
+    get_growth_insights() {
+      return { ...growthSummary(today), page: '/growth' };
     },
 
     suggest_retainers() {

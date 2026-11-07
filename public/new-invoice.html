@@ -255,7 +255,7 @@
         const res = r.action.result;
         $('preview').insertAdjacentHTML('beforeend', '<div class="stamp">SENT</div>');
         $('done').innerHTML = `<div class="panel done-card"><b>Invoice #${esc(res.number)} sent through PayPal.</b><p class="muted">It's now on your dashboard as <b>Sent</b>. When ${esc($('name').value)} pays, it changes to <b>Paid</b> automatically and you'll get a notification.</p>
-          <div class="slip-actions"><a class="btn" href="/dashboard">Go to dashboard</a>${res.payerUrl ? `<button class="btn ghost" type="button" id="copyPay">Copy pay link</button>` : ''}${res.unlockLink ? `<button class="btn ghost" type="button" id="copyUnlock">Copy unlock page</button>` : ''}<a class="btn ghost" href="/new-invoice">New invoice</a></div></div>`;
+          <div class="slip-actions"><a class="btn" href="/dashboard">Go to dashboard</a>${res.invoiceId ? `<a class="btn ghost" href="/client-view?inv=${encodeURIComponent(res.invoiceId)}">See what your client sees</a>` : ''}${res.payerUrl ? `<button class="btn ghost" type="button" id="copyPay">Copy pay link</button>` : ''}${res.unlockLink ? `<button class="btn ghost" type="button" id="copyUnlock">Copy unlock page</button>` : ''}<a class="btn ghost" href="/new-invoice">New invoice</a></div></div>`;
         $('form').querySelectorAll('input,select,textarea,button').forEach((x) => (x.disabled = true));
         document.getElementById('copyPay')?.addEventListener('click', () => copyPayLink(res.payerUrl));
         document.getElementById('copyUnlock')?.addEventListener('click', () => copyPayLink(res.unlockLink));

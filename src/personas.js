@@ -15,12 +15,12 @@
 const C = (name, quantity, unitPrice) => [name, quantity, unitPrice];
 
 export const ROSTER = [
-  { key: 'kiran', name: 'Kiran Deshmukh', role: 'Principal Engineer', company: 'Overcast Labs', email: 'kiran@overcastlabs.io', net: 15 },
-  { key: 'rachel', name: 'Rachel Adams', role: 'Operations Director', company: 'Summit Peak Consulting', email: 'rachel@summitpeakconsulting.com', net: 15 },
-  { key: 'marcus', name: 'Marcus Vance', role: 'Founder & CEO', company: 'Apex Growth Lab', email: 'marcus@apexgrowthlab.io', net: 15 },
-  { key: 'william', name: 'William Evans', role: 'Head of Brand', company: 'Voltline Energy', email: 'william@voltlineenergy.com', net: 30 },
-  { key: 'sofia', name: 'Sofia Martinez', role: 'Marketing Manager', company: 'Lumen Health', email: 'sofia@lumenhealth.co', net: 15 },
-  { key: 'daniel', name: 'Daniel Brooks', role: '', company: '', email: 'daniel.brooks@fastmail.com', net: 7 },
+  { key: 'kiran', name: 'Kiran Deshmukh', role: 'Principal Engineer', company: 'Overcast Labs', industry: 'Software & SaaS', email: 'kiran@overcastlabs.io', net: 15 },
+  { key: 'rachel', name: 'Rachel Adams', role: 'Operations Director', company: 'Summit Peak Consulting', industry: 'Professional services', email: 'rachel@summitpeakconsulting.com', net: 15 },
+  { key: 'marcus', name: 'Marcus Vance', role: 'Founder & CEO', company: 'Apex Growth Lab', industry: 'Marketing & agencies', email: 'marcus@apexgrowthlab.io', net: 15 },
+  { key: 'william', name: 'William Evans', role: 'Head of Brand', company: 'Voltline Energy', industry: 'Energy & utilities', email: 'william@voltlineenergy.com', net: 30 },
+  { key: 'sofia', name: 'Sofia Martinez', role: 'Marketing Manager', company: 'Lumen Health', industry: 'Healthcare', email: 'sofia@lumenhealth.co', net: 15 },
+  { key: 'daniel', name: 'Daniel Brooks', role: '', company: '', industry: 'Private clients', email: 'daniel.brooks@fastmail.com', net: 7 },
 ];
 
 // What each client buys, per profession.

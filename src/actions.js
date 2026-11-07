@@ -309,8 +309,11 @@ export async function markPaid(invoiceId, { method = 'bank', date, note } = {}) 
   }
   const { applyStatus } = await import('./sync.js');
   applyStatus(inv, 'MARKED_AS_PAID', paidDate);
-  kvSet(`paidVia:${inv.id}`, method); // for the tax report: paid outside PayPal
+  kvSet(`paidVia:${inv.id}`, method); // for the tax report and receipts: paid outside PayPal
   logActivity('marked_paid', `Invoice #${inv.number} marked as paid (${method})`);
+  // paid outside PayPal: PayPal won't email a receipt, so remind the owner to send one
+  const { notify } = await import('./notify.js');
+  notify({ kind: 'payment', title: 'Receipt needed', body: `Invoice #${inv.number} was paid by ${method}. PayPal won't send a receipt for that, so send R-${inv.number} from Receipts.`, link: '/receipts', invoiceId: inv.id });
   return { number: inv.number, status: 'MARKED_AS_PAID', paidDate };
 }
 

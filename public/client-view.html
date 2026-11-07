@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PayPilot · Your client's view</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#09090b">
+</head>
+<body>
+<main>
+  <div class="dash-top">
+    <div>
+      <h1>How your client sees it</h1>
+      <p class="lede" style="margin:0" id="lede">Every step from your client's side: the invoice email, the payment page and the receipt.</p>
+    </div>
+    <a class="btn ghost" href="/dashboard" id="back" style="margin-left:auto">Back to invoices</a>
+  </div>
+  <ol class="cv-steps" id="steps" role="tablist" aria-label="Steps"></ol>
+  <section class="cv-stage" id="stage" aria-live="polite"></section>
+</main>
+<script type="module" src="/client-view.js"></script>
+</body>
+</html>

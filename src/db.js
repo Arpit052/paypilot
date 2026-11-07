@@ -102,6 +102,7 @@ function migrate(d) {
   const ccols = new Set(d.prepare('PRAGMA table_info(clients)').all().map((c) => c.name));
   if (!ccols.has('company')) d.exec('ALTER TABLE clients ADD COLUMN company TEXT');
   if (!ccols.has('role')) d.exec('ALTER TABLE clients ADD COLUMN role TEXT');
+  if (!ccols.has('industry')) d.exec('ALTER TABLE clients ADD COLUMN industry TEXT');
 }
 
 let conn = null;
@@ -147,7 +148,7 @@ export function resetDb() {
 }
 
 // ---------------- clients ----------------
-const rowClient = (r) => r && { id: r.id, name: r.name, email: r.email, company: r.company || '', role: r.role || '', createdAt: r.created_at };
+const rowClient = (r) => r && { id: r.id, name: r.name, email: r.email, company: r.company || '', role: r.role || '', industry: r.industry || '', createdAt: r.created_at };
 
 export function listClients() {
   return sql().prepare('SELECT * FROM clients ORDER BY name').all().map(rowClient);
@@ -169,17 +170,24 @@ export function findClient(ref) {
   );
 }
 
-export function upsertClient({ name, email, company, role }) {
+export function upsertClient({ name, email, company, role, industry }) {
   const d = sql();
   const existing = d.prepare('SELECT * FROM clients WHERE email = ? COLLATE NOCASE').get(email);
   if (existing) {
     if (name && name !== existing.name) d.prepare('UPDATE clients SET name = ? WHERE id = ?').run(name, existing.id);
     if (company && company !== existing.company) d.prepare('UPDATE clients SET company = ? WHERE id = ?').run(company, existing.id);
     if (role && role !== existing.role) d.prepare('UPDATE clients SET role = ? WHERE id = ?').run(role, existing.id);
+    if (industry && industry !== existing.industry) d.prepare('UPDATE clients SET industry = ? WHERE id = ?').run(industry, existing.id);
     return getClient(existing.id);
   }
   const id = newId('cli');
-  d.prepare('INSERT INTO clients (id, name, email, company, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, name, email, company || null, role || null, nowIso());
+  d.prepare('INSERT INTO clients (id, name, email, company, role, industry, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, name, email, company || null, role || null, industry || null, nowIso());
+  return getClient(id);
+}
+
+/** Set (or clear) the industry a client works in; used by the Growth page. */
+export function setClientIndustry(id, industry) {
+  sql().prepare('UPDATE clients SET industry = ? WHERE id = ?').run(industry ? String(industry).slice(0, 60) : null, id);
   return getClient(id);
 }
 
