@@ -356,6 +356,7 @@ export function growthReport(today = isoDate()) {
       share: Math.round((r.year / totalYear) * 100),
       avgLine: r2(r.amount / r.lines),
       clients: r.buyers.size,
+      buyerIds: [...r.buyers.keys()],
       repeatClients: [...r.buyers.values()].filter((n) => n >= 2).length,
       daysToPay: r.pay.length ? Math.round(avg(r.pay)) : null,
       // a retainer moves with the plan, not with demand
@@ -445,7 +446,11 @@ export function growthReport(today = isoDate()) {
     add({
       kind: 'area',
       title: `Lean into ${grow.name.toLowerCase()}`,
-      body: `Billing for this work rose ${grow.trend.pct}% in the last 3 full months compared with the 3 before (${fmtMoney(grow.recent)} vs ${fmtMoney(grow.before)}). Package it, put it first on your site, and quote it to existing clients.`,
+      body: (() => {
+        // good clients who haven't bought this kind of work yet are the easiest next sale
+        const asks = [...clients].filter((c) => !grow.buyerIds.includes(c.id) && c.value > 0 && c.segment !== 'lost').sort((a, b) => b.value - a.value).slice(0, 2).map((c) => c.name);
+        return `Billing for this work rose ${grow.trend.pct}% in the last 3 full months compared with the 3 before (${fmtMoney(grow.recent)} vs ${fmtMoney(grow.before)}), at about ${fmtMoney(grow.avgLine)} a line.${asks.length ? ` ${asks.join(' and ')} buy${asks.length === 1 ? 's' : ''} other work from you but never this: offer it to them first.` : ' Offer it to the clients who already buy it more often.'}`;
+      })(),
       amount: null,
       basis: `${grow.lines} line item${grow.lines === 1 ? '' : 's'} from ${grow.clients} client${grow.clients === 1 ? '' : 's'}`,
       weight: grow.recent - grow.before,
@@ -480,7 +485,11 @@ export function growthReport(today = isoDate()) {
     add({
       kind: 'repeat',
       title: `Turn ${oneoffs.length === 1 ? oneoffs[0].name : `${oneoffs.length} one-off clients`} into repeat work`,
-      body: `A thank-you with a small follow-up offer (an update, a second piece, a bundle) is the cheapest new business there is.`,
+      body: (() => {
+        const cad = median(clients.filter((c) => c.cadence).map((c) => c.cadence));
+        const o = oneoffs[0];
+        return `${oneoffs.length === 1 ? `${o.name} bought once, ${o.daysSinceLast} days ago, for ${fmtMoney(o.avgInvoice)}.` : `${oneoffs.length} clients bought once, for ${fmtMoney(sum(oneoffs, (c) => c.avgInvoice))} in total.`}${cad ? ` Your repeat clients come back about every ${Math.round(cad)} days, so ${oneoffs.length === 1 ? 'a follow-up now is well timed' : 'follow up with the ones past that mark'}.` : ' A follow-up offer while the work is fresh is the cheapest new business there is.'}`;
+      })(),
       amount: null,
       basis: oneoffs.map((c) => c.name).join(', '),
       link: { href: '/clients', label: 'Clients' },

@@ -16,8 +16,14 @@ import { PAYPAL_FEE, budgetProfile } from './budget.js';
 const r2 = (n) => Math.round(n * 100) / 100;
 const NEC_THRESHOLD = (year) => (year >= 2026 ? 2000 : 600);
 const K_THRESHOLD = { amount: 20000, count: 200 };
-const SE_RATE = 0.153; // Social Security 12.4% + Medicare 2.9%
 const SE_BASE = 0.9235; // SE tax applies to 92.35% of net earnings
+// Social Security (12.4%) stops at the year's wage base; Medicare (2.9%) has no cap
+const SS_WAGE_BASE = { 2024: 168600, 2025: 176100, 2026: 184500 };
+const wageBase = (year) => SS_WAGE_BASE[year] ?? SS_WAGE_BASE[Math.max(...Object.keys(SS_WAGE_BASE).map(Number))];
+export function selfEmploymentTax(net, year) {
+  const earnings = Math.max(0, net) * SE_BASE;
+  return r2(Math.min(earnings, wageBase(year)) * 0.124 + earnings * 0.029);
+}
 
 // IRS estimated-tax periods for individuals (payment due dates in brackets)
 const PERIODS = [
@@ -99,7 +105,7 @@ export function taxReport(year = Number(isoDate().slice(0, 4))) {
     return { key: p.key, label: p.label, due: p.due(year), income: pIncome, fees: pFees, net: r2(pIncome - pFees), invoices: inP.length };
   });
 
-  const seTax = r2(Math.max(0, net) * SE_BASE * SE_RATE);
+  const seTax = selfEmploymentTax(net, year);
   const setAsidePct = budgetProfile().taxPct || 0;
 
   return {

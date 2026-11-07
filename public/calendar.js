@@ -12,9 +12,9 @@ const KIND = {
   recurring: { label: 'Recurring invoice', group: 'recurring' },
 };
 const TONE = { friendly: 'Friendly heads-up', firm: 'Firm reminder', final: 'Final reminder' };
-// money first; reminders are one click away, so the month stays readable
-let showReminders = false;
-try { showReminders = localStorage.getItem('pp-cal-rem') === '1'; } catch {}
+// payments, due dates and reminder dates (sent and planned); reminders can be hidden
+let showReminders = true;
+try { showReminders = localStorage.getItem('pp-cal-reminders') !== '0'; } catch {}
 const show = new Set(['due', 'paid', 'recurring', ...(showReminders ? ['planned', 'reminded'] : [])]);
 let data = null;
 let month = new URLSearchParams(location.search).get('m') || null;
@@ -86,7 +86,7 @@ function renderDay(ev) {
             <div class="cd-body">
               <b>${esc(e.kind === 'planned' ? TONE[e.tone] : KIND[e.kind].label)}${e.kind === 'paid' && e.late ? ' <span class="muted">(late)</span>' : ''}</b>
               <span>${esc(e.client)}${e.number ? ` · #${esc(e.number)}` : ''} · ${esc(money(e.amount, e.currency))}${e.kind === 'recurring' ? ` · ${esc(e.frequency)}` : ''}</span>
-              ${e.kind === 'planned' ? `<span class="muted small">${e.state === 'waiting' ? 'Draft is ready in Invoices' : 'Autopilot writes it this day for your OK'}</span>` : ''}
+              ${e.kind === 'planned' ? `<span class="muted small">${e.state === 'waiting' ? 'Draft is ready in Invoices' : e.auto ? 'Autopilot writes it this day for your OK' : 'Suggested date. Autopilot is off, so send it from Invoices'}</span>` : ''}
               <div class="cd-acts">
                 ${e.invoiceId ? `<a class="linkbtn small" href="/dashboard?inv=${esc(e.invoiceId)}">Open invoice</a>` : ''}
                 ${(e.kind === 'due' || e.kind === 'overdue') && e.payerUrl ? `<button class="linkbtn small" data-copy="${esc(e.payerUrl)}">Copy pay link</button>` : ''}
@@ -118,7 +118,7 @@ $('remToggle').addEventListener('click', () => {
   showReminders = !showReminders;
   $('remToggle').setAttribute('aria-pressed', String(showReminders));
   for (const k of ['planned', 'reminded']) showReminders ? show.add(k) : show.delete(k);
-  try { localStorage.setItem('pp-cal-rem', showReminders ? '1' : '0'); } catch {}
+  try { localStorage.setItem('pp-cal-reminders', showReminders ? '1' : '0'); } catch {}
   render();
 });
 document.addEventListener('keydown', (e) => {

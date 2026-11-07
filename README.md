@@ -67,7 +67,7 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 
 | Feature | How it works |
 |---|---|
-| **Two ways to use it** | Setup asks whether you're a **freelancer** or a **registered business**. Freelancers get billing first: a "bill a client in one sentence" box on the dashboard, the Assistant and the Budget near the top. Businesses get an **Overview** with money owed by age (receivables aging), days sales outstanding, repeat customers and the top three places to grow, with Invoices, Receipts, Customers and Growth first in the menu and Net 30 terms by default. Switch anytime in Settings; the data is the same. |
+| **Two ways to use it** | Setup asks whether you're a **freelancer** or a **registered business**. Both get every feature, under the same names. Freelancers get **getting paid** first: the dashboard opens on who owes you, which reminder is due, and a "bill a client in one sentence" box. Businesses get **analysis** first: money owed by age (receivables aging), days sales outstanding, repeat customers and the top three places to grow, with Growth and Analytics higher in the menu and Net 30 terms by default. Switch anytime in Settings; the data is the same. |
 | **A clean start** | A real (PayPal-connected) account starts empty. Tick "Add a few sample invoices" to try things; every sample row is tracked, and **Settings → Data → Remove sample data** deletes exactly those, keeping anything you created. Demo mode loads the full sample book. |
 
 **Track, as a business**

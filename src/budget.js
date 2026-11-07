@@ -146,7 +146,15 @@ function saveProfile(p) {
  */
 export function receivedSinceSaved() {
   const raw = kvGet(PROFILE_KEY);
-  if (!raw || !Array.isArray(raw.paidIds)) return { total: 0, items: [], since: null };
+  if (!raw || !Array.isArray(raw.paidIds)) {
+    // never saved: we don't know your balance, but we can point at money that just landed
+    const cur = config.currency;
+    const from = addDays(isoDate(), -14);
+    const items = listInvoices()
+      .filter((i) => isPaid(i) && i.currency === cur && i.paidDate && i.paidDate >= from)
+      .map((i) => ({ number: i.number, client: getClient(i.clientId)?.name || 'Unknown', amount: i.total, net: r2(i.total - (i.total * PAYPAL_FEE.pct) / 100 - (cur === 'USD' ? PAYPAL_FEE.fixedUSD : 0)), paidDate: i.paidDate }));
+    return { total: 0, items: [], since: null, recent: { total: r2(items.reduce((t, x) => t + x.net, 0)), items } };
+  }
   const known = new Set(raw.paidIds);
   const cur = config.currency;
   const fixedFee = raw.fees !== false && cur === 'USD' ? PAYPAL_FEE.fixedUSD : 0;

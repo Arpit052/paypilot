@@ -77,6 +77,15 @@ if (upcoming?.length && !params.get('price')) {
   $('empty').classList.add('bg-upcoming');
 }
 if (profile.cashNow || receivedSince?.total) $('cash').value = Math.round(((profile.cashNow || 0) + (receivedSince?.total || 0)) * 100) / 100;
+if (!receivedSince?.since && receivedSince?.recent?.total) {
+  const r = receivedSince.recent;
+  $('cashNote').innerHTML = `You were paid <b>${esc(m(r.total))}</b> in the last 14 days (after PayPal fees${r.items.length ? `, latest #${esc(r.items[0].number)} from ${esc(r.items[0].client)}` : ''}). If it isn't counted in "Have now" yet, <button type="button" class="linkbtn small" id="addRecent">add it</button>.`;
+  $('cashNote').classList.remove('hidden');
+  $('addRecent').onclick = () => {
+    $('cash').value = Math.round(((Number($('cash').value) || 0) + r.total) * 100) / 100;
+    $('cashNote').textContent = `Added ${m(r.total)} to "Have now".`;
+  };
+}
 if (receivedSince?.total) {
   const list = receivedSince.items.slice(0, 3).map((x) => `#${x.number} from ${x.client}`).join(', ');
   $('cashNote').innerHTML = `Includes <b>${esc(m(receivedSince.total))}</b> paid to you since you last checked (${esc(list)}${receivedSince.items.length > 3 ? '…' : ''}), after fees and tax.`;

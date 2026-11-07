@@ -2015,3 +2015,10 @@ a.cv-btn { display: block; text-decoration: none; transition: background .15s; }
 .auth-card .acct-opt input[type=radio] { width: 16px !important; height: 16px; padding: 0 !important; margin: 3px 0 0 !important; flex: none; }
 .auth-card .acct-opt > span { display: block; }
 .auth-card .acct { gap: 8px; }
+.mb-col { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mb-col li a { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: #0c0c0e; border: 1px solid var(--glass-line); color: inherit; text-decoration: none; } .mb-col li a:hover { border-color: #3f3f46; }
+.mb-col li div { display: flex; flex-direction: column; min-width: 0; }
+.mb-col li b { font-size: 13.5px; font-weight: 600; }
+.mb-col li span { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mb-col li em { font-style: normal; }
+.mb-quick { justify-content: center; }

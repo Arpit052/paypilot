@@ -165,7 +165,7 @@ export function analytics({ months = 6 } = {}, today = isoDate()) {
   const insights = [];
   const add = (tone, text, link) => insights.push({ tone, text, link });
   const overdueAmt = aging.filter((a) => a.key !== 'current').reduce((t, a) => t + a.amount, 0);
-  if (overdueAmt) add('warn', `${fmt(overdueAmt)} is overdue right now, across ${aging.filter((a) => a.key !== 'current').reduce((t, a) => t + a.count, 0)} invoices.`, { href: '/followups', label: 'Chase it' });
+  if (overdueAmt) add('warn', `${fmt(overdueAmt)} is overdue right now, across ${aging.filter((a) => a.key !== 'current').reduce((t, a) => t + a.count, 0)} invoices.`, { href: '/invoices', label: 'Chase it' });
   const slow = clients.filter((c) => c.avgDaysLate !== null && c.avgDaysLate >= 7).sort((a, b) => b.avgDaysLate - a.avgDaysLate)[0];
   if (slow) add('warn', `${slow.name} pays ${slow.avgDaysLate} days late on average. Ask for a deposit on the next job, or send reminders sooner.`, { href: '/clients', label: 'See client' });
   if (top && top.share >= 35) add('warn', `${top.name} brings in ${top.share}% of your revenue. If they left, income would drop by about a third; worth growing other clients.`);

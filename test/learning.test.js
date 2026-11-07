@@ -186,3 +186,29 @@ test('demo checkout: the pay page data includes the receipt once paid', async ()
   assert.match(d.receipt, /^\/r\/[A-Za-z0-9_-]+$/);
   assert.equal((await call(d.receipt)).status, 200);
 });
+
+test('both account types use the same names for the same features', () => {
+  const src = fs.readFileSync(new URL('../public/common.js', import.meta.url), 'utf8');
+  const block = (k) => src.slice(src.indexOf(`  ${k}: [`), src.indexOf('],', src.indexOf(`  ${k}: [`)));
+  const labels = (k) => Object.fromEntries([...block(k).matchAll(/key: '(\w+)'[^}]*label: '([^']+)'/g)].map((m) => [m[1], m[2]]));
+  const f = labels('freelancer'), b = labels('business');
+  assert.deepEqual(Object.keys(f).sort(), Object.keys(b).sort(), 'same features');
+  for (const k of Object.keys(f)) assert.equal(b[k], f[k], `${k} has the same name`);
+});
+
+test('self-employment tax stops Social Security at the wage base', async () => {
+  const { selfEmploymentTax } = await import('../src/tax.js');
+  assert.equal(selfEmploymentTax(50000, 2026), Math.round(50000 * 0.9235 * 0.153 * 100) / 100);
+  const high = selfEmploymentTax(400000, 2026);
+  assert.equal(high, Math.round((184500 * 0.124 + 400000 * 0.9235 * 0.029) * 100) / 100);
+  assert.ok(high < 400000 * 0.9235 * 0.153, 'not taxed at 15.3% on everything');
+  assert.equal(selfEmploymentTax(-100, 2026), 0);
+});
+
+test('calendar shows reminder dates, even with Autopilot off', async () => {
+  await call('/api/autopilot', { enabled: false }).catch(() => {});
+  const r = (await call('/api/calendar')).data;
+  const kinds = new Set(r.events.map((e) => e.kind));
+  assert.ok(kinds.has('planned') || kinds.has('reminded'), 'reminder dates are on the calendar');
+  await call('/api/autopilot', { enabled: true }).catch(() => {});
+});

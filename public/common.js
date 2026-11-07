@@ -159,8 +159,8 @@ const ICON = {
 };
 export const icon = (name, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name] || ''}</svg>`;
 
-// The sidebar differs a little by account type: a freelancer's day starts with billing and
-// chasing; a business's with tracking invoices and reading the numbers.
+// Same features and the same names for both account types; only the order differs, so the
+// things each one uses most sit at the top (freelancer: getting paid; business: analysis).
 const NAV = {
   freelancer: [
     { key: 'dashboard', href: '/dashboard', label: 'Dashboard', group: 'Money' },
@@ -175,16 +175,16 @@ const NAV = {
     { key: 'settings', href: '/settings', label: 'Settings', group: 'System' },
   ],
   business: [
-    { key: 'dashboard', href: '/dashboard', label: 'Overview', group: 'Track' },
-    { key: 'followups', href: '/invoices', label: 'Invoices', group: 'Track' },
-    { key: 'receipts', href: '/receipts', label: 'Receipts', group: 'Track' },
-    { key: 'clients', href: '/clients', label: 'Customers', group: 'Track' },
-    { key: 'growth', href: '/growth', label: 'Growth', group: 'Analyse' },
-    { key: 'analytics', href: '/analytics', label: 'Analytics', group: 'Analyse' },
-    { key: 'budget', href: '/budget', label: 'Cash planner', group: 'Analyse' },
-    { key: 'calendar', href: '/calendar', label: 'Calendar', group: 'Analyse' },
-    { key: 'chat', href: '/assistant', label: 'Assistant', group: 'Tools' },
-    { key: 'settings', href: '/settings', label: 'Settings', group: 'Tools' },
+    { key: 'dashboard', href: '/dashboard', label: 'Dashboard', group: 'Money' },
+    { key: 'followups', href: '/invoices', label: 'Invoices', group: 'Money' },
+    { key: 'receipts', href: '/receipts', label: 'Receipts', group: 'Money' },
+    { key: 'clients', href: '/clients', label: 'Clients', group: 'Money' },
+    { key: 'chat', href: '/assistant', label: 'Assistant', group: 'Money' },
+    { key: 'growth', href: '/growth', label: 'Growth', group: 'Plan and grow' },
+    { key: 'analytics', href: '/analytics', label: 'Analytics', group: 'Plan and grow' },
+    { key: 'budget', href: '/budget', label: 'Budget', group: 'Plan and grow' },
+    { key: 'calendar', href: '/calendar', label: 'Calendar', group: 'Plan and grow' },
+    { key: 'settings', href: '/settings', label: 'Settings', group: 'System' },
   ],
 };
 let PAGES = NAV.freelancer;

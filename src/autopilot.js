@@ -127,7 +127,7 @@ async function runOnce(today) {
   }
   if (created.length) {
     const n = created.filter((a) => a.type === 'send_reminder').length;
-    notify({ kind: 'approval', title: `Autopilot drafted ${n} reminder${n > 1 ? 's' : ''}`, body: 'They are written and waiting for your OK in Collections.', link: '/followups' });
+    notify({ kind: 'approval', title: `Autopilot drafted ${n} reminder${n > 1 ? 's' : ''}`, body: 'They are written and waiting for your OK in Collections.', link: '/invoices' });
   }
   return created;
 }

@@ -90,14 +90,14 @@ async function aiReminder(inv, tone, daysOverdue, rel = relationshipOf(inv.clien
   const st = rel.stats;
   const t = termsFacts(inv, isoDate());
   const prompt = `Draft a ${tone} payment reminder email.
-Freelancer business: ${config.businessName || '(not set - sign off without a business name)'}
+Sender: ${config.accountType === 'business' ? 'a registered business' : 'a freelancer'}, ${config.businessName || '(business name not set - sign off without one)'}
 Client: ${clientName(inv.clientId)}
 Invoice #${inv.number}: ${inv.currency} ${inv.total} for ${inv.items.map((i) => i.name).join(', ')}
 Due date: ${inv.dueDate} (${inv.dueDate >= isoDate() ? 'not overdue yet - write a light, friendly heads-up before the due date' : `${daysOverdue} days overdue`}). Reminders already sent: ${inv.reminders.length}${lastTone(inv) ? ` (the last one was ${lastTone(inv)}, so don't sound softer than that)` : ''}.
 Client history: ${st.paidCount} paid invoices, average ${st.avgDaysLate ?? 'n/a'} days late, risk ${st.riskLabel}.
 Relationship: ${rel.label}. ${VOICE[rel.key]}
 Payment terms: ${t.termsText}.${t.feeOn ? ` Late fee: ${config.lateFeePercent}% (${inv.currency} ${t.fee}) ${t.feeFuture ? `will be added on ${t.feeOn}` : 'applies now'}.` : ''} Pay-by date to ask for: ${t.payBy}.
-Say they can pay with the link below (the app adds the link itself, so do not write any URL or placeholder). ${{ warm: 'Warm, friendly and professional. Max 90 words.', neutral: 'Neutral, matter-of-fact and polite. Max 80 words.', brief: 'Very short and to the point: 2-3 sentences, max 45 words.' }[config.reminderStyle || 'warm']} Never threatening.
+Always name the invoice number, the amount and the due date. Say they can pay with the link below (the app adds the link itself, so do not write any URL or placeholder). ${{ warm: 'Warm, friendly and professional. Max 90 words.', neutral: 'Neutral, matter-of-fact and polite. Max 80 words.', brief: 'Very short and to the point: 2-3 sentences, max 45 words.' }[config.reminderStyle || 'warm']} Never threatening.
 Sign off as: ${config.signOff || [config.ownerName, config.businessName].filter(Boolean).join(', ') || 'no name'}.${config.businessEmail ? ` Questions can go to ${config.businessEmail}.` : ''}${config.aiInstructions ? `\nThe owner's own instructions: ${config.aiInstructions}` : ''}
 Respond with ONLY JSON: {"subject": "...", "message": "..."}`;
   const { content } = await complete({ system: 'You write concise, professional payment reminder emails. Output JSON only.', messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }], maxTokens: 600 });

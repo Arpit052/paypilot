@@ -3,7 +3,6 @@ import { api, header, esc, money, moneyMap, fmtDate, toast, RISK_TEXT, daysLateT
 const $ = (id) => document.getElementById(id);
 const cfg = await header('dashboard');
 const cur = cfg.currency;
-if (cfg.accountType === 'business') $('dashTitle').textContent = 'Business overview';
 
 const state = { filter: 'all', sort: { key: 'issueDate', dir: 'desc' }, q: '', month: null };
 let data = { invoices: [], dash: null };
@@ -436,10 +435,26 @@ async function renderModeBlock() {
     </div>`;
     return;
   }
-  box.innerHTML = `<form class="panel mb-quick" id="quick">
-    <div><h2>Bill a client in one sentence</h2><p class="muted small">Type the job the way you'd text it. The Assistant drafts the PayPal invoice for you to check and send.</p></div>
-    <div class="mb-row"><input id="quickIn" maxlength="400" placeholder="e.g. Bill Marcus Vance for the pitch deck, $1,200, due in 15 days" aria-label="Describe the invoice"><button class="btn" type="submit">Draft invoice</button></div>
-  </form>`;
+  // freelancer: getting paid comes first
+  let col = null;
+  try {
+    col = await api('/api/collections');
+  } catch {}
+  const cards = (col?.cards || []).filter((c) => c.actionable).sort((x, y) => y.daysLate - x.daysLate || y.total - x.total);
+  const owed = cards.reduce((t, c) => t + (c.currency === cur ? c.total : 0), 0);
+  const late = cards.filter((c) => c.daysLate > 0);
+  const nextOf = (c) => c.drafts.length ? 'Reminder written, waiting for your OK' : c.plan.next?.state === 'due' ? `${c.plan.next.label} is due now` : c.plan.next ? `${c.plan.next.label} ${fmtDate(c.plan.next.date)}` : c.lastContact ? `Reminded ${fmtDate(c.lastContact.at)}` : '';
+  box.innerHTML = `<div class="mb-biz">
+    <section class="panel"><div class="mb-h"><h2>To collect</h2><a class="linkbtn small" href="/invoices">Invoices</a></div>
+      ${cards.length ? `<p class="muted small" style="margin:-4px 0 12px">${esc(money(owed, cur))} owed to you${late.length ? `, ${late.length} invoice${late.length === 1 ? '' : 's'} past due` : ', nothing late'}.</p>
+      <ul class="mb-col">${cards.slice(0, 4).map((c) => `<li><a href="/invoices?inv=${encodeURIComponent(c.id)}"><div><b>${esc(c.client)}</b><span>#${esc(c.number)} · ${c.daysLate > 0 ? `<em class="bad-t">${c.daysLate} day${c.daysLate === 1 ? '' : 's'} late</em>` : c.daysLate === 0 ? 'due today' : `due in ${-c.daysLate} days`}${nextOf(c) ? ` · ${esc(nextOf(c))}` : ''}</span></div><b class="num">${esc(money(c.total, c.currency))}</b></a></li>`).join('')}</ul>`
+      : '<p class="muted small">Nobody owes you anything right now.</p>'}
+    </section>
+    <form class="panel mb-quick" id="quick">
+      <div><h2>Bill a client in one sentence</h2><p class="muted small">Type the job the way you'd text it. The Assistant drafts the PayPal invoice for you to check and send.</p></div>
+      <div class="mb-row"><input id="quickIn" maxlength="400" placeholder="e.g. Bill Marcus Vance for the pitch deck, $1,200, due in 15 days" aria-label="Describe the invoice"><button class="btn" type="submit">Draft invoice</button></div>
+    </form>
+  </div>`;
   $('quick').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = $('quickIn').value.trim();

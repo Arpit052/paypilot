@@ -267,8 +267,13 @@ export function createApp() {
     }
     dropStaleActions();
     const imp = await importFromPaypal().catch(() => ({ imported: 0 }));
-    // a real account starts empty unless the owner asks for a few sample invoices to try things
-    if (req.body?.sampleHistory === true && !sampleInfo().count) seedSample();
+    // a real account starts empty: demo data from before is wiped, unless the owner asks for
+    // a few sample invoices to try things (tracked, so they can be removed later)
+    if (req.body?.sampleHistory === true) {
+      if (!sampleInfo().count) seedSample();
+    } else if (sampleInfo().count || listInvoices().some((i) => i.source === 'seed')) {
+      removeSample();
+    }
     noteDueDates();
     logActivity('paypal_connected', 'Connected to PayPal sandbox');
     res.json({ ok: true, removedDemoInvoices: removed, imported: imp.imported, settings: publicSettings() });
@@ -379,7 +384,7 @@ export function createApp() {
   });
   api.post('/sync', async (req, res) => {
     const imp = await importFromPaypal().catch((e) => ({ imported: 0, errors: [e.message] }));
-    const r = await syncInvoices();
+    const r = await syncInvoices({ all: true });
     res.json({ ...r, imported: imp.imported, errors: [...(imp.errors || []), ...r.errors] });
   });
   // New invoice form: the user filled it in themselves. sendNow=true sends right away,
@@ -591,6 +596,7 @@ export function createApp() {
       if (!config.paypal.webhookId) throw httpError(503, 'PAYPAL_WEBHOOK_ID not configured');
       const ok = await paypal.verifyWebhook(req.headers, event);
       if (!ok) throw httpError(400, 'Webhook signature verification failed');
+      syncState.lastWebhookAt = Date.now();
     }
     res.json(applyWebhookEvent(event));
   });

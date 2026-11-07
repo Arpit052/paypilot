@@ -23,14 +23,15 @@ export function calendarMonth(month, today = isoDate()) {
     if (isPaid(inv) && inRange(inv.paidDate)) events.push({ date: inv.paidDate, kind: 'paid', ...base(inv), late: inv.paidDate > inv.dueDate });
     if (isOpen(inv) && inRange(inv.dueDate)) events.push({ date: inv.dueDate, kind: inv.dueDate < today ? 'overdue' : 'due', ...base(inv), payerUrl: inv.payerUrl });
     for (const r of inv.reminders || []) if (inRange(r.at)) events.push({ date: r.at, kind: 'reminded', tone: r.tone || 'friendly', ...base(inv) });
-    if (isOpen(inv) && inv.paypalId && !notOnCurrentPaypal(inv) && settings.enabled) {
+    // reminder dates show even with Autopilot off, as suggestions you send yourself
+    if (isOpen(inv) && inv.paypalId && !notOnCurrentPaypal(inv)) {
       const { steps } = planFor(inv, { settings, actions, today });
       const firmestDue = [...steps].reverse().find((s) => s.state === 'due');
       for (const s of steps) {
         if (!['planned', 'due', 'waiting'].includes(s.state)) continue;
         if (s.state === 'due' && s !== firmestDue) continue; // only the step Autopilot will actually take
         const date = s.date < today ? today : s.date;
-        if (inRange(date)) events.push({ date, kind: 'planned', tone: s.tone, label: s.label, state: s.state, ...base(inv) });
+        if (inRange(date)) events.push({ date, kind: 'planned', tone: s.tone, label: s.label, state: s.state, auto: settings.enabled, ...base(inv) });
       }
     }
   }

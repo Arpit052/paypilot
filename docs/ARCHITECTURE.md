@@ -56,7 +56,7 @@ The 90-day plan is cached against a fingerprint of the book (every invoice's sta
 
 ## Accounts and sample data
 
-`accountType` (freelancer or business) changes the navigation, the dashboard's first block and the default terms; the data model is the same. Sample data is loaded through `src/sample.js`, which records the exact invoices, clients and schedules it created, so **Remove sample data** deletes only those (a sample client you have since billed for real is kept). A PayPal-connected account starts empty unless the owner asks for samples.
+`accountType` (freelancer or business) keeps every feature and every name the same; it changes the order of the menu, the dashboard's first block (freelancer: what to collect and from whom; business: receivables aging, DSO, repeat customers, where to grow) and the default terms. The data model is the same. Sample data is loaded through `src/sample.js`, which records the exact invoices, clients and schedules it created, so **Remove sample data** deletes only those (a sample client you have since billed for real is kept). A PayPal-connected account starts empty unless the owner asks for samples.
 
 ## Reminders
 
@@ -80,7 +80,7 @@ PayPal emails its own receipt when a client pays through PayPal. Bank transfers 
 
 ## Live updates
 
-PayPal webhooks (signature verified with PayPal's verify API) and a 2-minute poll both feed `applyStatus` in `src/sync.js`. A status change updates the invoice, unlocks delivery pages, settles early-pay discounts, and pushes a notification over Server-Sent Events to every open tab.
+PayPal webhooks (signature verified with PayPal's verify API) and a 2-minute poll both feed `applyStatus` in `src/sync.js`. A status change updates the invoice, unlocks delivery pages, settles early-pay discounts, and pushes a notification over Server-Sent Events to every open tab. The poll checks up to 25 open invoices per run in turn (so large books are fully covered without bursts of API calls) and drops to every 10 minutes while verified webhooks are arriving.
 
 ## Data and migrations
 

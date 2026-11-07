@@ -3,7 +3,7 @@
 import { config } from './config.js';
 import { isMock } from './paypal.js';
 import { setupDone } from './settings.js';
-import { syncInvoices, importFromPaypal, importIfStale } from './sync.js';
+import { syncInvoices, importFromPaypal, importIfStale, syncState } from './sync.js';
 import { runRecurring } from './recurring.js';
 import { scanFollowups } from './followups.js';
 import { notify } from './notify.js';
@@ -37,7 +37,7 @@ export async function runJobs() {
         kind: 'approval',
         title: `${drafts} draft${drafts > 1 ? 's' : ''} waiting for approval`,
         body: [result.recurringDrafts ? `${result.recurringDrafts} recurring invoice${result.recurringDrafts > 1 ? 's' : ''}` : '', result.reminderDrafts ? `${result.reminderDrafts} payment reminder${result.reminderDrafts > 1 ? 's' : ''}` : '', result.lateFeeDrafts ? `${result.lateFeeDrafts} late fee${result.lateFeeDrafts > 1 ? 's' : ''}` : ''].filter(Boolean).join(' and ') + ' ready to review.',
-        link: result.reminderDrafts || result.lateFeeDrafts ? '/followups' : '/assistant',
+        link: result.reminderDrafts || result.lateFeeDrafts ? '/invoices' : '/assistant',
       });
     }
     lastRun.at = new Date().toISOString();
@@ -56,8 +56,11 @@ export async function runJobs() {
 function startPaymentWatcher() {
   const secs = Number(process.env.PAYPAL_SYNC_SECONDS ?? 120);
   if (!(secs > 0)) return;
+  let n = 0;
   const tick = () => {
     if (isMock() || !setupDone()) return;
+    // webhooks are arriving: polling is only a safety net, so run it every 5th time (10 min)
+    if (Date.now() - syncState.lastWebhookAt < 30 * 60 * 1000 && n++ % 5 !== 0) return;
     importIfStale(10)
       .catch(() => {})
       .then(() => syncInvoices())

@@ -40,7 +40,13 @@ export function sampleInfo() {
  * them. A sample client you have since billed for real is kept, with only your invoices.
  */
 export function removeSample() {
-  const ids = kvGet(KEY) || { invoices: listInvoices().filter((i) => i.source === 'seed').map((i) => i.id), clients: [], schedules: [] };
+  // older installs didn't track samples: fall back to seeded invoices and the clients who only have those
+  const ids = kvGet(KEY) || (() => {
+    const all = listInvoices();
+    const seeded = all.filter((i) => i.source === 'seed');
+    const onlySeed = [...new Set(seeded.map((i) => i.clientId))].filter((cid) => all.filter((i) => i.clientId === cid).every((i) => i.source === 'seed' || String(i.paypalId || '').startsWith('INV2-MOCK-')));
+    return { invoices: [...seeded, ...all.filter((i) => onlySeed.includes(i.clientId))].map((i) => i.id), clients: onlySeed, schedules: listSchedules().filter((sc) => onlySeed.includes(sc.clientId)).map((sc) => sc.id) };
+  })();
   const drop = new Set(ids.invoices);
   let invoices = 0, clients = 0;
   transaction(() => {

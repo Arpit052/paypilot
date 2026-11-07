@@ -111,12 +111,23 @@ export function importIfStale(minutes = 10) {
   return importFromPaypal();
 }
 
-export const syncState = { lastAt: null };
+export const syncState = { lastAt: null, lastWebhookAt: 0, cursor: 0 };
+const BATCH = 25;
 
-/** Poll PayPal for every open invoice. Returns number of invoices that changed. */
-export async function syncInvoices() {
+/**
+ * Poll PayPal for open invoices: the safety net for missed webhooks. Up to 25 invoices per run,
+ * taken in turn, so a book with hundreds of open invoices is still fully covered every few runs
+ * without a burst of API calls. Returns the number of invoices that changed.
+ */
+export async function syncInvoices({ all = false } = {}) {
   syncState.lastAt = new Date().toISOString();
-  const open = listInvoices().filter((i) => i.paypalId && i.source !== 'seed' && !notOnCurrentPaypal(i) && isOpen(i)).slice(0, 50);
+  const every = listInvoices().filter((i) => i.paypalId && i.source !== 'seed' && !notOnCurrentPaypal(i) && isOpen(i));
+  let open = every;
+  if (!all && every.length > BATCH) {
+    const start = syncState.cursor % every.length;
+    open = [...every.slice(start), ...every.slice(0, start)].slice(0, BATCH);
+    syncState.cursor = start + BATCH;
+  }
   let changed = 0;
   const errors = [];
   for (const inv of open) {

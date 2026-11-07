@@ -17,11 +17,11 @@ export function noteDueDates(today = isoDate()) {
     const amount = fmt(inv.total, inv.currency);
     if (days > 0 && !kvGet(`alert:overdue:${inv.id}`)) {
       kvSet(`alert:overdue:${inv.id}`, today);
-      notify({ kind: 'overdue', title: `${who} is ${days} day${days > 1 ? 's' : ''} late`, body: `Invoice #${inv.number} · ${amount} was due ${inv.dueDate}.`, link: '/followups', invoiceId: inv.id });
+      notify({ kind: 'overdue', title: `${who} is ${days} day${days > 1 ? 's' : ''} late`, body: `Invoice #${inv.number} · ${amount} was due ${inv.dueDate}.`, link: '/invoices', invoiceId: inv.id });
       sent++;
     } else if (days >= -1 && days <= 0 && !kvGet(`alert:due:${inv.id}`)) {
       kvSet(`alert:due:${inv.id}`, today);
-      notify({ kind: 'due', title: `Invoice #${inv.number} is due ${days === 0 ? 'today' : 'tomorrow'}`, body: `${who} · ${amount}`, link: '/followups', invoiceId: inv.id });
+      notify({ kind: 'due', title: `Invoice #${inv.number} is due ${days === 0 ? 'today' : 'tomorrow'}`, body: `${who} · ${amount}`, link: '/invoices', invoiceId: inv.id });
       sent++;
     }
   }
