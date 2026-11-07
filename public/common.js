@@ -93,6 +93,36 @@ export async function copyPayLink(url) {
   );
 }
 
+/** Small modal with a title, a line of text and a list of choices. */
+export function dialog({ title, body, actions = [] }) {
+  const back = document.createElement('div');
+  back.className = 'dlg-back';
+  back.innerHTML = `<div class="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgT"><h2 id="dlgT">${esc(title)}</h2><p>${esc(body)}</p>
+    <div class="dlg-acts">${actions.map((a, i) => `<button type="button" class="dlg-opt" data-i="${i}"><b>${esc(a.label)}</b>${a.sub ? `<span>${esc(a.sub)}</span>` : ''}</button>`).join('')}</div>
+    <button type="button" class="btn ghost small dlg-cancel">Cancel</button></div>`;
+  const close = () => back.remove();
+  back.addEventListener('click', async (e) => {
+    if (e.target === back || e.target.closest('.dlg-cancel')) return close();
+    const b = e.target.closest('.dlg-opt');
+    if (!b) return;
+    b.disabled = true;
+    try {
+      await actions[Number(b.dataset.i)].run();
+    } catch (err) {
+      b.disabled = false;
+      toast(err.message);
+    }
+  });
+  document.addEventListener('keydown', function esc(e) {
+    if (e.key === 'Escape') {
+      close();
+      document.removeEventListener('keydown', esc);
+    }
+  });
+  document.body.append(back);
+  back.querySelector('.dlg-opt')?.focus();
+}
+
 export function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast';
@@ -220,12 +250,27 @@ export async function header(active) {
   startLiveClock(CONFIG.timezone);
   startNotifications();
   side.querySelector('#logoutBtn')?.addEventListener('click', async () => {
-    if (!CONFIG.loginEnabled) {
-      toast('Set a passcode first, so PayPilot can lock when you sign out.');
-      return setTimeout(() => (location.href = '/settings#security'), 900);
+    if (CONFIG.loginEnabled) {
+      await api('/api/logout', { body: {} }).catch(() => {});
+      location.href = '/login.html';
+      return;
     }
-    await api('/api/logout', { body: {} }).catch(() => {});
-    location.href = '/login.html';
+    // no passcode: there is nothing to sign in to, so offer the two things people mean
+    dialog({
+      title: 'Sign out of PayPilot?',
+      body: "PayPilot doesn't have a passcode yet, so anyone who opens it on this computer goes straight in. Choose what you'd like to do.",
+      actions: [
+        {
+          label: 'Disconnect and go to the start screen',
+          sub: 'Leaves this PayPal account. Your invoices and settings stay on this computer.',
+          run: async () => {
+            const r = await api('/api/session/end', { body: {} });
+            location.href = r.welcome ? '/welcome' : '/';
+          },
+        },
+        { label: 'Lock with a passcode instead', sub: 'Next time, Sign out locks PayPilot and asks for the passcode.', run: () => (location.href = '/settings#security') },
+      ],
+    });
   });
   return CONFIG;
 }

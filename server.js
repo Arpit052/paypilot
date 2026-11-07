@@ -23,7 +23,7 @@ import { startScheduler, runJobs, lastRun } from './src/scheduler.js';
 import { invoiceTotals, topCustomers, paymentsInMonth, invoicesCsv } from './src/analytics.js';
 import { createAction } from './src/actions.js';
 import { eventStream } from './src/notify.js';
-import { listNotifications, unreadNotificationCount, markNotificationsRead, deleteInvoice, deleteClient, kvGet, kvSet } from './src/db.js';
+import { listNotifications, unreadNotificationCount, markNotificationsRead, deleteInvoice, deleteClient, kvGet, kvSet, kvDel } from './src/db.js';
 import { applySettings, setupDone, publicSettings, connectPaypal, useDemoMode, disconnectPaypal, saveBusinessSettings } from './src/settings.js';
 import { verifyCredentials } from './src/paypal.js';
 import { isOpen } from './src/analytics.js';
@@ -175,6 +175,15 @@ export function createApp() {
   api.post('/logout', (req, res) => {
     res.set('Set-Cookie', `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
     res.json({ ok: true });
+  });
+  // No passcode: "sign out" means leaving this PayPal account and going back to the start
+  // screen (for example to let someone else connect theirs). Invoices and settings stay.
+  api.post('/session/end', (req, res) => {
+    if (loginEnabled()) throw httpError(400, 'Use sign out: this PayPilot has a passcode.');
+    kvDel('settings:paypal'); // the PayPal keys are forgotten too
+    applySettings();
+    logActivity('session_end', 'Signed out: PayPal disconnected, back to the start screen');
+    res.json({ ok: true, welcome: !setupDone() });
   });
 
   api.get('/config', (req, res) =>

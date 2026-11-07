@@ -193,6 +193,19 @@ test('early-pay discount: suggested by history, applied, then removed after 48 h
   assert.equal((await call('/api/invoices')).data.invoices.find((i) => i.id === inv2.id).earlyPay.status, 'used');
 });
 
+test('sign out without a passcode returns to the start screen and keeps the data', async () => {
+  const before = (await call('/api/invoices')).data.invoices.length;
+  const r = await call('/api/session/end', {});
+  assert.equal(r.status, 200);
+  // here PAYPAL_MODE=mock comes from the environment, so setup stays done; with keys
+  // entered in the app (the normal case) the start screen comes back
+  const home = await fetch(base + '/', { redirect: 'manual' });
+  if (r.data.welcome) assert.match(home.headers.get('location') || '', /welcome/);
+  else assert.equal(home.status, 200);
+  await call('/api/settings/paypal/demo', { businessName: 'Test Studio' });
+  assert.equal((await call('/api/invoices')).data.invoices.length >= before, true, 'invoices are kept');
+});
+
 test('no emojis left in the interface text', async () => {
   const dir = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'public');
   for (const f of fs.readdirSync(dir).filter((x) => /\.(js|html)$/.test(x))) {
