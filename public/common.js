@@ -141,7 +141,7 @@ export let CONFIG = null;
 const ICON = {
   dashboard: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/>',
-  followups: '<path d="M12 2v20"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+  followups: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
   calendar: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   analytics: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
   budget: '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3"/><path d="M3 5v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3"/><path d="M21 12h-4a2 2 0 0 0 0 4h4z"/>',
@@ -159,21 +159,40 @@ const ICON = {
 };
 export const icon = (name, size = 18) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name] || ''}</svg>`;
 
-const PAGES = [
-  { key: 'dashboard', href: '/dashboard', label: 'Dashboard', group: 'Money' },
-  { key: 'chat', href: '/assistant', label: 'Assistant', group: 'Money' },
-  { key: 'followups', href: '/followups', label: 'Collections', group: 'Money' },
-  { key: 'receipts', href: '/receipts', label: 'Receipts', group: 'Money' },
-  { key: 'clients', href: '/clients', label: 'Clients', group: 'Money' },
-  { key: 'analytics', href: '/analytics', label: 'Analytics', group: 'Insights' },
-  { key: 'growth', href: '/growth', label: 'Growth', group: 'Insights' },
-  { key: 'budget', href: '/budget', label: 'Budget', group: 'Insights' },
-  { key: 'calendar', href: '/calendar', label: 'Calendar', group: 'Insights' },
-  { key: 'settings', href: '/settings', label: 'Settings', group: 'System' },
-];
+// The sidebar differs a little by account type: a freelancer's day starts with billing and
+// chasing; a business's with tracking invoices and reading the numbers.
+const NAV = {
+  freelancer: [
+    { key: 'dashboard', href: '/dashboard', label: 'Dashboard', group: 'Money' },
+    { key: 'chat', href: '/assistant', label: 'Assistant', group: 'Money' },
+    { key: 'followups', href: '/invoices', label: 'Invoices', group: 'Money' },
+    { key: 'receipts', href: '/receipts', label: 'Receipts', group: 'Money' },
+    { key: 'clients', href: '/clients', label: 'Clients', group: 'Money' },
+    { key: 'budget', href: '/budget', label: 'Budget', group: 'Plan and grow' },
+    { key: 'analytics', href: '/analytics', label: 'Analytics', group: 'Plan and grow' },
+    { key: 'growth', href: '/growth', label: 'Growth', group: 'Plan and grow' },
+    { key: 'calendar', href: '/calendar', label: 'Calendar', group: 'Plan and grow' },
+    { key: 'settings', href: '/settings', label: 'Settings', group: 'System' },
+  ],
+  business: [
+    { key: 'dashboard', href: '/dashboard', label: 'Overview', group: 'Track' },
+    { key: 'followups', href: '/invoices', label: 'Invoices', group: 'Track' },
+    { key: 'receipts', href: '/receipts', label: 'Receipts', group: 'Track' },
+    { key: 'clients', href: '/clients', label: 'Customers', group: 'Track' },
+    { key: 'growth', href: '/growth', label: 'Growth', group: 'Analyse' },
+    { key: 'analytics', href: '/analytics', label: 'Analytics', group: 'Analyse' },
+    { key: 'budget', href: '/budget', label: 'Cash planner', group: 'Analyse' },
+    { key: 'calendar', href: '/calendar', label: 'Calendar', group: 'Analyse' },
+    { key: 'chat', href: '/assistant', label: 'Assistant', group: 'Tools' },
+    { key: 'settings', href: '/settings', label: 'Settings', group: 'Tools' },
+  ],
+};
+let PAGES = NAV.freelancer;
 
 export async function header(active) {
   CONFIG = await api('/api/config').catch(() => ({}));
+  PAGES = NAV[CONFIG.accountType] || NAV.freelancer;
+  if (CONFIG.accountType === 'business') document.body.classList.add('acct-business');
   const pending = await api('/api/actions?status=pending').then((r) => r.actions.length).catch(() => 0);
   const pp = CONFIG.paypalMode === 'mock' ? 'Demo mode' : CONFIG.paypalMode === 'live' ? 'PayPal Live' : 'PayPal Sandbox';
   const ai = CONFIG.llmProvider === 'none' ? 'AI not set' : `AI · ${CONFIG.llmProvider}`;
@@ -184,6 +203,7 @@ export async function header(active) {
     return `<a class="sb-link" href="${p.href}" ${active === p.key || (active === 'tax' && p.key === 'analytics') ? 'aria-current="page"' : ''} data-tip="${esc(p.label)}">${icon(p.key)}<span class="sb-text">${esc(p.label)}</span>${badge}</a>`;
   };
   const group = (g) => `<div class="sb-label">${g}</div>${PAGES.filter((p) => p.group === g).map((p) => navLink(p)).join('')}`;
+  const groups = [...new Set(PAGES.map((p) => p.group))];
   const ap = CONFIG.autopilot;
   try {
     if (localStorage.getItem('pp-sb') === 'collapsed') document.body.classList.add('sb-collapsed');
@@ -200,9 +220,9 @@ export async function header(active) {
     </div>
     <button class="sb-search" id="openSearch" aria-label="Search" data-tip="Search">${icon('search', 16)}<span class="sb-text">Search…</span><kbd class="sb-text">${/Mac/.test(navigator.platform) ? '⌘' : 'Ctrl'} K</kbd></button>
     <a class="sb-new" href="/new-invoice" ${active === 'new' ? 'aria-current="page"' : ''} data-tip="New invoice">${icon('new', 17)}<span class="sb-text">New invoice</span></a>
-    <nav class="sb-nav" aria-label="Main">${group('Money')}${group('Insights')}${group('System')}</nav>
+    <nav class="sb-nav" aria-label="Main">${groups.map(group).join('')}</nav>
     <div class="sb-fill"></div>
-    ${ap ? `<a class="sb-card" href="/followups" data-tip="Autopilot">
+    ${ap ? `<a class="sb-card" href="/invoices" data-tip="Autopilot">
       <span class="sb-card-h">${icon('bolt', 15)}<span class="sb-text">Autopilot ${ap.enabled ? 'on' : 'off'}</span><i class="${ap.enabled ? 'on' : ''}"></i></span>
       <span class="sb-text sb-card-b">${ap.enabled ? (ap.next ? `Next: ${esc(ap.next.label.toLowerCase())} to ${esc(ap.next.client)}, ${esc(fmtDate(ap.next.date))}` : 'Watching your unpaid invoices') : 'Reminders are only drafted when you ask'}</span>
     </a>` : ''}
@@ -293,7 +313,7 @@ async function loadIndex() {
 const ACTIONS = [
   { label: 'New invoice', hint: 'Create and send through PayPal', href: '/new-invoice', ic: 'new' },
   { label: 'Ask the Assistant', hint: 'Bill a client in plain words', href: '/assistant', ic: 'chat' },
-  { label: 'Chase late invoices', hint: 'Collections', href: '/followups', ic: 'followups' },
+  { label: 'Chase late invoices', hint: 'Invoices', href: '/invoices', ic: 'followups' },
   { label: 'Can I afford it?', hint: 'Budget Estimator', href: '/budget', ic: 'budget' },
   { label: 'Suggested retainers', hint: 'Clients who buy every month', href: '/clients#offers', ic: 'clients' },
   { label: 'Export invoices (CSV)', hint: 'For your accountant', href: '/api/invoices.csv', ic: 'analytics' },
@@ -315,7 +335,7 @@ function searchResults(q, idx) {
   const invoices = idx.invoices
     .filter((i) => has(i.number, `#${i.number}`, i.client, i.reference, ...(i.items || []).map((x) => x.name)))
     .slice(0, 6)
-    .map((i) => ({ label: `#${i.number} · ${i.client}`, hint: `${money(i.total, i.currency)} · ${(i.displayStatus || i.status).toLowerCase().replace(/_/g, ' ')}`, href: `/dashboard?inv=${i.id}`, ic: 'followups' }));
+    .map((i) => ({ label: `#${i.number} · ${i.client}`, hint: `${money(i.total, i.currency)} · ${(i.displayStatus || i.status).toLowerCase().replace(/_/g, ' ')}`, href: `/invoices?inv=${i.id}`, ic: 'followups' }));
   if (invoices.length) out.push({ section: 'Invoices', items: invoices });
   if (clients.length) out.push({ section: 'Clients', items: clients });
   if (pages.length || acts.length) out.push({ section: 'Pages & actions', items: [...pages, ...acts] });
@@ -404,8 +424,8 @@ function renderBell() {
   const paid = Object.entries(summary?.paidThisWeek || {});
   document.getElementById('bellSummary').innerHTML = summary
     ? `<a class="bs" href="/dashboard"><span>Paid this week</span><b>${paid.length ? paid.map(([c, v]) => esc(money(v, c))).join(' + ') : esc(money(0, CONFIG?.currency || 'USD'))}</b></a>
-       <a class="bs" href="/followups"><span>Overdue</span><b class="${summary.overdue ? 'bad' : ''}">${summary.overdue}</b></a>
-       <a class="bs" href="/followups"><span>To approve</span><b class="${summary.waiting ? 'warn' : ''}">${summary.waiting}</b></a>`
+       <a class="bs" href="/invoices"><span>Overdue</span><b class="${summary.overdue ? 'bad' : ''}">${summary.overdue}</b></a>
+       <a class="bs" href="/invoices"><span>To approve</span><b class="${summary.waiting ? 'warn' : ''}">${summary.waiting}</b></a>`
     : '';
   const item = (n) => `<li class="${n.read ? '' : 'unread'} k-${esc(n.kind)}"><a href="${esc(n.link || '#')}" data-note="${n.id}">
       <span class="ni">${noteIcon(n.kind)}</span>
@@ -555,7 +575,7 @@ export function renderSlip(action, { onDone, onGone } = {}) {
       </div>
       <div class="row2">
         <div><label>Early-pay discount</label><select data-f="earlyPayPercent" aria-label="Early-pay discount">${[0, 1, 2, 3, 5].map((v) => `<option value="${v}" ${Number(p.earlyPayPercent || 0) === v ? 'selected' : ''}>${v ? `${v}% off if paid within 48 h` : 'None'}</option>`).join('')}</select></div>
-        <div><label>Final work link (pay to unlock)</label><input data-f="deliveryUrl" type="url" value="${esc(p.deliveryUrl || '')}" placeholder="https://figma.com/… (optional)"></div>
+        <div><label title="Your client sees a locked page that opens this link once the invoice is paid">Lock finished work until paid (optional)</label><input data-f="deliveryUrl" type="url" value="${esc(p.deliveryUrl || '')}" placeholder="Link to the final files (Drive, Figma…)"></div>
       </div>
       ${p.earlyPaySuggested ? `<div class="slip-hint" data-ephint>${p.earlyPaySuggested.percent ? `Suggested: <b>${p.earlyPaySuggested.percent}%</b>. ${esc(p.earlyPaySuggested.reason)}` : `No discount suggested. ${esc(p.earlyPaySuggested.reason)}`}</div>` : ''}
       <div class="sums num">
@@ -806,8 +826,8 @@ function deliveryBox(inv, isOpen) {
     return `<div class="dr-dl ${d.unlockedAt ? 'open' : ''}"><div><b>Pay to unlock</b><span>${d.unlockedAt ? `Unlocked ${fmtDate(d.unlockedAt.slice(0, 10))}. Your client can open the files.` : 'Locked. The client\'s page opens the files as soon as this invoice is paid.'}</span><em>${esc(d.url)}</em></div>
       <div class="dr-dl-acts"><button class="btn small" type="button" data-copylink="${esc(d.link)}">Copy unlock page</button><a class="btn ghost small" href="${esc(d.link)}" target="_blank" rel="noopener">Preview</a>${d.unlockedAt ? '' : '<button class="linkbtn small" type="button" data-dlrm>Remove</button>'}</div></div>`;
   if (!isOpen) return '';
-  return `<form class="dr-dl add" data-dladd><div><b>Pay to unlock</b><span>Lock the final files behind this invoice. You get a link to send; it opens the files once the invoice is paid.</span></div>
-    <div class="pf-row"><input name="url" type="url" required placeholder="https://figma.com/… or a Drive / Dropbox link" aria-label="Final work link"><button class="btn small" type="submit">Lock files</button></div><div class="slip-error" data-dlerr></div></form>`;
+  return `<form class="dr-dl add" data-dladd><div><b>Send the work, keep it locked until paid</b><span>Paste the link to the finished files. Your client gets a page that says the work is ready but locked; it opens by itself once PayPal reports this invoice paid. They never see the real link before paying.</span></div>
+    <div class="pf-row"><input name="url" type="url" required placeholder="Link to the final files (Drive, Figma, Dropbox…)" aria-label="Link to the finished work"><button class="btn small" type="submit">Lock files</button></div><div class="slip-error" data-dlerr></div></form>`;
 }
 
 /** Ordered events for one invoice, built from its saved history. */
@@ -903,7 +923,7 @@ export function openInvoiceDrawer(inv, { today, mock = false, onSimulatePay } = 
     <div class="dr-num">Invoice #${esc(inv.number)} · <span class="pill ${esc(status)}">${esc(label)}</span></div>
     <div class="dr-amt num">${money(inv.total, cur)}</div>
     <div class="dr-who">${esc(inv.client || '')}${inv.clientEmail ? ` · ${esc(inv.clientEmail)}` : ''}${inv.reference ? ` · Ref ${esc(inv.reference)}` : ''}</div>
-    ${inv.paidDate ? `<div class="dr-when"><span>Paid on</span><b>${fmtDate(inv.paidDate)}</b><em>${inv.paidLateDays > 0 ? `${inv.paidLateDays} days after the due date` : inv.paidLateDays < 0 ? `${-inv.paidLateDays} days early` : inv.paidLateDays === 0 ? 'on the due date' : ''}</em></div>` : isOpen && inv.expected?.date ? `<div class="dr-when exp"><span>Expected around</span><b>${fmtDate(inv.expected.date)}</b><em>8 in 10 times between ${fmtDate(inv.expected.early)} and ${fmtDate(inv.expected.late)} · ${inv.expected.chance}% chance it's paid at all · from ${inv.expected.basedOn} past payment${inv.expected.basedOn === 1 ? '' : 's'}</em></div>` : ''}
+    ${inv.paidDate ? `<div class="dr-when"><span>Paid on</span><b>${fmtDate(inv.paidDate)}</b><em>${inv.paidLateDays > 0 ? `${inv.paidLateDays} days after the due date` : inv.paidLateDays < 0 ? `${-inv.paidLateDays} days early` : inv.paidLateDays === 0 ? 'on the due date' : ''}</em></div>` : isOpen && inv.expected?.date ? `<div class="dr-when exp"><span>Expected around</span><b>${fmtDate(inv.expected.date)}</b><em>8 in 10 times between ${fmtDate(inv.expected.early)} and ${fmtDate(inv.expected.late)} · ${inv.expected.chance}% chance it's paid at all · ${inv.expected.basedOn ? `from this client's ${inv.expected.basedOn} past payment${inv.expected.basedOn === 1 ? '' : 's'}` : 'new client, so this uses how your other clients pay'}</em></div>` : ''}
     <table class="dr-lines"><tbody>${lines}${inv.taxPercent ? `<tr><td>Sales tax (${esc(inv.taxPercent)}%)</td><td>${money(Math.round(taxable * inv.taxPercent) / 100, cur)}</td></tr>` : ''}</tbody></table>
     <div class="dr-actions">
       ${isOpen && inv.payerUrl ? `<button class="btn small" data-copylink="${esc(inv.payerUrl)}">Copy pay link</button>` : ''}

@@ -163,7 +163,7 @@ function renderTiming() {
   $('aging').innerHTML = `<ul class="hbars">${A.aging
     .map((a) => `<li><span>${esc(a.label)}</span><div><i style="width:${(a.amount / maxA) * 100}%;background:${colA[a.key]}"></i></div><b>${esc(m(a.amount))}</b><em>${a.count} inv.</em></li>`)
     .join('')}</ul>
-    <p class="muted small" style="margin:12px 0 0">${A.overdueTotal ? `${esc(m(A.overdueTotal))} is past due. <a href="/followups">Open Collections</a>` : 'Nothing is past due.'}</p>`;
+    <p class="muted small" style="margin:12px 0 0">${A.overdueTotal ? `${esc(m(A.overdueTotal))} is past due. <a href="/invoices">Open Invoices</a>` : 'Nothing is past due.'}</p>`;
   $('insights').innerHTML = A.insights.length
     ? A.insights.map((t) => `<li class="${t.tone}"><i></i><span>${esc(t.text)}</span>${t.link ? `<a href="${esc(t.link.href)}">${esc(t.link.label)} →</a>` : ''}</li>`).join('')
     : '<li class="muted">Notes appear once you have a few paid invoices.</li>';

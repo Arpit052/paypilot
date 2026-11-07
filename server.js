@@ -17,6 +17,7 @@ import { runAutopilot, saveAutopilotSettings, autopilotSettings, comingUp } from
 import { paypal, isMock } from './src/paypal.js';
 import { llmAvailable } from './src/llm.js';
 import { seedDemo } from './src/seed.js';
+import { seedSample, sampleInfo, removeSample } from './src/sample.js';
 import { runRecurring } from './src/recurring.js';
 import { moneyBrief } from './src/brief.js';
 import { startScheduler, runJobs, lastRun } from './src/scheduler.js';
@@ -27,14 +28,15 @@ import { listNotifications, unreadNotificationCount, markNotificationsRead, dele
 import { applySettings, setupDone, publicSettings, connectPaypal, useDemoMode, disconnectPaypal, saveBusinessSettings } from './src/settings.js';
 import { verifyCredentials } from './src/paypal.js';
 import { isOpen } from './src/analytics.js';
-import { estimateBudget, budgetProfile, expectedPayments, forecastFromModel } from './src/budget.js';
+import { estimateBudget, budgetProfile, expectedPayments, forecastFromModel, receivedSinceSaved } from './src/budget.js';
 import { retainerOffers, draftOffer, markOffered, dismissOffer, acceptPayload, markAccepted } from './src/offers.js';
 import { taxReport, taxCsv, taxYears } from './src/tax.js';
 import { getDelivery, attachDelivery, removeDelivery, deliveryView, noteOrigin, isLocalBase } from './src/delivery.js';
 import { getEarlyPay, suggestEarlyPay, settleEarlyPay } from './src/earlypay.js';
-import { growthReport, growthPlan, INDUSTRIES } from './src/growth.js';
+import { growthReport, growthReportLive, growthPlan, INDUSTRIES } from './src/growth.js';
+import { markIndustryByOwner } from './src/labels.js';
 import { setClientIndustry } from './src/db.js';
-import { listReceipts, markReceiptSent, receiptView, documentFor, ensureReceipt } from './src/receipts.js';
+import { receiptPathFor, listReceipts, markReceiptSent, receiptView, documentFor, ensureReceipt } from './src/receipts.js';
 import { businessTypeList, typeOf, BUSINESS_TYPES, normalType, professionLabel } from './src/business.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
@@ -205,6 +207,7 @@ export function createApp() {
   api.get('/config', (req, res) =>
     res.json({
       businessName: config.businessName,
+      accountType: config.accountType || 'freelancer',
       currency: config.currency,
       paypalMode: config.paypal.mode,
       llmProvider: llmAvailable() ? config.llm.provider : 'none',
@@ -249,7 +252,7 @@ export function createApp() {
     if (!check.ok) throw httpError(400, check.error);
     connectPaypal({ clientId, clientSecret });
     if (bizName) saveBusinessSettings({ businessName: bizName });
-    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true });
+    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true, ...(['freelancer', 'business'].includes(req.body?.accountType) ? { accountType: req.body.accountType, teamSize: req.body.teamSize || '' } : {}) });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
@@ -264,7 +267,8 @@ export function createApp() {
     }
     dropStaleActions();
     const imp = await importFromPaypal().catch(() => ({ imported: 0 }));
-    if (req.body?.sampleHistory !== false && !listInvoices().some((i) => i.source === 'seed')) seedDemo();
+    // a real account starts empty unless the owner asks for a few sample invoices to try things
+    if (req.body?.sampleHistory === true && !sampleInfo().count) seedSample();
     noteDueDates();
     logActivity('paypal_connected', 'Connected to PayPal sandbox');
     res.json({ ok: true, removedDemoInvoices: removed, imported: imp.imported, settings: publicSettings() });
@@ -272,13 +276,13 @@ export function createApp() {
   api.post('/settings/paypal/demo', (req, res) => {
     const bizName = String(req.body?.businessName || '').trim();
     if (bizName) saveBusinessSettings({ businessName: bizName });
-    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true });
+    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true, ...(['freelancer', 'business'].includes(req.body?.accountType) ? { accountType: req.body.accountType, teamSize: req.body.teamSize || '' } : {}) });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
     }
     useDemoMode();
-    if (!listInvoices().length) seedDemo();
+    if (!listInvoices().length) seedSample();
     noteDueDates();
     res.json({ ok: true, settings: publicSettings() });
   });
@@ -558,11 +562,12 @@ export function createApp() {
     res.json(collections());
   });
   api.get('/analytics', (req, res) => res.json(analytics({ months: req.query.months })));
-  api.get('/growth', (req, res) => res.json({ ...growthReport(), industryOptions: INDUSTRIES }));
+  api.get('/growth', async (req, res) => res.json({ ...(req.query.fast ? growthReport() : await growthReportLive()), industryOptions: INDUSTRIES, accountType: config.accountType || 'freelancer' }));
   api.post('/growth/plan', async (req, res) => res.json(await growthPlan({ refresh: !!req.body?.refresh })));
   api.post('/clients/:id/industry', (req, res) => {
     if (!getClient(req.params.id)) return res.status(404).json({ error: 'Client not found' });
     const industry = String(req.body?.industry || '').trim().slice(0, 60);
+    markIndustryByOwner(req.params.id);
     res.json({ client: setClientIndustry(req.params.id, industry) });
   });
   api.get('/calendar', (req, res) => res.json(calendarMonth(String(req.query.month || ''))));
@@ -600,13 +605,16 @@ export function createApp() {
   api.get('/mock/invoice/:paypalId', (req, res) => {
     const inv = getInvoiceByPaypalId(req.params.paypalId);
     if (!inv) throw httpError(404, 'Not found');
-    res.json({ invoice: invoiceRow(inv, isoDate()), businessName: config.businessName });
+    const ep = getEarlyPay(inv.id);
+    res.json({ invoice: invoiceRow(inv, isoDate()), businessName: config.businessName, receipt: receiptPathFor(inv), earlyPay: ep && ep.status === 'active' ? ep : null, delivery: getDelivery(inv.id) ? { link: getDelivery(inv.id).link } : null });
   });
 
   // ---- demo data ----
+  api.get('/sample', (req, res) => res.json(sampleInfo()));
+  api.post('/sample/remove', (req, res) => res.json(removeSample()));
   api.post('/demo/seed', (req, res) => {
-    if (listInvoices().some((i) => i.source === 'seed')) return res.json({ ok: true, already: true });
-    seedDemo();
+    if (sampleInfo().count || listInvoices().some((i) => i.source === 'seed')) return res.json({ ok: true, already: true });
+    seedSample();
     res.json({ ok: true });
   });
   api.post('/demo/reset', (req, res) => {
@@ -684,8 +692,8 @@ export function createApp() {
   api.get('/budget/profile', async (req, res) => {
     let balance = null;
     if (req.query.balance && !isMock()) balance = await paypal.getBalance(config.currency).catch(() => null);
-    const upcoming = forecastFromModel(45).invoices.filter((r) => r.currency === config.currency).map((r) => ({ date: r.expectedDate, client: r.client, invoice: r.invoice, amount: r.amount, probability: r.probability }));
-    res.json({ profile: budgetProfile(), currency: config.currency, paypalBalance: balance, demo: isMock(), upcoming });
+    const upcoming = forecastFromModel(45).invoices.filter((r) => r.currency === config.currency).map((r) => ({ date: r.expectedDate, range: r.range, due: r.dueDate, overdue: r.daysOverdue, habit: r.habit, basedOn: r.basedOn, client: r.client, invoice: r.invoice, amount: r.amount, probability: r.probability }));
+    res.json({ profile: budgetProfile(), receivedSince: receivedSinceSaved(), currency: config.currency, paypalBalance: balance, demo: isMock(), upcoming });
   });
   api.post('/budget/estimate', (req, res) => res.json(estimateBudget(req.body || {})));
 
@@ -729,6 +737,7 @@ export function createApp() {
     if (loginEnabled() && !safeEqual(readCookie(req, SESSION_COOKIE) || '', sessionToken())) return res.redirect(302, '/login.html');
     res.redirect(302, '/dashboard');
   });
+  app.get(['/invoices', '/collections'], page('followups.html'));
   app.get(['/dashboard', '/dashboard.html'], page('dashboard.html'));
   app.get(['/assistant', '/assistant.html'], page('index.html'));
   app.get(['/calendar', '/calendar.html'], page('calendar.html'));

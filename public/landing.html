@@ -24,8 +24,7 @@
       <a href="#trust">How it's built</a>
     </nav>
     <div class="lp-cta">
-      <a class="lp-btn ghost" href="/app">Log in</a>
-      <a class="lp-btn" href="/app">Get started</a>
+      <a class="lp-btn" href="/app">Open PayPilot</a>
     </div>
   </header>
 
@@ -38,17 +37,25 @@
       <p class="lp-lede reveal">PayPilot writes the PayPal invoice from one sentence, chases late payers in the right tone, locks your files until the money lands, and tells you what you can safely spend. Nothing goes out until you approve it.</p>
       <div class="lp-hero-cta reveal">
         <a class="lp-btn big" href="/app">Open PayPilot</a>
-        <a class="lp-btn big ghost" href="#product">See how it works</a>
+        <a class="lp-more" href="#product">See how it works <span aria-hidden="true">↓</span></a>
       </div>
       <ul class="lp-proof reveal" aria-label="Highlights">
         <li>PayPal Invoicing and webhooks</li>
         <li>Human approval on every action</li>
         <li>Statistics, not guesses</li>
       </ul>
-      <figure class="lp-shot lp-hero-shot reveal">
-        <div class="lp-window"><span></span><span></span><span></span><em>paypilot / dashboard</em></div>
-        <img src="/landing/dashboard.jpg" alt="PayPilot dashboard showing money earned, owed, overdue and expected in the next 30 days" width="1440" height="900" fetchpriority="high">
-      </figure>
+      <div class="lp-hero-art reveal" aria-hidden="true">
+        <div class="ha-card ha-inv">
+          <div class="ha-row"><b>Ortiz Design Studio</b><span class="ha-pill ok">Paid</span></div>
+          <div class="ha-amt">$1,240.00</div>
+          <div class="ha-sub">Invoice #1043 · Marcus Vance · Apex Growth Lab</div>
+          <div class="ha-line"><span>Pitch deck redesign (24 slides)</span><b>$1,080</b></div>
+          <div class="ha-line"><span>Extra slide variants × 2</span><b>$160</b></div>
+          <div class="ha-stamp">PAID</div>
+        </div>
+        <div class="ha-card ha-toast"><i></i><div><b>Marcus Vance paid $1,240</b><span>Files unlocked · receipt R-1043 ready</span></div></div>
+        <div class="ha-card ha-chip"><span>Expected next</span><b>Rachel · $195 · Nov 16</b><em>usually 2 days late</em></div>
+      </div>
     </section>
 
     <!-- the problem -->
@@ -59,35 +66,72 @@
       <div class="reveal"><b>52%</b><span>simply write some of it off because chasing isn't worth it</span><em>FSB, 2025</em></div>
     </section>
 
-    <!-- sticky story: scroll through the product -->
-    <section class="lp-story" id="product" aria-label="What PayPilot does" style="--steps: 5">
-      <div class="lp-story-in">
-        <div class="lp-story-l">
-          <p class="lp-eyebrow">One place for the money side of your work</p>
-          <ol class="lp-words" id="words">
-            <li class="on" data-i="0"><button type="button">Bill in a sentence</button></li>
-            <li data-i="1"><button type="button">Get paid on time</button></li>
-            <li data-i="2"><button type="button">Keep your work safe</button></li>
-            <li data-i="3"><button type="button">Spend with confidence</button></li>
-            <li data-i="4"><button type="button">Grow from your history</button></li>
-          </ol>
-          <div class="lp-story-copy" aria-live="polite">
-            <p class="on" data-i="0">Type "Bill Marcus for the pitch deck, $1,200, due in 15 days", or paste a screenshot of the client's message. PayPilot drafts a real PayPal invoice, warns you if the client usually pays late, and suggests a deposit or an early-pay discount.</p>
-            <p data-i="1">Every unpaid invoice gets a plan: a friendly heads-up, then firm, then final with an optional late fee. The AI writes each email on the right day, warm for a good client and formal for a repeat late payer, and waits for your OK.</p>
-            <p data-i="2">Attach the final files to the invoice. Your client gets a page that stays locked until PayPal confirms the payment, then opens by itself. No more sending the work and hoping.</p>
-            <p data-i="3">"Can I buy a $1,800 laptop on the 21st?" PayPilot plays out 4,000 possible futures of who pays you and when, after PayPal fees, tax and rent, and answers with the chance, the most you can safely spend, and the invoice that decides it.</p>
-            <p data-i="4">PayPilot learns from every paid invoice: which clients are slipping away, which industries pay best and fastest, which work is growing, who should be on a retainer, and where to focus next quarter.</p>
+    <!-- what it does, one example at a time -->
+    <section class="lp-sec lp-rows" id="product" aria-label="What PayPilot does">
+      <p class="lp-eyebrow reveal">One place for the money side of your work</p>
+      <h2 class="reveal">Five jobs PayPilot<br>takes off your plate.</h2>
+
+      <article class="lp-row reveal">
+        <div class="lp-row-t"><span class="lp-num">01</span><h3>Bill in a sentence</h3><p>Type the job the way you'd text it, or paste a screenshot of the client's message. PayPilot drafts a real PayPal invoice, warns you if this client usually pays late, and suggests a deposit or an early-pay discount.</p></div>
+        <div class="lp-art art-bill" aria-hidden="true">
+          <div class="ab-msg">Bill Marcus for the pitch deck, $1,200, due in 15 days</div>
+          <div class="ab-slip">
+            <div class="ab-h"><b>Invoice draft</b><span>to Marcus Vance</span></div>
+            <div class="ab-l"><span>Pitch deck redesign</span><b>$1,200.00</b></div>
+            <div class="ab-l t"><span>Total</span><b>$1,200.00</b></div>
+            <div class="ab-warn">Usually pays 14 days late. 50% deposit added.</div>
+            <div class="ab-btns"><span class="on">Approve &amp; send via PayPal</span><span>Edit</span></div>
           </div>
-          <a class="lp-btn" href="/app" style="margin-top:28px">Try it with demo data</a>
         </div>
-        <div class="lp-story-r">
-          <figure class="lp-shot on" data-i="0"><img src="/landing/assistant.jpg" alt="Assistant drafting a PayPal invoice from a sentence" loading="lazy" width="1440" height="900"></figure>
-          <figure class="lp-shot" data-i="1"><img src="/landing/collections.jpg" alt="Collections page with Autopilot reminders waiting for approval" loading="lazy" width="1440" height="900"></figure>
-          <figure class="lp-shot" data-i="2"><img src="/landing/unlock.jpg" alt="The client's locked files page with a Pay with PayPal button" loading="lazy" width="1440" height="900"></figure>
-          <figure class="lp-shot" data-i="3"><img src="/landing/budget.jpg" alt="Budget Estimator showing the chance of affording a purchase" loading="lazy" width="1440" height="900"></figure>
-          <figure class="lp-shot" data-i="4"><img src="/landing/growth.jpg" alt="Growth page with customer segments and a growth plan" loading="lazy" width="1440" height="900"></figure>
+      </article>
+
+      <article class="lp-row rev reveal">
+        <div class="lp-row-t"><span class="lp-num">02</span><h3>Get paid on time</h3><p>Every unpaid invoice gets a plan: a friendly heads-up, then firm, then final with an optional late fee. The AI writes each email on the right day, with the pay link inside, warm for a good client and formal for a repeat late payer. Nothing is sent until you say so.</p></div>
+        <div class="lp-art art-remind" aria-hidden="true">
+          <ol class="ar-steps">
+            <li class="done"><i></i><div><b>Friendly heads-up</b><span>Sent Nov 3</span></div></li>
+            <li class="now"><i></i><div><b>Firm reminder</b><span>Written today · waiting for your OK</span></div></li>
+            <li><i></i><div><b>Final reminder + 5% late fee</b><span>Planned Nov 15</span></div></li>
+          </ol>
+          <div class="ar-mail"><b>Overdue: invoice #1041, 3 days past due</b><p>Hi William, invoice #1041 for $387.50 was due on Nov 5. Please arrange payment by Nov 12.</p><span class="ar-link">Pay invoice #1041 here: paypal.com/invoice/p/…</span></div>
         </div>
-      </div>
+      </article>
+
+      <article class="lp-row reveal">
+        <div class="lp-row-t"><span class="lp-num">03</span><h3>Keep your work safe</h3><p>Paste the link to the finished files when you bill. Your client gets a page that shows the work is ready but locked. The moment PayPal confirms the payment, it opens by itself. No more sending the work and hoping.</p></div>
+        <div class="lp-art art-lock" aria-hidden="true">
+          <div class="al-card">
+            <div class="al-ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+            <b>Your files are ready</b><span>From Ortiz Design Studio · Invoice #1043</span>
+            <div class="al-btn">Pay $1,240 to unlock</div>
+          </div>
+          <div class="al-arrow">→</div>
+          <div class="al-card open">
+            <div class="al-ic"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg></div>
+            <b>Thank you, Marcus</b><span>Paid · files unlocked</span>
+            <div class="al-btn">Open your files</div>
+          </div>
+        </div>
+      </article>
+
+      <article class="lp-row rev reveal">
+        <div class="lp-row-t"><span class="lp-num">04</span><h3>Spend with confidence</h3><p>"Can I buy a $1,800 laptop on the 21st?" PayPilot plays out 4,000 possible futures of who pays you and when, after PayPal fees, tax and rent, and answers with the chance, the most you can safely spend, and the one invoice that decides it.</p></div>
+        <div class="lp-art art-budget" aria-hidden="true">
+          <svg viewBox="0 0 120 70" class="ag"><path d="M10 60 A50 50 0 0 1 110 60" fill="none" stroke="#1f1f23" stroke-width="9" stroke-linecap="round"/><path d="M10 60 A50 50 0 0 1 98.6 31.7" fill="none" stroke="#5ccf9e" stroke-width="9" stroke-linecap="round"/><text x="60" y="54" text-anchor="middle">84%</text></svg>
+          <div class="ag-t"><b>Probably, on Nov 21.</b><span>Safe from Nov 24 · most you can safely spend: $1,450</span></div>
+          <div class="ag-pills"><span class="ok">Safe from Nov 24</span><span>Decided by #1043 from Marcus</span></div>
+        </div>
+      </article>
+
+      <article class="lp-row reveal">
+        <div class="lp-row-t"><span class="lp-num">05</span><h3>Grow from your history</h3><p>PayPilot learns from every invoice you send: which customers are slipping away, which industries pay best and fastest, which work is growing, who should be on a monthly plan, and where to focus next quarter. New clients are grouped by industry automatically.</p></div>
+        <div class="lp-art art-grow" aria-hidden="true">
+          <div class="ag-row"><span>Software &amp; SaaS</span><i style="--w:92%"></i><em class="ok">Focus here</em></div>
+          <div class="ag-row"><span>Marketing &amp; agencies</span><i style="--w:58%"></i><em class="warn">Slow to pay</em></div>
+          <div class="ag-row"><span>Healthcare</span><i style="--w:32%"></i><em class="warn">Cooling</em></div>
+          <div class="ag-opp"><b>Check in with Sofia Martinez</b><span>Usually sends work every 37 days; it has been 84.</span></div>
+        </div>
+      </article>
     </section>
 
     <!-- feature tabs -->
@@ -175,7 +219,7 @@
       <p class="lp-eyebrow reveal">Up and running in a minute</p>
       <h2 class="reveal">Three steps. Then it runs itself.</h2>
       <ol class="lp-steps">
-        <li class="reveal"><span>01</span><b>Connect PayPal</b><p>Paste your PayPal app keys, or start with realistic demo data for your profession.</p></li>
+        <li class="reveal"><span>01</span><b>Tell it who you are</b><p>Freelancer or registered business, and what you sell. Connect PayPal, or look around with demo data first.</p></li>
         <li class="reveal"><span>02</span><b>Describe the work</b><p>In plain words or a screenshot. PayPilot drafts the invoice and plans the follow-ups.</p></li>
         <li class="reveal"><span>03</span><b>Approve and get paid</b><p>You approve each step. PayPilot watches PayPal, notifies you, and keeps your books current.</p></li>
       </ol>
@@ -188,7 +232,7 @@
     <!-- under the hood -->
     <section class="lp-sec" id="trust">
       <p class="lp-eyebrow reveal">How it's built</p>
-      <h2 class="reveal">Serious engineering,<br>open source.</h2>
+      <h2 class="reveal">Serious engineering<br>under a calm interface.</h2>
       <div class="lp-tech">
         <div class="reveal"><b>PayPal Invoicing v2</b><span>Create, send, remind, record payments, late fees and discounts through full updates, cancel, import. Webhooks verified by signature.</span></div>
         <div class="reveal"><b>Agentic AI</b><span>Gemini tool calling across 13 typed tools, with vision for screenshots. Claude and OpenAI-compatible models also work.</span></div>
@@ -202,13 +246,12 @@
       <h2 class="reveal">Spend your time on the work.<br><span>Let PayPilot handle the money.</span></h2>
       <div class="lp-hero-cta reveal">
         <a class="lp-btn big" href="/app">Open PayPilot</a>
-        <a class="lp-btn big ghost" href="/app">Log in</a>
       </div>
     </section>
   </main>
 
   <footer class="lp-foot">
-    <span>PayPilot · built for the PayPal and AI hackathon · MIT licence</span>
+    <span>PayPilot · built for the PayPal and AI hackathon</span>
     <span>Runs on the PayPal sandbox. Not affiliated with PayPal.</span>
   </footer>
   <script type="module" src="/landing.js"></script>

@@ -131,10 +131,30 @@ export function budgetProfile() {
   const p = { cashNow: 0, everyday: 0, buffer: 0, bills: [], taxPct: 0, fees: true, ...(kvGet(PROFILE_KEY) || {}) };
   if (p.monthlyCosts && !p.everyday) p.everyday = p.monthlyCosts; // older saved profile
   delete p.monthlyCosts;
-  return p;
+  const { paidIds, ...rest } = p;
+  return rest;
 }
 function saveProfile(p) {
-  kvSet(PROFILE_KEY, { cashNow: p.cashNow, everyday: p.everyday, buffer: p.buffer, bills: p.bills, taxPct: p.taxPct, fees: p.fees, updatedAt: new Date().toISOString() });
+  // remember which invoices were already paid, so money that lands later can be added to "Have now"
+  const paidIds = listInvoices().filter(isPaid).map((i) => i.id);
+  kvSet(PROFILE_KEY, { cashNow: p.cashNow, everyday: p.everyday, buffer: p.buffer, bills: p.bills, taxPct: p.taxPct, fees: p.fees, updatedAt: new Date().toISOString(), paidIds });
+}
+
+/**
+ * Payments that landed after "Have now" was last saved: they are money you have now, so the
+ * Budget page adds them to that field (after PayPal's fee and the tax share) and says so.
+ */
+export function receivedSinceSaved() {
+  const raw = kvGet(PROFILE_KEY);
+  if (!raw || !Array.isArray(raw.paidIds)) return { total: 0, items: [], since: null };
+  const known = new Set(raw.paidIds);
+  const cur = config.currency;
+  const fixedFee = raw.fees !== false && cur === 'USD' ? PAYPAL_FEE.fixedUSD : 0;
+  const net = (amt) => Math.max(0, amt - (raw.fees !== false ? amt * (PAYPAL_FEE.pct / 100) + fixedFee : 0)) * (1 - (raw.taxPct || 0) / 100);
+  const items = listInvoices()
+    .filter((i) => isPaid(i) && i.currency === cur && !known.has(i.id))
+    .map((i) => ({ number: i.number, client: getClient(i.clientId)?.name || 'Unknown', amount: i.total, net: r2(net(i.total)), paidDate: i.paidDate }));
+  return { total: r2(items.reduce((t, x) => t + x.net, 0)), items, since: raw.updatedAt || null };
 }
 
 const bad = (m) => Object.assign(new Error(m), { status: 400 });
@@ -207,6 +227,9 @@ export function estimateBudget(input = {}, today = isoDate()) {
   }
   const outCum = new Float64Array(H + 1);
   for (let t = 0, c = 0; t <= H; t++) outCum[t] = c += out[t];
+  // the same purchase with no client money at all: if this is safe, no invoice decides anything
+  const noIn = new Float64Array(H + 1);
+  for (let t = 0; t <= H; t++) noIn[t] = cashNow - outCum[t];
   // what actually reaches you from a client payment
   const fixedFee = fees && cur === 'USD' ? PAYPAL_FEE.fixedUSD : 0;
   const net = (amt) => Math.max(0, amt - (fees ? amt * (PAYPAL_FEE.pct / 100) + fixedFee : 0)) * (1 - taxPct / 100);
@@ -354,6 +377,12 @@ export function estimateBudget(input = {}, today = isoDate()) {
     for (let t = 0; t < fan.length; t++) fan[t][s] = bal[t] - (t >= target ? inst * Math.min(n, 1 + Math.floor((t - target) / WINDOW)) : 0);
   }
 
+  const m30Zero = new Float64Array(H + 1);
+  slidingMin(noIn, m30Zero);
+  const coveredByCash = safeFrom(m30Zero, target);
+  let lowNoIncome = Infinity;
+  for (let k = 0; k < n; k++) lowNoIncome = Math.min(lowNoIncome, m30Zero[target + WINDOW * k] - inst * (k + 1));
+
   // ---- read the futures ----
   const p = okBase[target] / S;
   const pNew = okNew[target] / S;
@@ -385,7 +414,8 @@ export function estimateBudget(input = {}, today = isoDate()) {
         likelyDate: days.length ? addDays(today, Math.round(quantile(days, 0.5))) : null,
         earlyDate: days.length ? addDays(today, Math.round(quantile(days, 0.1))) : null,
         lateDate: days.length ? addDays(today, Math.round(quantile(days, 0.9))) : null,
-        impact: yes >= 40 && no >= 40 ? Math.round((yesOk / yes - noOk / no) * 100) : null,
+        // how much the answer swings on this invoice; nothing swings when cash alone covers it
+        impact: coveredByCash ? 0 : yes >= 40 && no >= 40 ? Math.round((yesOk / yes - noOk / no) * 100) : null,
       };
     })
     .filter((d) => d.kind === 'invoice' || d.issueDate <= addDays(today, end));
@@ -425,6 +455,8 @@ export function estimateBudget(input = {}, today = isoDate()) {
     safeDates: { p50: firstDay(okBase, 0.5), p80: firstDay(okBase, 0.8), p95: firstDay(okBase, 0.95) },
     safeDatesWithNewWork: { p80: firstDay(okNew, 0.8) },
     safeNow: nowSafe,
+    coveredByCash,
+    lowestWithoutClientMoney: r2(lowNoIncome),
     wait,
     owedTotal: r2(inflowTotal),
     owedNet: r2(streams.filter((s) => s.kind === 'invoice').reduce((t, s) => t + s.net, 0)),
@@ -517,6 +549,14 @@ export function verdict(r) {
 }
 
 function verdictCore(r) {
+  if (r.coveredByCash) {
+    const what = r.instalments > 1 ? `${r.instalments} payments of ${fmt(r.currency, r.instalment)}` : 'it';
+    return {
+      level: 'yes',
+      headline: `Yes. The money you have already covers ${what}${r.days === 0 ? ' today' : ` on ${nice(r.date)}`}.`,
+      detail: `Even if no client pays you anything, your balance stays at least ${fmt(r.currency, r.lowestWithoutClientMoney)} in the 30 days after, above your ${fmt(r.currency, r.inputs.buffer)} line, with every bill and everyday cost taken out. So no unpaid invoice decides this one.`,
+    };
+  }
   const key = r.drivers
     .filter((d) => d.kind === 'invoice' && (d.impact ?? 0) >= 15 && d.chanceByDate < 97)
     .sort((a, b) => b.impact * (100 - b.chanceByDate) - a.impact * (100 - a.chanceByDate))[0];
@@ -585,6 +625,17 @@ export function expectedPayments(invoices, today = isoDate()) {
  * chance it's paid within that time (from the per-client timing model). Same shape as the
  * older forecastCashflow, plus the working, so the UI can show the exact sum.
  */
+/** How a client usually pays: median days after the due date (negative = early), from their paid invoices. */
+export function payHabit(clientId) {
+  const late = listInvoices({ clientId })
+    .filter((i) => isPaid(i) && i.paidDate)
+    .map((i) => daysBetween(i.dueDate, i.paidDate))
+    .sort((a, b) => a - b);
+  if (!late.length) return { paid: 0, medianLate: null, upfront: false };
+  const med = late[late.length >> 1];
+  return { paid: late.length, medianLate: med, upfront: late.length >= 2 && med <= -7 };
+}
+
 export function forecastFromModel(days = 30, today = isoDate()) {
   const open = listInvoices().filter(isOpen);
   const pred = expectedPayments(open, today);
@@ -600,6 +651,9 @@ export function forecastFromModel(days = 30, today = isoDate()) {
         currency: inv.currency,
         expectedDate: p.date,
         range: [p.early, p.late],
+        dueDate: inv.dueDate,
+        daysOverdue: Math.max(0, daysBetween(inv.dueDate, today)),
+        habit: payHabit(inv.clientId),
         probability,
         expectedValue: r2(due * probability),
         basedOn: p.basedOn,

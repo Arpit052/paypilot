@@ -17,7 +17,7 @@
     </div>
   </div>
 
-  <section class="cal-stats" id="calStats"></section>
+  <section class="cal-stats three" id="calStats"></section>
 
   <div class="cal-layout">
     <section class="panel cal-panel">
@@ -28,13 +28,8 @@
           <button class="sb-icon" id="next" aria-label="Next month">›</button>
           <button class="btn ghost small" id="todayBtn">Today</button>
         </div>
-        <div class="cal-filters" id="filters" role="group" aria-label="Show">
-          <button data-k="due" aria-pressed="true"><i class="k-due"></i>Due</button>
-          <button data-k="paid" aria-pressed="true"><i class="k-paid"></i>Paid</button>
-          <button data-k="planned" aria-pressed="true"><i class="k-planned"></i>Autopilot</button>
-          <button data-k="reminded" aria-pressed="true"><i class="k-reminded"></i>Reminders sent</button>
-          <button data-k="recurring" aria-pressed="true"><i class="k-recurring"></i>Recurring</button>
-        </div>
+        <div class="cal-legend"><span><i class="k-due"></i>Due</span><span><i class="k-paid"></i>Paid</span><span><i class="k-recurring"></i>Recurring</span>
+          <button class="cal-rem" id="remToggle" type="button" aria-pressed="false"><i class="k-planned"></i>Show reminders</button></div>
       </div>
       <div class="cal-dow"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
       <div class="cal-grid" id="grid"></div>

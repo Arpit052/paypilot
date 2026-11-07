@@ -440,3 +440,7 @@ export function markNotificationsRead(id) {
   if (id) sql().prepare('UPDATE notifications SET read = 1 WHERE id = ?').run(id);
   else sql().exec('UPDATE notifications SET read = 1 WHERE read = 0');
 }
+
+export function deleteAction(id) {
+  sql().prepare('DELETE FROM actions WHERE id = ?').run(id);
+}

@@ -12,13 +12,15 @@
 <main>
   <div class="dash-top">
     <div>
-      <h1>Your money, at a glance</h1>
+      <h1 id="dashTitle">Your money, at a glance</h1>
       <p class="lede" id="asof" style="margin:0"></p>
     </div>
     <div class="live-pill" id="livePill"></div>
   </div>
 
   <section class="figures" id="figures" aria-label="Key figures. Select one to filter the invoice list."></section>
+
+  <section id="modeBlock" class="mode-block" aria-live="polite"></section>
 
   <section class="panel brief" style="margin-bottom:26px" aria-live="polite">
     <div class="brief-head">
@@ -51,7 +53,7 @@
 
   <section class="panel">
     <div class="table-tools">
-      <h2 style="margin:0">Invoices</h2>
+      <h2 style="margin:0">Recent invoices</h2>
       <div class="seg" role="group" aria-label="Filter invoices" id="seg">
         <button data-f="all" aria-pressed="true">All</button>
         <button data-f="open">Open</button>

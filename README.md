@@ -50,7 +50,7 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 | **Autopilot** | Every unpaid invoice gets a follow-up plan: friendly heads-up before the due date, firm reminder after, final reminder (+ optional late fee) later. On each date the AI writes the email in your style and asks for approval. Tone never softens after a firmer reminder. Off = nothing is drafted unless you ask. |
 | **Reminders that know the client** | The tone follows lateness; the *voice* follows the relationship. A good client gets a warm check-in ("Hope all is well! Just floating invoice #1044…"); a repeat late payer gets a formal note with the days overdue, your payment terms (Net 15), a pay-by date and the date the late fee applies. |
 | **Paid on / expected on** | Every invoice shows when the money came in (and how early or late), or for unpaid ones **when it's likely to arrive** with a range ("≈ Nov 14, Nov 12 – 18"), from that client's own payment history. |
-| **Collections** | One list of every unpaid invoice with status, the three-step progress, and the next action; a "Next 14 days" rail shows what Autopilot will do. |
+| **Invoices** | One place for every invoice, in four tabs: **Needs you** (reminders due or written, drafts to approve), **Awaiting payment** (with the expected date and the next planned reminder), **Upcoming** (retainers and recurring invoices) and **Paid** (paid date, early or late, receipt status). A reminder you just sent pauses the next one for a few days, and every reminder carries the pay link inside the message. A "Coming up" rail shows what Autopilot will do. |
 | **Late fees** | Suggested on very late invoices and added to the PayPal invoice (full update) only after you approve. |
 | **Live payment status** | PayPal webhooks (signature-verified) plus an automatic check every 2 minutes flip invoices to **Paid** and push a notification to every open tab over Server-Sent Events. Invoices you create on paypal.com are imported automatically. |
 | **Mark as paid** | Paid by bank transfer or cash? Record it (two clicks to confirm) and PayPilot records the payment on the PayPal invoice too. |
@@ -63,13 +63,20 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 | **Budget Estimator** | *"Can I buy a $2,000 laptop on Dec 5?"* PayPilot plays out 4,000 possible futures of who pays you and when, using each client's own payment history. It counts what really happens to freelance money: **PayPal's fee** (3.49% + $0.49) and the **share you keep for tax** come off every payment, **bills leave on their day** (rent on the 1st), and the purchase only counts as safe if your balance **stays above your cushion for the 30 days after**, so next month's rent is covered too. It answers with the **chance** (and its error margin), **the most you can safely spend** on that date, the **lowest your balance gets**, the **earliest safe date**, what happens **if you wait** a week or a month, and **which invoice decides it**. You can **pay in instalments**, and **untick an invoice** to see what happens if that client never pays. The verdict card says it plainly ("Risky on Dec 1 · Safe from Dec 12") and tells the story behind it, with a **day-by-day typical path**: every expected payment and bill, and your balance after each. Before you estimate anything, the page shows the money on its way. Also in the Assistant. [How the model works](#how-the-budget-estimator-works) |
 | **Suggested retainers** | Finds clients who already buy from you nearly every month, prices a monthly plan a little below a typical month with them, and shows both sides of the deal: what you gain a year, what they save, fewer invoices, and how fast your existing retainer clients pay compared with them. The AI writes the offer email in your style; when they say yes, one click creates the retainer. |
 
+**Freelancer or business**
+
+| Feature | How it works |
+|---|---|
+| **Two ways to use it** | Setup asks whether you're a **freelancer** or a **registered business**. Freelancers get billing first: a "bill a client in one sentence" box on the dashboard, the Assistant and the Budget near the top. Businesses get an **Overview** with money owed by age (receivables aging), days sales outstanding, repeat customers and the top three places to grow, with Invoices, Receipts, Customers and Growth first in the menu and Net 30 terms by default. Switch anytime in Settings; the data is the same. |
+| **A clean start** | A real (PayPal-connected) account starts empty. Tick "Add a few sample invoices" to try things; every sample row is tracked, and **Settings → Data → Remove sample data** deletes exactly those, keeping anything you created. Demo mode loads the full sample book. |
+
 **Track, as a business**
 
 | Feature | How it works |
 |---|---|
 | **Receipts** | Every paid invoice gets a numbered receipt (R-1042). PayPal emails its own when a client pays through PayPal; bank transfers and cash recorded with *Mark paid* get none, and a company's accounts team usually needs one. The Receipts page shows which receipts still **need sending**, emails them in one click, and shows when the client **opened** the receipt (the owner's own preview isn't counted). Each receipt has a private, printable page. |
-| **Your client's view** | From any invoice: see exactly what the client gets, step by step. The invoice email from PayPal, the payment page (card or PayPal), the receipt (watermarked as a preview until paid) and, if files are attached, the locked or unlocked files page. Also offered right after you send a new invoice. |
-| **Growth** | PayPilot learns from a year of invoices and tells you where to focus. **Client segments** (Champions, Loyal, Valuable but slow, Slipping away, New, One-off) from each client's own buying rhythm; a **client map** of value against lateness; **industries** ranked by value per client and on-time payment, with a 3-month trend; **work areas** grouped for your profession (a web developer's *Integrations and APIs*, a designer's *Print and packaging*) with what's rising and what stopped; **income concentration** (Herfindahl index) and **days sales outstanding** now vs 90 days ago. **Opportunities** come with their basis and an amount only when the amount follows from your book. A **90-day plan** is written by the AI from those figures, or from rules when there is no AI. Set each client's industry right on the page. Also in the Assistant ("Where should I focus?"). [How it works](docs/ARCHITECTURE.md#growth-srcgrowthjs) |
+| **Your client's view** | From any invoice: see exactly what the client gets, step by step. The invoice email from PayPal, the payment page, the receipt (watermarked as a preview until paid) and, if files are attached, the locked or unlocked files page. **View and pay** and **Pay** open the real payment page: PayPal's own page on a sandbox account, or a practice checkout (card or PayPal account, test details filled in, receipt at the end) in demo mode. Also offered right after you send a new invoice. |
+| **Growth** | PayPilot learns from a year of invoices and tells you where to focus. **Client segments** (Champions, Loyal, Valuable but slow, Slipping away, New, One-off) from each client's own buying rhythm; a **client map** of value against lateness; **industries** ranked by value per client and on-time payment, with a 3-month trend (each client's industry is worked out from the company name, email domain and work billed, with AI for anything unclear, and marked "auto" until you set it); **work areas** grouped for your profession (a web developer's *Integrations and APIs*, a designer's *Print and packaging*) with what's rising and what stopped; **income concentration** (Herfindahl index) and **days sales outstanding** now vs 90 days ago. **Opportunities** are ranked by the money at stake (a big new client or a client who is half your income comes first), with the top three shown, each with its basis and an amount only when the amount follows from your book. Clients who **pay up front** are recognised and never treated as slow. Line items the rules can't place are grouped by AI into new work areas. For businesses: **receivables aging** and **new customers by month and how many came back**. A **90-day plan** is written by the AI from those figures, or from rules when there is no AI, and rewritten whenever your invoices change. Set each client's industry right on the page. Also in the Assistant ("Where should I focus?"). [How it works](docs/ARCHITECTURE.md#growth-srcgrowthjs) |
 
 **Understand**
 
@@ -97,9 +104,9 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 |---|---|---|
 | ![](docs/screenshots/budget.png) | ![](docs/screenshots/retainers.png) | ![](docs/screenshots/tax.png) |
 
-| Collections + Autopilot | Analytics | Calendar |
+| Invoices + Autopilot | Analytics | Calendar |
 |---|---|---|
-| ![](docs/screenshots/collections.png) | ![](docs/screenshots/analytics.png) | ![](docs/screenshots/calendar.png) |
+| ![](docs/screenshots/invoices.png) | ![](docs/screenshots/analytics.png) | ![](docs/screenshots/calendar.png) |
 
 | Dashboard | Clients + retainers | Settings |
 |---|---|---|
@@ -231,7 +238,7 @@ With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-proces
 1. **Assistant:** *"Bill Marcus Vance (your-sandbox-personal-email) for 3 logo concepts at $150 each and an urgent revision for $60, due in 10 days."* An invoice slip appears with a risk warning, because Marcus pays late.
 2. Edit a rate and click **Approve & send via PayPal**. The slip is stamped **SENT**. Open the sandbox personal account to see the invoice.
 3. Pay it from the sandbox personal account. The dashboard flips to **Paid** through the webhook.
-4. **Follow-ups → Find overdue invoices.** The AI drafts tone-matched reminders. Approve one, and PayPal sends the reminder.
+4. **Invoices → Needs you.** The AI drafts tone-matched reminders with the pay link inside. Approve one, and PayPal sends the reminder; the next one waits a few days.
 5. **Budget:** ask *"Can I afford a $2,000 laptop next month?"* in the Assistant, or open **Budget** and try a price and date. Watch which invoice decides it.
 6. **Clients → Suggested retainers:** open Rachel's card, write the offer, then click *Rachel said yes* to create the retainer. Run the budget again: it now counts her monthly payment.
 7. **Receipts:** William Evans's company pays by bank transfer, so his newest payment still needs a receipt. Click **Email**, then open the receipt link as the client would.
@@ -283,7 +290,7 @@ src/earlypay.js      Early-pay discounts: suggestion, window, automatic removal
 src/receipts.js      Numbered receipts: who needs one, sending, public receipt pages
 src/growth.js        Growth: segments, industries, work areas, concentration, DSO, opportunities, AI plan
 public/landing.*     The public landing page
-public/              UI (vanilla JS): dashboard, assistant, collections, receipts, clients, analytics, growth, budget, calendar, settings, client view
+public/              UI (vanilla JS): dashboard, assistant, invoices, receipts, clients, analytics, growth, budget, calendar, settings, client view
 docs/ARCHITECTURE.md How the parts fit, and why
 .github/workflows/   CI: npm test on Node 22 and 24
 Dockerfile           Production image (non-root, health check, /data volume)

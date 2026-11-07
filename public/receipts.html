@@ -13,14 +13,19 @@
   <div class="dash-top">
     <div>
       <h1>Receipts</h1>
-      <p class="lede" style="margin:0">Every payment gets a numbered receipt. PayPal emails one when a client pays through PayPal; for bank transfers and cash, send yours from here.</p>
+      <p class="lede" style="margin:0">Proof of payment for your clients. Their accounts team usually needs one for every invoice they pay.</p>
     </div>
   </div>
+  <section class="rx-explain">
+    <div><b>1</b><span><strong>Client pays through PayPal</strong>PayPal emails them a receipt by itself. Nothing for you to do.</span></div>
+    <div><b>2</b><span><strong>Client pays another way</strong>Bank transfer, cash or cheque, recorded with <em>Mark paid</em>. Nobody sends them proof, so it shows here as <em>To send</em>.</span></div>
+    <div><b>3</b><span><strong>You send it in one click</strong>PayPilot numbers it (R-1035), emails a private link, and shows when the client opened it.</span></div>
+  </section>
   <section class="rx-stats" id="stats"></section>
   <section class="panel" style="padding:0!important;margin-top:18px">
     <div class="sec-pad rx-head">
       <div class="seg small-seg" role="group" aria-label="Filter" id="filter">
-        <button data-f="needed" aria-pressed="false">Needs a receipt</button>
+        <button data-f="needed" aria-pressed="false">To send</button>
         <button data-f="all" aria-pressed="true">All</button>
         <button data-f="sent" aria-pressed="false">Sent</button>
       </div>

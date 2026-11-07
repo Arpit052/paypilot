@@ -42,7 +42,7 @@ markChip();
 function billRow(b = {}) {
   const row = document.createElement('div');
   row.className = 'bg-bill';
-  row.innerHTML = `<input data-b="name" maxlength="40" placeholder="Rent" value="${esc(b.name || '')}" aria-label="Bill name">
+  row.innerHTML = `<input data-b="name" maxlength="40" placeholder="e.g. Rent, software, loan" value="${esc(b.name || '')}" aria-label="Bill name">
     <input data-b="amount" type="number" min="0" step="0.01" placeholder="0" value="${b.amount ?? ''}" aria-label="Amount" inputmode="decimal">
     <select data-b="day" aria-label="Day of month">${Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}" ${Number(b.day || 1) === i + 1 ? 'selected' : ''}>${ord(i + 1)}</option>`).join('')}</select>
     <button type="button" class="bg-x" aria-label="Remove bill">×</button>`;
@@ -54,23 +54,39 @@ const readBills = () =>
     .map((r) => ({ name: r.querySelector('[data-b=name]').value.trim() || 'Bill', amount: Number(r.querySelector('[data-b=amount]').value) || 0, day: Number(r.querySelector('[data-b=day]').value) }))
     .filter((b) => b.amount > 0);
 $('addBill').onclick = () => billRow();
+$('bills').insertAdjacentHTML('beforebegin', '<div class="bg-bill-h"><span>What</span><span>Per month</span><span>Leaves on</span><span></span></div>');
 
-const { profile, paypalBalance, upcoming } = await api('/api/budget/profile?balance=1');
+const { profile, paypalBalance, upcoming, receivedSince } = await api('/api/budget/profile?balance=1');
 // before the first estimate: show what's coming in, so the page is useful straight away
 if (upcoming?.length && !params.get('price')) {
   const total = upcoming.reduce((t, u) => t + u.amount * u.probability, 0);
-  $('empty').innerHTML = `<div class="bg-up-h"><div><b>Money on its way</b><span>Unpaid invoices and when each is most likely to arrive, from how that client pays. Add a price and a date to check a purchase against it.</span></div><div class="bg-up-t"><em>Expected in 45 days</em><b>${esc(m(total))}</b></div></div>
-    <ul class="bg-up">${upcoming
-      .map((u) => `<li><time>${esc(fmtDate(u.date))}</time><span><b>${esc(u.client)}</b> · #${esc(u.invoice)}</span><i class="bg-bar"><i style="width:${Math.round(u.probability * 100)}%" class="${u.probability >= 0.8 ? 'ok' : u.probability >= 0.5 ? 'mid' : 'low'}"></i></i><em>${Math.round(u.probability * 100)}%</em><b>${esc(m(u.amount))}</b></li>`)
+  const habitText = (u) => {
+    const h = u.habit || {};
+    if (!h.paid) return 'New client: estimated from how your other clients pay';
+    if (h.upfront) return `Usually pays in advance, about ${-h.medianLate} days before the due date`;
+    if (h.medianLate <= 0) return `Usually pays on time${h.medianLate < 0 ? ` (${-h.medianLate} days early)` : ''}, from ${h.paid} past payment${h.paid === 1 ? '' : 's'}`;
+    return `Usually pays ${h.medianLate} day${h.medianLate === 1 ? '' : 's'} late, from ${h.paid} past payment${h.paid === 1 ? '' : 's'}`;
+  };
+  $('empty').innerHTML = `<div class="bg-up-h"><div><b>Money on its way</b><span>Each unpaid invoice: when it's due, how that client usually pays, and so when the money is most likely to land. Add a price and a date to check a purchase against it.</span></div><div class="bg-up-t"><em>Expected in 45 days</em><b>${esc(m(total))}</b></div></div>
+    <ul class="bg-up bg-up2">${upcoming
+      .map((u) => `<li>
+        <div class="bg-up-main"><time>${esc(fmtDate(u.date))}</time><span><b>${esc(u.client)}</b> · #${esc(u.invoice)}</span><i class="bg-bar"><i style="width:${Math.round(u.probability * 100)}%" class="${u.probability >= 0.8 ? 'ok' : u.probability >= 0.5 ? 'mid' : 'low'}"></i></i><em title="Chance it's paid within 45 days">${Math.round(u.probability * 100)}%</em><b>${esc(m(u.amount))}</b></div>
+        <div class="bg-up-why"><span>Due ${esc(fmtDate(u.due))}${u.overdue ? ` <em class="bad-t">· ${u.overdue} day${u.overdue === 1 ? '' : 's'} overdue</em>` : ''}</span><span>${esc(habitText(u))}</span><span>Likely between ${esc(fmtDate(u.range[0]))} and ${esc(fmtDate(u.range[1]))} (8 in 10)</span></div>
+      </li>`)
       .join('')}</ul>`;
   $('empty').classList.add('bg-upcoming');
 }
-if (profile.cashNow) $('cash').value = profile.cashNow;
+if (profile.cashNow || receivedSince?.total) $('cash').value = Math.round(((profile.cashNow || 0) + (receivedSince?.total || 0)) * 100) / 100;
+if (receivedSince?.total) {
+  const list = receivedSince.items.slice(0, 3).map((x) => `#${x.number} from ${x.client}`).join(', ');
+  $('cashNote').innerHTML = `Includes <b>${esc(m(receivedSince.total))}</b> paid to you since you last checked (${esc(list)}${receivedSince.items.length > 3 ? '…' : ''}), after fees and tax.`;
+  $('cashNote').classList.remove('hidden');
+}
 if (profile.everyday) $('everyday').value = profile.everyday;
 if (profile.buffer) $('buffer').value = profile.buffer;
 if (profile.taxPct) $('tax').value = profile.taxPct;
 $('fees').checked = profile.fees !== false;
-(profile.bills?.length ? profile.bills : [{ name: 'Rent', amount: '', day: 1 }]).forEach(billRow);
+(profile.bills?.length ? profile.bills : [{ name: '', amount: '', day: 1 }]).forEach(billRow);
 if (paypalBalance !== null && paypalBalance !== undefined) {
   $('useBal').textContent = `Use PayPal balance (${money(paypalBalance, cur)})`;
   $('useBal').classList.remove('hidden');
@@ -199,6 +215,7 @@ function render(r) {
 
     <section class="panel" style="padding:0!important">
       <div class="sec-pad"><div><h2>What decides it</h2><p class="muted small" style="margin:2px 0 0">Each unpaid invoice, how likely it reaches you by ${esc(target)}, and how much the answer depends on it. Untick one to see what happens if it's never paid.</p></div></div>
+      ${r.coveredByCash ? `<div class="bg-covered"><b>Nothing here decides it.</b><span>Your cash covers this purchase and the month after even if none of these invoices is ever paid. They're listed for reference.</span></div>` : ''}
       ${drivers.length || r.excluded.length ? `<div class="table-wrap"><table class="data bg-table"><thead><tr><th>Count it</th><th>Invoice</th><th>Client</th><th class="r">Amount</th><th>Pays</th><th>Arrives by ${esc(target)}</th><th>Likely date</th><th class="r" title="How much the chance changes if this invoice arrives in time vs not">Swing</th></tr></thead><tbody>${drivers
         .map(
           (d) => `<tr><td><input type="checkbox" checked data-ex="${esc(d.number)}" aria-label="Count invoice ${esc(d.number)}"></td>

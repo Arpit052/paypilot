@@ -29,31 +29,54 @@ function fill() {
   $('notifyRows').innerHTML = NOTIFY.map(
     ([k, t, d]) => `<label class="set-row switch-row"><span class="lbl">${t}<span>${d}</span></span><input type="checkbox" class="switch" name="notify.${k}" ${b.notify?.[k] !== false ? 'checked' : ''}></label>`
   ).join('');
+  renderAccount();
   renderTypes();
   renderPaypal(S.paypal);
   renderPlan();
   renderData();
 }
 
-// ---------------- business type ----------------
+// ---------------- account type ----------------
+function renderAccount() {
+  const t = S.business.accountType || 'freelancer';
+  document.querySelectorAll('[name=acct]').forEach((r) => (r.checked = r.value === t));
+  $('teamSize').value = S.business.teamSize || '2-10';
+  syncAccount();
+}
+function syncAccount() {
+  const v = document.querySelector('[name=acct]:checked')?.value || 'freelancer';
+  $('teamRow').classList.toggle('hidden', v !== 'business');
+  $('acctPresetWrap').classList.toggle('hidden', v === (S.business.accountType || 'freelancer'));
+  document.querySelectorAll('.acct-card').forEach((el) => el.classList.toggle('on', el.querySelector('input').checked));
+}
+document.querySelectorAll('[name=acct]').forEach((r) => r.addEventListener('change', syncAccount));
+$('acctSave').onclick = async () => {
+  const v = document.querySelector('[name=acct]:checked')?.value || 'freelancer';
+  const changed = v !== (S.business.accountType || 'freelancer');
+  try {
+    await api('/api/settings/business', { body: { accountType: v, teamSize: v === 'business' ? $('teamSize').value : '', applyPreset: changed && $('acctPreset').checked } });
+    toast(v === 'business' ? 'Switched to the business layout' : 'Switched to the freelancer layout');
+    setTimeout(() => location.reload(), 600);
+  } catch (err) {
+    $('acctOk').textContent = err.message;
+  }
+};
+
+// ---------------- what you do ----------------
 function renderTypes() {
   const cur = S.business.businessType || 'graphic_designer';
-  $('btGrid').innerHTML = TYPES.map(
-    (t) => `<label class="bt ${t.key === cur ? 'on' : ''}"><input type="radio" name="businessType" value="${t.key}" ${t.key === cur ? 'checked' : ''}><b>${esc(t.label)}</b><span>${esc(t.blurb)}</span></label>`
-  ).join('');
+  $('btSelect').innerHTML = TYPES.map((t) => `<option value="${t.key}" ${t.key === cur ? 'selected' : ''}>${esc(t.label)}${t.key === 'other' ? '' : ` · ${esc(t.blurb)}`}</option>`).join('');
   showPreset();
 }
 function showPreset() {
-  const key = document.querySelector('[name=businessType]:checked')?.value || 'graphic_designer';
+  const key = $('btSelect').value || 'graphic_designer';
   const t = TYPES.find((x) => x.key === key);
   const b = S.business;
   const same = b.defaultTermsDays === t.terms && b.reminderStyle === t.style && (b.defaultNote || '') === t.note;
-  document.querySelectorAll('.bt').forEach((el) => el.classList.toggle('on', el.querySelector('input').checked));
   const otherVal = document.querySelector('[name=businessTypeOther]')?.value ?? S.business.businessTypeOther ?? '';
-  $('btPreset').innerHTML = `${key === 'other' ? `<label class="bt-other"><span>Your profession</span><input name="businessTypeOther" maxlength="40" value="${esc(otherVal)}" placeholder="e.g. Interior designer, Translator"></label>` : ''}<div class="bt-p-h"><b>Usual for ${esc(key === 'other' ? 'other work' : `${t.label.toLowerCase()}s`)}</b>${same ? '<span class="muted small">In use</span>' : `<button type="button" class="btn ghost small" id="btApply">Use these defaults</button>`}</div>
-    <dl><div><dt>Terms</dt><dd>${TERMS(t.terms)}</dd></div><div><dt>Reminders</dt><dd>${STYLE[t.style]}</dd></div><div><dt>Monthly plan</dt><dd>${esc(t.retainer[0].toUpperCase() + t.retainer.slice(1))}</dd></div></dl>
-    <p>${esc(t.note)}</p>
-    <div class="bt-items">${t.items.map((i) => `<span>${esc(i.name)} · ${esc(money(i.price, cfg.currency))}</span>`).join('')}</div>`;
+  $('btPreset').innerHTML = `${key === 'other' ? `<input class="bt-other-in" name="businessTypeOther" maxlength="40" value="${esc(otherVal)}" placeholder="Your profession, e.g. Interior designer" aria-label="Your profession">` : ''}
+    <div class="bt-sum"><span>Usual: <b>${TERMS(t.terms)}</b> · <b>${STYLE[t.style]}</b> reminders · <b>${esc(t.retainer)}</b></span>${same ? '<em>in use</em>' : '<button type="button" class="linkbtn small" id="btApply">Use these</button>'}</div>
+    <details class="bt-more"><summary>Invoice shortcuts for this work</summary><div class="bt-items">${t.items.map((i) => `<span>${esc(i.name)} · ${esc(money(i.price, cfg.currency))}</span>`).join('')}</div></details>`;
   $('btApply')?.addEventListener('click', async () => {
     await api('/api/settings/business', { body: { businessType: key, businessTypeOther: document.querySelector('[name=businessTypeOther]')?.value || '', applyPreset: true } });
     S = await api('/api/settings');
@@ -61,7 +84,7 @@ function showPreset() {
     fill();
   });
 }
-document.addEventListener('change', (e) => e.target.name === 'businessType' && showPreset());
+$('btSelect').addEventListener('change', showPreset);
 
 // ---------------- generic section save ----------------
 function collect(form) {
@@ -219,7 +242,29 @@ async function renderData() {
   $('restoreBtn').disabled = !S.hiddenClients;
   const t = TYPES.find((x) => x.key === (S.business.businessType || 'graphic_designer')) || TYPES[1];
   $('resetSub').textContent = `Start over with sample clients and ${t.key === 'other' ? 'general' : t.label.toLowerCase()} work. Settings are kept.`;
+  $('resetBtn').classList.toggle('hidden', S.paypal.mode !== 'mock');
+  const sm = await api('/api/sample');
+  $('sampleBtn').dataset.mode = sm.count ? 'remove' : 'add';
+  $('sampleTitle').textContent = sm.count ? 'Remove sample data' : 'Add sample data';
+  $('sampleSub').textContent = sm.count ? `${sm.count} sample invoice${sm.count === 1 ? '' : 's'} and ${sm.clients} sample client${sm.clients === 1 ? '' : 's'}. Your own invoices stay.` : 'A few sample clients and invoices to try things out. Remove them later in one click.';
+  $('sampleBtn').classList.toggle('danger', Boolean(sm.count));
 }
+$('sampleBtn').onclick = async (e) => {
+  const b = e.currentTarget;
+  if (b.dataset.mode === 'remove') {
+    if (!b.dataset.confirm) {
+      b.dataset.confirm = '1';
+      $('sampleTitle').textContent = 'Click again to remove the samples';
+      return;
+    }
+    const r = await api('/api/sample/remove', { body: {} });
+    toast(`Removed ${r.invoices} sample invoice${r.invoices === 1 ? '' : 's'} and ${r.clients} client${r.clients === 1 ? '' : 's'}`);
+  } else {
+    await api('/api/demo/seed', { body: {} });
+    toast('Sample data added');
+  }
+  setTimeout(() => location.reload(), 700);
+};
 $('restoreBtn').onclick = async () => {
   const r = await api('/api/settings/hidden/clear', { body: {} });
   toast(`${r.restored} client${r.restored === 1 ? '' : 's'} restored. They'll come back with the next PayPal check.`);

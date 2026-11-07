@@ -1,4 +1,4 @@
-// Landing page: reveal-on-scroll, the sticky product story, feature tabs.
+// Landing page: reveal-on-scroll and feature tabs.
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // nav gets a background once you scroll
@@ -13,34 +13,6 @@ const io = new IntersectionObserver(
   { rootMargin: '0px 0px -8% 0px' }
 );
 document.querySelectorAll('.reveal').forEach((el) => (reduce ? el.classList.add('in') : io.observe(el)));
-
-// sticky story: the active line follows scroll progress through the section
-const story = document.querySelector('.lp-story');
-const steps = Number(getComputedStyle(story).getPropertyValue('--steps')) || 5;
-let active = -1;
-function setStep(i) {
-  if (i === active) return;
-  active = i;
-  story.querySelectorAll('[data-i]').forEach((el) => el.classList.toggle('on', Number(el.dataset.i) === i));
-}
-function storyScroll() {
-  if (matchMedia('(max-width: 900px)').matches) return;
-  const r = story.getBoundingClientRect();
-  const total = story.offsetHeight - innerHeight;
-  const p = Math.min(0.999, Math.max(0, -r.top / Math.max(1, total)));
-  setStep(Math.floor(p * steps));
-}
-addEventListener('scroll', storyScroll, { passive: true });
-addEventListener('resize', storyScroll);
-storyScroll();
-document.getElementById('words').addEventListener('click', (e) => {
-  const li = e.target.closest('li');
-  if (!li) return;
-  const i = Number(li.dataset.i);
-  if (matchMedia('(max-width: 900px)').matches) return setStep(i);
-  const total = story.offsetHeight - innerHeight;
-  scrollTo({ top: story.offsetTop + (total * (i + 0.5)) / steps, behavior: reduce ? 'auto' : 'smooth' });
-});
 
 // feature tabs
 const ICON = {

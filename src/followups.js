@@ -55,7 +55,7 @@ function templateReminder(inv, tone, daysOverdue, rel = relationshipOf(inv.clien
   const who = config.signOff || [config.ownerName, config.businessName].filter(Boolean).join('\n');
   const sign = who ? `\n${who}` : '';
   const body = {
-    friendly: `Hi ${name},\n\nHope you're doing well! Just a quick nudge that invoice #${inv.number} for ${amt} ${inv.dueDate >= isoDate() ? 'is due on' : 'was due on'} ${due}. You can pay it securely with the PayPal link in this email.\n\nThanks so much!${sign}`,
+    friendly: `Hi ${name},\n\nHope you're doing well! Just a quick nudge that invoice #${inv.number} for ${amt} ${inv.dueDate >= isoDate() ? 'is due on' : 'was due on'} ${due}. You can pay it securely with the link below.\n\nThanks so much!${sign}`,
     firm: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} ${daysOverdue > 0 ? `is now ${daysOverdue} days past its due date (${due})` : `is due on ${due}`}. Could you please arrange payment this week, or let me know if anything is holding it up?\n\nThank you,${sign}`,
     final: `Hi ${name},\n\nThis is a final reminder that invoice #${inv.number} for ${amt} ${daysOverdue > 0 ? `is ${daysOverdue} days overdue` : `is due on ${due}`}. Please settle it within 3 business days. If there's an issue with the invoice, reply and I'll be glad to help resolve it.\n\nRegards,${sign}`,
   }[tone];
@@ -64,7 +64,7 @@ function templateReminder(inv, tone, daysOverdue, rel = relationshipOf(inv.clien
   if (rel.key === 'trusted' && tone !== 'final') {
     return {
       subject: `Quick check-in: invoice #${inv.number}`,
-      message: `Hi ${name},\n\nHope all is well! Just floating invoice #${inv.number} for ${amt} back to the top of your inbox${daysOverdue > 0 ? `. It was due on ${due}, which isn't like you, so I'm guessing it slipped through` : ` before it's due on ${due}`}. The PayPal link in this email makes it a one-click payment.\n\nThanks as always!${sign}`,
+      message: `Hi ${name},\n\nHope all is well! Just floating invoice #${inv.number} for ${amt} back to the top of your inbox${daysOverdue > 0 ? `. It was due on ${due}, which isn't like you, so I'm guessing it slipped through` : ` before it's due on ${due}`}. The link below makes it a one-click payment.\n\nThanks as always!${sign}`,
     };
   }
   if (rel.key === 'late' && daysOverdue > 0) {
@@ -73,7 +73,7 @@ function templateReminder(inv, tone, daysOverdue, rel = relationshipOf(inv.clien
     const feeLine = t.feeOn ? (t.feeFuture ? ` As per our ${t.termsText} terms, a ${config.lateFeePercent}% late fee (${feeAmt}) will be added on ${nice(t.feeOn)} if it is still unpaid.` : ` As per our ${t.termsText} terms, a ${config.lateFeePercent}% late fee (${feeAmt}) now applies.`) : ` Our agreed terms were ${t.termsText}.`;
     return {
       subject: `${tone === 'final' ? 'Final notice' : 'Overdue'}: invoice #${inv.number}, ${daysOverdue} days past due`,
-      message: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} is now ${daysOverdue} days overdue (due ${due}).${feeLine}\n\nPlease arrange payment by ${nice(t.payBy)} using the PayPal link in this email, or reply today if there is a problem with the invoice.\n\nRegards,${sign}`,
+      message: `Hi ${name},\n\nInvoice #${inv.number} for ${amt} is now ${daysOverdue} days overdue (due ${due}).${feeLine}\n\nPlease arrange payment by ${nice(t.payBy)} using the link below, or reply today if there is a problem with the invoice.\n\nRegards,${sign}`,
     };
   }
   return { subject, message: body };
@@ -97,7 +97,7 @@ Due date: ${inv.dueDate} (${inv.dueDate >= isoDate() ? 'not overdue yet - write 
 Client history: ${st.paidCount} paid invoices, average ${st.avgDaysLate ?? 'n/a'} days late, risk ${st.riskLabel}.
 Relationship: ${rel.label}. ${VOICE[rel.key]}
 Payment terms: ${t.termsText}.${t.feeOn ? ` Late fee: ${config.lateFeePercent}% (${inv.currency} ${t.fee}) ${t.feeFuture ? `will be added on ${t.feeOn}` : 'applies now'}.` : ''} Pay-by date to ask for: ${t.payBy}.
-Mention that they can pay via the PayPal link in the email. ${{ warm: 'Warm, friendly and professional. Max 90 words.', neutral: 'Neutral, matter-of-fact and polite. Max 80 words.', brief: 'Very short and to the point: 2-3 sentences, max 45 words.' }[config.reminderStyle || 'warm']} Never threatening.
+Say they can pay with the link below (the app adds the link itself, so do not write any URL or placeholder). ${{ warm: 'Warm, friendly and professional. Max 90 words.', neutral: 'Neutral, matter-of-fact and polite. Max 80 words.', brief: 'Very short and to the point: 2-3 sentences, max 45 words.' }[config.reminderStyle || 'warm']} Never threatening.
 Sign off as: ${config.signOff || [config.ownerName, config.businessName].filter(Boolean).join(', ') || 'no name'}.${config.businessEmail ? ` Questions can go to ${config.businessEmail}.` : ''}${config.aiInstructions ? `\nThe owner's own instructions: ${config.aiInstructions}` : ''}
 Respond with ONLY JSON: {"subject": "...", "message": "..."}`;
   const { content } = await complete({ system: 'You write concise, professional payment reminder emails. Output JSON only.', messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }], maxTokens: 600 });
@@ -128,12 +128,30 @@ export async function composeReminder(inv, today = isoDate(), wanted = null) {
   const daysOverdue = Math.max(0, daysBetween(inv.dueDate, today));
   const tone = toneFor(inv, daysOverdue, wanted);
   const rel = relationshipOf(inv.clientId, today);
+  let draft, draftedBy;
   try {
     if (!llmAvailable()) throw new Error('no llm');
-    return { tone, daysOverdue, voice: rel.key, voiceLabel: rel.label, draft: await aiReminder(inv, tone, daysOverdue, rel), draftedBy: 'ai' };
+    draft = await aiReminder(inv, tone, daysOverdue, rel);
+    draftedBy = 'ai';
   } catch {
-    return { tone, daysOverdue, voice: rel.key, voiceLabel: rel.label, draft: templateReminder(inv, tone, daysOverdue, rel), draftedBy: 'template' };
+    draft = templateReminder(inv, tone, daysOverdue, rel);
+    draftedBy = 'template';
   }
+  return { tone, daysOverdue, voice: rel.key, voiceLabel: rel.label, draft: withPayLink(draft, inv), draftedBy };
+}
+
+/**
+ * Put the invoice's pay link in the message itself, just before the sign-off, so the client can
+ * pay from the email (or from a WhatsApp copy of it) without hunting for a button.
+ */
+export function withPayLink(draft, inv) {
+  const url = inv.payerUrl;
+  if (!url || !draft?.message || draft.message.includes(url)) return draft;
+  const line = `Pay invoice #${inv.number} here: ${url}`;
+  const parts = draft.message.trimEnd().split(/\n\n/);
+  if (parts.length > 1) parts.splice(parts.length - 1, 0, line);
+  else parts.push(line);
+  return { ...draft, message: parts.join('\n\n') };
 }
 
 export async function draftReminder(inv, today = isoDate(), { tone: wanted = null, origin = 'followup' } = {}) {

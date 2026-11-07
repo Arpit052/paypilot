@@ -27,8 +27,10 @@ const envBusiness = {
   notify: { payment: true, overdue: true, due: true, approval: true, import: true },
   businessType: 'graphic_designer',
   businessTypeOther: '',
+  accountType: 'freelancer',
+  teamSize: '',
 };
-const PREF_KEYS = ['businessType', 'businessTypeOther', 'currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
+const PREF_KEYS = ['accountType', 'teamSize', 'businessType', 'businessTypeOther', 'currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
 const envChoseMode = Boolean(process.env.PAYPAL_MODE);
 
 let paypalSource = 'env';
@@ -134,6 +136,16 @@ export function saveBusinessSettings(input = {}) {
     if (!['warm', 'neutral', 'brief'].includes(input.reminderStyle)) throw httpErr('Unknown reminder style');
     next.reminderStyle = input.reminderStyle;
   }
+  if (input.accountType !== undefined) {
+    if (!['freelancer', 'business'].includes(input.accountType)) throw httpErr('Choose freelancer or business');
+    next.accountType = input.accountType;
+    // businesses usually bill on Net 30 and keep reminders matter-of-fact
+    if (input.applyPreset && input.accountType === 'business') {
+      next.defaultTermsDays = 30;
+      next.reminderStyle = 'neutral';
+    }
+  }
+  if (input.teamSize !== undefined) next.teamSize = String(input.teamSize || '').trim().slice(0, 20);
   if (input.businessTypeOther !== undefined) next.businessTypeOther = String(input.businessTypeOther || '').trim().slice(0, 40);
   if (input.businessType !== undefined) {
     if (!BUSINESS_TYPES[input.businessType]) throw httpErr('Unknown profession');
@@ -146,6 +158,10 @@ export function saveBusinessSettings(input = {}) {
       next.reminderStyle = t.style;
       next.defaultNote = t.note;
     }
+  }
+  if (input.applyPreset && (input.accountType ?? next.accountType) === 'business') {
+    next.defaultTermsDays = 30;
+    next.reminderStyle = 'neutral';
   }
   if (input.currency !== undefined) {
     const c = String(input.currency).toUpperCase();

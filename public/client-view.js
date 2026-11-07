@@ -30,7 +30,7 @@ const STEPS = [
         <div class="cv-due">Due ${esc(fmtDate(d.dueDate))} · Invoice #${esc(d.invoice)}</div>
         ${ep}
         ${d.depositAmount ? `<div class="cv-offer">A deposit of ${m(d.depositAmount)} can be paid now; the rest by the due date.</div>` : ''}
-        <span class="cv-btn">View and pay</span>
+        ${v.payerUrl ? `<a class="cv-btn" href="${esc(v.payerUrl)}" target="_blank" rel="noopener">View and pay</a>` : '<span class="cv-btn">View and pay</span>'}
         <table class="cv-lines">${lines}${sums}</table>
         ${d.note ? `<p class="cv-note">${esc(d.note).replace(/\n/g, '<br>')}</p>` : ''}
       </div>
@@ -46,10 +46,9 @@ const STEPS = [
         <div class="cv-pay-h"><b>Pay ${esc(biz)}</b><span>Invoice #${esc(d.invoice)}</span></div>
         <table class="cv-lines">${lines}${sums}</table>
         <div class="cv-methods"><span>Pay with PayPal</span><span>Debit or credit card</span></div>
-        <span class="cv-btn">${paid ? 'Already paid' : `Pay ${m(d.total)}`}</span>
+        ${paid || !v.payerUrl ? `<span class="cv-btn">${paid ? 'Already paid' : `Pay ${m(d.total)}`}</span>` : `<a class="cv-btn" href="${esc(v.payerUrl)}" target="_blank" rel="noopener">Pay ${m(d.total)}</a>`}
       </div>
-      <p class="cv-cap">${v.demo ? 'In demo mode this is a stand-in page. With PayPal connected, your client sees PayPal\'s own checkout for this invoice.' : 'Your client pays on PayPal\'s own checkout page. PayPilot hears about it from PayPal straight away.'}</p>
-      ${v.payerUrl && !paid ? `<a class="btn ghost small" href="${esc(v.payerUrl)}" target="_blank" rel="noopener">Open the real payment page</a>` : ''}
+      <p class="cv-cap">${v.demo ? 'Click Pay to open the checkout your client gets. In demo mode it is a practice checkout and no money moves; with PayPal sandbox connected, the same button opens PayPal\'s own payment page for this invoice.' : 'Click Pay to open PayPal\'s own payment page for this invoice, exactly as your client sees it. PayPilot hears about the payment from PayPal straight away.'}</p>
     </div>`,
   },
   {

@@ -3,40 +3,143 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Payment simulator · PayPilot</title>
-  <link rel="stylesheet" href="/app.css">
+  <title>Pay invoice · Demo checkout</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <meta name="theme-color" content="#060914">
+  <meta name="theme-color" content="#f4f4f5">
+  <style>
+    @font-face { font-family: 'Geist'; font-weight: 400; src: url('/fonts/Geist-Regular.woff2') format('woff2'); }
+    @font-face { font-family: 'Geist'; font-weight: 500; src: url('/fonts/Geist-Medium.woff2') format('woff2'); }
+    @font-face { font-family: 'Geist'; font-weight: 600; src: url('/fonts/Geist-SemiBold.woff2') format('woff2'); }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #f4f4f5; color: #18181b; font: 15px/1.5 Geist, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    .demo { background: #18181b; color: #e4e4e7; font-size: 13px; text-align: center; padding: 9px 16px; }
+    .demo b { color: #fff; font-weight: 600; }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 40px 20px 60px; display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 28px; align-items: start; }
+    @media (max-width: 860px) { .wrap { grid-template-columns: 1fr; padding-top: 24px; } }
+    .card { background: #fff; border: 1px solid #e4e4e7; border-radius: 16px; padding: 28px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 30px rgba(0,0,0,.04); }
+    .from { font-size: 13px; color: #71717a; }
+    .from b { display: block; font-size: 17px; color: #18181b; font-weight: 600; margin-bottom: 2px; }
+    .amount { font-size: 40px; font-weight: 600; letter-spacing: -0.03em; margin: 22px 0 2px; font-variant-numeric: tabular-nums; }
+    .meta { color: #71717a; font-size: 13.5px; }
+    .chip { display: inline-block; margin-top: 12px; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 500; background: #fef3c7; color: #92400e; }
+    .chip.ok { background: #dcfce7; color: #166534; }
+    .chip.late { background: #fee2e2; color: #991b1b; }
+    table { width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 14px; }
+    td { padding: 10px 0; border-top: 1px solid #f4f4f5; }
+    td.r { text-align: right; font-variant-numeric: tabular-nums; }
+    td .q { color: #a1a1aa; font-size: 12.5px; }
+    tr.t td { border-top: 1px solid #e4e4e7; font-weight: 600; font-size: 15px; padding-top: 14px; }
+    tr.s td { color: #52525b; }
+    .note { margin-top: 18px; padding: 12px 14px; border-radius: 10px; background: #fafafa; color: #52525b; font-size: 13px; white-space: pre-line; }
+    h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+    .methods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 18px; }
+    .methods button { padding: 12px; border-radius: 10px; border: 1px solid #e4e4e7; background: #fff; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; color: #3f3f46; }
+    .methods button[aria-pressed=true] { border-color: #18181b; box-shadow: 0 0 0 1px #18181b; color: #18181b; }
+    label { display: block; font-size: 12.5px; color: #52525b; margin: 12px 0 5px; font-weight: 500; }
+    input { width: 100%; padding: 11px 12px; border-radius: 9px; border: 1px solid #d4d4d8; font: inherit; font-size: 14px; background: #fff; color: #18181b; }
+    input:focus { outline: none; border-color: #18181b; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .opt { display: flex; gap: 10px; margin: 16px 0 0; padding: 12px; border-radius: 10px; border: 1px solid #e4e4e7; cursor: pointer; font-size: 14px; }
+    .opt input { width: auto; margin: 3px 0 0; }
+    .opt b { display: block; font-weight: 600; }
+    .opt span { color: #71717a; font-size: 12.5px; }
+    .pay { width: 100%; margin-top: 20px; padding: 14px; border: 0; border-radius: 11px; background: #18181b; color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .pay:disabled { opacity: .6; cursor: default; }
+    .secure { margin: 12px 0 0; text-align: center; font-size: 12px; color: #a1a1aa; }
+    .wallet { padding: 18px; border-radius: 12px; background: #fafafa; border: 1px dashed #d4d4d8; color: #52525b; font-size: 13.5px; }
+    .done { text-align: center; padding: 18px 0 6px; }
+    .tick { width: 54px; height: 54px; margin: 0 auto 14px; border-radius: 50%; background: #dcfce7; color: #16a34a; display: grid; place-items: center; }
+    .done h2 { font-size: 20px; margin: 0 0 6px; }
+    .done p { color: #52525b; margin: 0 0 18px; font-size: 14px; }
+    .done a { display: block; padding: 12px; margin-top: 8px; border-radius: 10px; border: 1px solid #e4e4e7; color: #18181b; text-decoration: none; font-weight: 500; font-size: 14px; }
+    .done a.primary { background: #18181b; color: #fff; border-color: #18181b; }
+    .err { color: #b91c1c; font-size: 13px; margin-top: 10px; }
+    .hidden { display: none !important; }
+  </style>
 </head>
 <body>
-<main style="max-width:520px">
-  <p class="muted">Mock mode: this page stands in for the client's PayPal payment page. With sandbox keys configured, clients get PayPal's real payment page instead.</p>
-  <article class="slip" id="slip"><div class="muted">Loading…</div></article>
-</main>
+<div class="demo"><b>Practice checkout.</b> PayPilot is in demo mode, so no money moves. Connect PayPal sandbox and this link opens PayPal's own payment page.</div>
+<div class="wrap" id="wrap"><div class="card">Loading…</div></div>
 <script type="module">
-  import { api, esc, money, fmtDate } from '/common.js';
   const id = new URLSearchParams(location.search).get('id');
-  const slip = document.getElementById('slip');
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const fmtDate = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  const wrap = document.getElementById('wrap');
+  let method = 'card';
+
+  async function get() {
+    const r = await fetch(`/api/mock/invoice/${encodeURIComponent(id)}`);
+    if (!r.ok) throw new Error('This invoice link is not valid.');
+    return r.json();
+  }
+
   async function render() {
-    try {
-      const { invoice: i, businessName } = await api(`/api/mock/invoice/${encodeURIComponent(id)}`);
-      const paid = ['PAID', 'MARKED_AS_PAID'].includes(i.status);
-      slip.innerHTML = `
-        <div class="slip-head"><div><div class="slip-kind">Invoice #${esc(i.number)}</div><div class="slip-from">from ${esc(businessName || 'your freelancer')} to ${esc(i.client)}</div></div><span class="pill ${i.displayStatus}">${esc(i.displayStatus)}</span></div>
-        <table class="items"><thead><tr><th>Work</th><th class="q">Qty</th><th class="amt">Amount</th></tr></thead><tbody>
-        ${i.items.map((x) => `<tr><td>${esc(x.name)}</td><td class="q num">${x.quantity}</td><td class="amt num">${money(x.quantity * x.unitPrice, i.currency)}</td></tr>`).join('')}
-        </tbody></table>
-        <div class="total"><span>Due ${fmtDate(i.dueDate)}</span><b class="num">${money(i.total, i.currency)}</b></div>
-        <div class="slip-actions">${paid ? '' : '<button class="btn" id="pay">Pay now (simulated)</button>'}</div>
-        ${paid ? '<div class="stamp">PAID</div>' : ''}`;
-      document.getElementById('pay')?.addEventListener('click', async (e) => {
-        e.target.disabled = true;
-        await api(`/api/mock/pay/${encodeURIComponent(id)}`, { body: {} });
-        render();
-      });
-    } catch (e) {
-      slip.textContent = e.message;
+    let d;
+    try { d = await get(); } catch (e) { wrap.innerHTML = `<div class="card">${esc(e.message)}</div>`; return; }
+    const i = d.invoice;
+    const money = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: i.currency }).format(v);
+    const paid = ['PAID', 'MARKED_AS_PAID'].includes(i.status);
+    const today = new Date().toISOString().slice(0, 10);
+    const late = !paid && i.dueDate < today;
+    const disc = d.earlyPay ? d.earlyPay.amount : 0;
+    const deposit = i.depositAmount || 0;
+    const sub = i.items.reduce((t, x) => t + x.quantity * x.unitPrice, 0);
+    const tax = i.taxPercent ? Math.round(sub * i.taxPercent) / 100 : 0;
+    const chip = paid ? '<span class="chip ok">Paid</span>' : late ? `<span class="chip late">Overdue since ${esc(fmtDate(i.dueDate))}</span>` : `<span class="chip">Due ${esc(fmtDate(i.dueDate))}</span>`;
+    const left = `<div class="card">
+      <div class="from"><b>${esc(d.businessName || 'Your supplier')}</b>Invoice #${esc(i.number)} · issued ${esc(fmtDate(i.issueDate))} · to ${esc(i.client)}</div>
+      <div class="amount">${money(i.total)}</div>
+      ${chip}
+      <table>
+        ${i.items.map((x) => `<tr><td>${esc(x.name)}${x.quantity !== 1 ? ` <span class="q">× ${x.quantity}</span>` : ''}</td><td class="r">${money(x.quantity * x.unitPrice)}</td></tr>`).join('')}
+        ${disc ? `<tr class="s"><td>Early-pay discount</td><td class="r">−${money(disc)}</td></tr>` : ''}
+        ${tax ? `<tr class="s"><td>Sales tax (${i.taxPercent}%)</td><td class="r">${money(tax)}</td></tr>` : ''}
+        <tr class="t"><td>Total</td><td class="r">${money(i.total)}</td></tr>
+      </table>
+      ${i.note ? `<div class="note">${esc(i.note)}</div>` : ''}
+    </div>`;
+    if (paid) {
+      wrap.innerHTML = left + `<div class="card"><div class="done">
+        <div class="tick"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+        <h2>Payment received</h2><p>Thank you. ${esc(d.businessName || 'Your supplier')} has been told, and your receipt is ready.</p>
+        ${d.receipt ? `<a class="primary" href="${esc(d.receipt)}">View your receipt</a>` : ''}
+        ${d.delivery ? `<a href="${esc(d.delivery.link)}">Open your files</a>` : ''}
+      </div></div>`;
+      return;
     }
+    const dueNow = i.total;
+    wrap.innerHTML = left + `<form class="card" id="f" novalidate>
+      <h2>Pay ${money(dueNow)}</h2>
+      <div class="methods" role="group" aria-label="Payment method">
+        <button type="button" data-m="card" aria-pressed="${method === 'card'}">Card</button>
+        <button type="button" data-m="wallet" aria-pressed="${method === 'wallet'}">PayPal account</button>
+      </div>
+      ${method === 'card' ? `
+        <label for="cn">Card number</label><input id="cn" inputmode="numeric" autocomplete="off" value="4111 1111 1111 1111">
+        <div class="two"><div><label for="ex">Expiry</label><input id="ex" value="12 / 29" autocomplete="off"></div><div><label for="cv">CVC</label><input id="cv" value="123" autocomplete="off"></div></div>
+        <label for="nm">Name on card</label><input id="nm" value="${esc(i.client)}">`
+        : `<div class="wallet">On the real page, your client signs in to PayPal here and confirms. In this practice checkout, just press Pay.</div>`}
+      ${deposit && deposit < i.total ? `<p class="secure" style="text-align:left;margin:14px 0 0">On PayPal's real page your client can also pay just the ${money(deposit)} deposit now. This practice checkout pays the full amount.</p>` : ''}
+      <button class="pay" id="pay" type="submit">Pay ${money(dueNow)}</button>
+      <p class="secure">Practice checkout · test card details are filled in · nothing is charged</p>
+      <div class="err" id="err"></div>
+    </form>`;
+    const f = document.getElementById('f');
+    f.querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => { method = b.dataset.m; render(); }));
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('pay');
+      btn.disabled = true;
+      btn.textContent = 'Processing…';
+      try {
+        const r = await fetch(`/api/mock/pay/${encodeURIComponent(id)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Payment failed');
+        setTimeout(render, 600);
+      } catch (err) {
+        document.getElementById('err').textContent = err.message;
+        btn.disabled = false;
+      }
+    };
   }
   render();
 </script>

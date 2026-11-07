@@ -28,9 +28,18 @@
 
   <section class="an-kpis gr-kpis" id="kpis"></section>
 
+  <section class="panel gr-biz" id="biz" style="margin-top:18px">
+    <div class="sec-head"><div><h2>Customers and receivables</h2><p class="muted small" style="margin:2px 0 0">Who is buying, who comes back, and how old the money owed to you is.</p></div></div>
+    <div class="gr-biz-grid">
+      <div><h3 class="gr-h3">Money owed, by age</h3><div id="aging"></div></div>
+      <div><h3 class="gr-h3">New customers by month, and how many came back</h3><div id="cohorts"></div></div>
+    </div>
+  </section>
+
   <section class="panel" style="margin-top:18px">
     <div class="sec-head"><div><h2>Opportunities</h2><p class="muted small" style="margin:2px 0 0">From your own numbers. An amount is shown only when it follows from your book; the basis is under each card.</p></div></div>
     <div class="gr-opps" id="opps"></div>
+    <button class="linkbtn small hidden" id="moreOpps" type="button" style="margin-top:12px"></button>
   </section>
 
   <section class="panel" style="margin-top:18px">
@@ -52,12 +61,12 @@
   </div>
 
   <section class="panel" style="margin-top:18px">
-    <div class="sec-head"><div><h2>Work areas</h2><p class="muted small" style="margin:2px 0 0">What you sell, grouped for your profession. "Trend" compares the last 3 full months with the 3 before.</p></div></div>
+    <div class="sec-head"><div><h2>Work areas</h2><p class="muted small" style="margin:2px 0 0">What you sell, grouped for your profession; anything unusual is grouped by AI from the line items themselves. "Trend" compares the last 3 full months with the 3 before.</p></div></div>
     <div class="table-wrap" id="areas"></div>
   </section>
 
   <section class="panel" style="margin-top:18px">
-    <div class="sec-head"><div><h2>Clients</h2><p class="muted small" style="margin:2px 0 0">Set each client's industry so the sector view stays accurate.</p></div></div>
+    <div class="sec-head"><div><h2>Clients</h2><p class="muted small" style="margin:2px 0 0">PayPilot works out each client's industry from their company, email and the work you bill, using AI for anything unclear. Marked "auto" until you set it yourself.</p></div></div>
     <div class="table-wrap" id="clients"></div>
   </section>
 </main>

@@ -22,7 +22,7 @@ const CLIENTS = [
   { key: 'marcus', name: 'William Evans', role: 'Head of Brand', company: 'Voltline Energy', industry: 'Energy & utilities', email: 'william@voltlineenergy.com', net: 30 },
   { key: 'dani', name: 'Rachel Adams', role: 'Operations Director', company: 'Summit Peak Consulting', industry: 'Professional services', email: 'rachel@summitpeakconsulting.com', net: 15 },
   { key: 'sofia', name: 'Sofia Martinez', role: 'Marketing Manager', company: 'Lumen Health', industry: 'Healthcare', email: 'sofia@lumenhealth.co', net: 15 },
-  { key: 'ben', name: 'Daniel Brooks', role: '', company: '', industry: 'Private clients', email: 'daniel.brooks@fastmail.com', net: 15 },
+  { key: 'ben', name: 'Daniel Brooks', role: '', company: '', industry: 'Private clients', email: 'daniel.brooks@fastmail.com', net: 15, upfront: true },
 ];
 
 const RETAINER = ['Monthly design retainer (product UI + marketing)', 1, 725];
@@ -50,7 +50,8 @@ const HISTORY = [
   ['marcus', 70, 2, [['Campaign landing page layout', 1, 387.5]]],
   ['priya', 68, 0, [RETAINER]],
   ['ryan', 63, 19, [['Investor one-pager', 1, 535], ['Chart and icon set', 6, 22.5]]],
-  ['ben', 58, 0, [['Save-the-date cards', 1, 285]]],
+  // a private client who pays the whole invoice up front, the day it arrives
+  ['ben', 58, -15, [['Save-the-date cards', 1, 285]]],
   ['dani', 51, 1, [['Team headshot retouching', 14, 18.75]]],
   ['dani', 30, 3, [['Social content pack', 12, 32.5], ['Webinar promo graphics', 1, 140]]],
   ['priya', 38, 0, [RETAINER]],
@@ -199,7 +200,7 @@ function seedInner() {
       status: 'PAID',
       issueDate: addDays(today, -12),
       dueDate: addDays(today, -12 + c.net),
-      paidDate: today,
+      paidDate: c.upfront ? addDays(today, -12) : today,
       note: '',
       payerUrl: null,
       reminders: [],

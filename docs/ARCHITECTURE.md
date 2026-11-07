@@ -47,7 +47,20 @@ The Growth page reads the last 12 months of invoices and reports:
 - **Industries.** Clients carry an `industry` field. Per sector: billed, value per client, on-time rate, days to pay, and a trend over the last 3 full calendar months against the 3 before. The score is 60% value per client and 40% on-time rate, so it can be explained in one sentence.
 - **Work areas.** Line items are grouped by profession-specific keyword rules (a web developer's "Integrations and APIs" or a designer's "Print and packaging"), with a general list as fallback. Retainers are labelled "On a plan" rather than trending, because they move with the plan, not with demand.
 - **Concentration and DSO.** Herfindahl index over client shares (bands from US merger guidelines: under 1,500 spread out, over 2,500 concentrated), and days sales outstanding now and 90 days ago, rebuilt from invoice and payment dates.
-- **Opportunities.** Each card states its basis. An amount appears only when it follows from the book (a retainer's yearly gain, last year's billing from a slipping client, 10% of a work area's billing). Nothing is estimated from outside data.
+- **Learning labels** (`src/labels.js`). Clients without an industry are labelled from the company name, the email domain (including run-together words like *kumarexports*) and the work billed; anything still unclear goes to the AI in one batch, which picks from the standard list or names a new sector. Line items the work-area rules can't place are grouped the same way. Labels are saved, marked as automatic, and never override one the owner set. A failed AI call backs off for 15 minutes.
+- **Up-front payers.** A client whose median payment is a week or more before the due date is marked as paying up front and is never counted as slow.
+- **Receivables aging and cohorts** (for businesses): money owed in 0 / 1–30 / 31–60 / 61–90 / 90+ day buckets, new customers per month and how many came back, and the share of billing from repeat customers.
+- **Opportunities.** Ranked by the money at stake. Each card states its basis. An amount appears only when it follows from the book (a retainer's yearly gain, last year's billing from a slipping client, 10% of a work area's billing). Nothing is estimated from outside data.
+
+The 90-day plan is cached against a fingerprint of the book (every invoice's status, amount and paid date, and every client's industry), so any change produces a new plan, and it is told to start from the biggest thing in the data.
+
+## Accounts and sample data
+
+`accountType` (freelancer or business) changes the navigation, the dashboard's first block and the default terms; the data model is the same. Sample data is loaded through `src/sample.js`, which records the exact invoices, clients and schedules it created, so **Remove sample data** deletes only those (a sample client you have since billed for real is kept). A PayPal-connected account starts empty unless the owner asks for samples.
+
+## Reminders
+
+Every reminder, AI-written or templated, gets the invoice's pay link inserted before the sign-off. After a reminder goes out, the next planned step is pushed back by the cooldown (`REMINDER_COOLDOWN_DAYS`, default 3), so the Invoices page never asks for another reminder the day after one was sent.
 
 ## Public pages for the client
 
@@ -57,7 +70,7 @@ Three pages need no sign-in and are reached only through unguessable tokens:
 |---|---|
 | `/d/:token` | Pay to unlock: locked until PayPal reports the invoice paid, then reveals the final-files link. |
 | `/r/:token` | A numbered, printable receipt (`R-<invoice number>`). Views are counted, except the owner's preview (`?preview=1`). |
-| PayPal's own invoice page | Payment happens on PayPal; PayPilot never sees card data. |
+| PayPal's own invoice page | Payment happens on PayPal; PayPilot never sees card data. In demo mode a practice checkout (`/mock-pay.html`) stands in for it, clearly labelled, and ends on the receipt. |
 
 Inside the app, **Your client's view** (`/client-view?inv=…`) previews all of it step by step: the invoice email, the payment page, the receipt and the files.
 

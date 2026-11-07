@@ -19,24 +19,40 @@
 
   <div class="set-layout">
     <nav class="set-nav" id="setNav" aria-label="Settings sections">
+      <span class="set-nav-g">You</span>
+      <a href="#account">Account type</a>
       <a href="#business">Business</a>
+      <span class="set-nav-g">Billing</span>
       <a href="#invoices">Invoices</a>
       <a href="#paypal">PayPal</a>
-      <a href="#autopilot">Autopilot</a>
+      <span class="set-nav-g">Getting paid</span>
+      <a href="#autopilot">Reminders</a>
       <a href="#latefees">Late fees</a>
-      <a href="#notifications">Notifications</a>
       <a href="#writing">AI writing</a>
+      <span class="set-nav-g">App</span>
+      <a href="#notifications">Notifications</a>
       <a href="#security">Security</a>
       <a href="#data">Data</a>
     </nav>
 
     <div class="set-body">
+      <!-- Account type -->
+      <section class="panel set-sec" id="account">
+        <div class="set-h"><h2>Account type</h2><p>Changes what PayPilot puts first. Your data stays exactly the same either way.</p></div>
+        <div class="acct-cards" id="acctCards" role="radiogroup" aria-label="Account type">
+          <label class="acct-card"><input type="radio" name="acct" value="freelancer"><b>Freelancer or independent</b><span>Billing comes first: write invoices in a sentence, reminders chase late payers, and the Budget tells you what you can afford.</span><em>Dashboard · Assistant · Invoices · Budget</em></label>
+          <label class="acct-card"><input type="radio" name="acct" value="business"><b>Registered business</b><span>Tracking comes first: every invoice and receipt, money owed by age, customers who come back, and where to grow.</span><em>Overview · Invoices · Receipts · Growth</em></label>
+        </div>
+        <div class="set-row hidden" id="teamRow"><label for="teamSize">Team size<span>Only used to word suggestions</span></label><select id="teamSize"><option value="2-10">2–10 people</option><option value="11-50">11–50 people</option><option value="51-200">51–200 people</option><option value="200+">More than 200</option></select></div>
+        <div class="set-foot"><span class="set-ok" id="acctOk" role="status"></span><label class="check small" id="acctPresetWrap"><input type="checkbox" id="acctPreset" checked> Also switch to the usual terms for this type</label><button class="btn" type="button" id="acctSave">Save</button></div>
+      </section>
+
       <!-- Business -->
       <form class="panel set-sec" id="business" data-sec>
         <div class="set-h"><h2>Business</h2><p>Who your invoices and reminders come from.</p></div>
         <div class="set-row"><label for="businessName">Business name<span>On every PayPal invoice</span></label><input id="businessName" name="businessName" maxlength="100" required></div>
-        <div class="set-row top"><span class="lbl">What you do<span>Tunes payment terms, reminder style, invoice shortcuts and the words the AI uses. Nothing else changes.</span></span>
-          <div><div class="bt-grid" id="btGrid" role="radiogroup" aria-label="Type of business"></div><div class="bt-preset" id="btPreset"></div></div></div>
+        <div class="set-row top"><label for="btSelect">What you do<span>Groups your work on the Growth page and sets the words the AI uses</span></label>
+          <div><select id="btSelect" name="businessType" aria-label="What you do"></select><div class="bt-preset" id="btPreset"></div></div></div>
         <div class="set-row"><label for="ownerName">Your name<span>Used to sign reminders</span></label><input id="ownerName" name="ownerName" maxlength="80" placeholder="e.g. Ana Ortiz"></div>
         <div class="set-row"><label for="businessEmail">Business email<span>Where clients can reply with questions</span></label><input id="businessEmail" name="businessEmail" type="email" maxlength="120" placeholder="hello@yourstudio.com"></div>
         <div class="set-row"><label for="website">Website<span>Optional</span></label><input id="website" name="website" maxlength="120" placeholder="yourstudio.com"></div>
@@ -49,7 +65,7 @@
         <div class="set-row"><label for="currency">Default currency<span>Only currencies PayPal can invoice in</span></label><select id="currency" name="currency"></select></div>
         <div class="set-row"><label for="defaultTermsDays">Payment terms<span>When invoices are due</span></label>
           <select id="defaultTermsDays" name="defaultTermsDays">
-            <option value="0">Due on receipt</option><option value="7">Net 7</option><option value="15">Net 15</option><option value="30">Net 30</option><option value="45">Net 45</option><option value="60">Net 60</option>
+            <option value="0">Due on receipt (pay before work starts)</option><option value="7">Net 7</option><option value="15">Net 15</option><option value="30">Net 30</option><option value="45">Net 45</option><option value="60">Net 60</option>
           </select></div>
         <div class="set-row"><label for="defaultTaxPercent">Default sales tax<span>Percent, 0 for none</span></label><div class="with-unit"><input id="defaultTaxPercent" name="defaultTaxPercent" type="number" min="0" max="50" step="0.01"><span>%</span></div></div>
         <div class="set-row top"><label for="defaultNote">Note to clients<span>Added to new invoices unless you write another</span></label><textarea id="defaultNote" name="defaultNote" rows="3" maxlength="600" placeholder="Thanks for your business! Payment is due by the date above."></textarea></div>
@@ -74,7 +90,7 @@
         <div class="set-h with-toggle"><div><h2>Autopilot</h2><p>When it's on, PayPilot writes each reminder on the right day and asks for your OK. When it's off, nothing is drafted unless you ask, so no surprise notifications.</p></div>
           <button class="ap-toggle" id="apToggle" role="switch" aria-checked="true" type="button"><span class="ap-knob"></span><span id="apLabel">On</span></button></div>
         <ol class="ap-steps" id="planSteps"></ol>
-        <div class="set-foot"><span class="set-ok" id="planSaved" role="status"></span><a class="btn ghost small" href="/followups">See what's coming up →</a></div>
+        <div class="set-foot"><span class="set-ok" id="planSaved" role="status"></span><a class="btn ghost small" href="/invoices">See what's coming up →</a></div>
       </section>
 
       <!-- Late fees -->
@@ -125,6 +141,7 @@
           <a class="dact" href="/api/invoices.csv" download><b>Export invoices</b><span>CSV for your accountant or spreadsheet</span></a>
           <a class="dact" href="/api/export.json" download><b>Download a backup</b><span>Clients, invoices, schedules and history as JSON</span></a>
           <button class="dact" type="button" id="restoreBtn"><b>Restore removed clients</b><span id="restoreSub">Let PayPal import them again</span></button>
+          <button class="dact" type="button" id="sampleBtn"><b id="sampleTitle">Sample data</b><span id="sampleSub">Checking…</span></button>
           <button class="dact danger" type="button" id="resetBtn"><b>Reset demo data</b><span id="resetSub">Start over with fresh sample clients. Settings are kept.</span></button>
         </div>
       </section>

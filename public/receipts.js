@@ -7,8 +7,8 @@ let data = null;
 let filter = focusId ? 'all' : 'all';
 
 const STATUS = {
-  needed: ['rx-needed', 'Needs a receipt'],
-  auto: ['rx-auto', 'Sent by PayPal'],
+  needed: ['rx-needed', 'To send'],
+  auto: ['rx-auto', 'PayPal sent it'],
   sent: ['rx-sent', 'Sent'],
   viewed: ['rx-viewed', 'Opened'],
 };
@@ -18,9 +18,9 @@ async function load() {
   const s = data.summary;
   $('stats').innerHTML = `
     <div><span>Receipts</span><b>${s.total}</b><em>${s.thisMonth} this month</em></div>
-    <div class="${s.needed ? 'warn' : ''}"><span>Need sending</span><b>${s.needed}</b><em>paid outside PayPal</em></div>
+    <div class="${s.needed ? 'warn' : ''}"><span>To send</span><b>${s.needed}</b><em>paid by bank, cash or cheque</em></div>
     <div><span>Sent by you</span><b>${s.sent}</b><em>${s.viewed} opened by the client</em></div>
-    <div><span>Sent by PayPal</span><b>${s.auto}</b><em>paid through PayPal</em></div>`;
+    <div><span>PayPal sent them</span><b>${s.auto}</b><em>paid through PayPal</em></div>`;
   if (s.needed && !focusId && filter === 'all') filter = 'needed';
   render();
 }
@@ -30,7 +30,7 @@ function render() {
   const q = $('q').value.trim().toLowerCase();
   const rows = data.receipts.filter((r) => (filter === 'all' || (filter === 'needed' ? r.status === 'needed' : ['sent', 'viewed'].includes(r.status))) && (!q || [r.client, r.company, r.invoice, r.receipt].some((x) => String(x).toLowerCase().includes(q))));
   if (!rows.length) {
-    $('list').innerHTML = `<div class="list-empty"><b>${filter === 'needed' ? 'Every receipt is sent' : 'No receipts yet'}</b><span>${filter === 'needed' ? 'Payments outside PayPal show up here until you send their receipt.' : 'They appear as soon as an invoice is paid.'}</span></div>`;
+    $('list').innerHTML = `<div class="list-empty"><b>${filter === 'needed' ? 'Every receipt is sent' : 'No receipts yet'}</b><span>${filter === 'needed' ? 'Payments by bank transfer, cash or cheque show up here until you send their receipt.' : 'They appear as soon as an invoice is paid.'}</span></div>`;
     return;
   }
   $('list').innerHTML = `<table class="data rx-table"><thead><tr><th>Receipt</th><th>Client</th><th>Paid</th><th>Via</th><th class="r">Amount</th><th>Status</th><th></th></tr></thead><tbody>${rows

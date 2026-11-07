@@ -14,6 +14,7 @@ import { notify } from './notify.js';
 
 const DEFAULTS = { enabled: true, beforeDays: 2, firmAfter: 3, finalAfter: 10, feeWithFinal: true };
 const rank = (t) => TONES.indexOf(t);
+export const REMINDER_GAP_DAYS = Math.max(1, config.reminderCooldownDays || 4);
 
 export function autopilotSettings() {
   return { ...DEFAULTS, ...(kvGet('settings:autopilot') || {}) };
@@ -56,6 +57,13 @@ export function planFor(inv, { settings = autopilotSettings(), actions = listAct
     else if (mine.some((a) => a.status === 'rejected' && rank(a.payload.tone) >= rank(s.tone) && (a.createdAt || '').slice(0, 10) >= s.date)) s.state = 'skipped';
     else if (s.key === 'headsup' && s.date < inv.issueDate) s.state = 'skipped'; // invoice was sent too close to its due date
     else s.state = s.date <= today ? 'due' : 'planned';
+  }
+  // a reminder that just went out (by hand or by plan) pauses the next one for a few days,
+  // so the board never asks for another reminder the day after you sent one
+  const lastSent = (inv.reminders || []).map((r) => r.at).filter(Boolean).sort().at(-1);
+  if (lastSent) {
+    const resume = addDays(lastSent, REMINDER_GAP_DAYS);
+    for (const s of steps) if (s.state === 'due' && resume > today) { s.state = 'planned'; s.date = resume < s.date ? s.date : resume; }
   }
   // a later step already done makes earlier open ones moot
   for (let i = steps.length - 1, later = false; i >= 0; i--) {

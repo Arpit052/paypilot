@@ -29,10 +29,15 @@
       <h2>Set up PayPilot</h2>
       <p class="sub">Connect your PayPal sandbox app, or look around with demo data first.</p>
       <form id="connect" autocomplete="off">
+        <fieldset class="acct" id="acct">
+          <legend>How will you use PayPilot?</legend>
+          <label class="acct-opt"><input type="radio" name="acct" value="freelancer" checked><span><b>Freelancer or independent</b><em>You do the work yourself. Write invoices in a sentence, let reminders chase late payers, and check what you can afford.</em></span></label>
+          <label class="acct-opt"><input type="radio" name="acct" value="business"><span><b>Registered business</b><em>You bill many customers. Track every invoice and receipt, and see which customers and markets to grow.</em></span></label>
+        </fieldset>
         <label for="biz">Business name</label>
         <input id="biz" type="text" maxlength="100" placeholder="e.g. Ortiz Design Studio" required>
         <p class="hint">Shown on every invoice your clients receive.</p>
-        <label for="btype">What do you do?</label>
+        <label for="btype" id="btypeLabel">What do you do?</label>
         <select id="btype">
           <option value="web_developer">Web Developer · website development, API integration</option>
           <option value="graphic_designer" selected>Graphic Designer · brand identity, UI/UX design</option>
@@ -45,7 +50,11 @@
           <option value="other">Other (please specify)</option>
         </select>
         <input id="btypeOther" class="hidden" maxlength="40" placeholder="e.g. Interior designer, Music producer, Translator" aria-label="Your profession" style="margin-top:8px">
-        <p class="hint">Sets sensible payment terms, reminder style and invoice shortcuts. The demo loads sample work for this profession.</p>
+        <p class="hint" id="btypeHint">Sets sensible payment terms, reminder style and invoice shortcuts. The demo loads sample work for this profession.</p>
+        <div id="teamWrap" class="hidden">
+          <label for="team">Team size</label>
+          <select id="team"><option value="2-10">2–10 people</option><option value="11-50">11–50 people</option><option value="51-200">51–200 people</option><option value="200+">More than 200</option></select>
+        </div>
         <div class="two">
           <div><label for="cid">PayPal Client ID</label><input id="cid" type="text" spellcheck="false" placeholder="Starts with A…"></div>
           <div><label for="sec">Secret</label><input id="sec" type="password" spellcheck="false" placeholder="Sandbox secret"></div>
@@ -61,7 +70,7 @@
         </details>
         <label for="pass">Passcode <span class="opt">optional</span></label>
         <input id="pass" type="password" autocomplete="new-password" placeholder="Lock PayPilot with a passcode">
-        <label class="check"><input type="checkbox" id="sample" checked> Add sample history so the dashboard isn't empty</label>
+        <label class="check"><input type="checkbox" id="sample"> Add a few sample invoices to try things out (remove them anytime in Settings)</label>
         <button class="btn wide" type="submit" id="go">Connect PayPal</button>
         <div class="err" id="err" role="alert"></div>
       </form>
@@ -75,6 +84,13 @@
   import { LOGO, WORDMARK } from '/common.js';
   document.getElementById('brand').innerHTML = `${LOGO}${WORDMARK}`;
   const $ = (id) => document.getElementById(id);
+  const acct = () => document.querySelector('input[name=acct]:checked').value;
+  document.querySelectorAll('input[name=acct]').forEach((r) => r.addEventListener('change', () => {
+    const biz = acct() === 'business';
+    $('btypeLabel').textContent = biz ? 'What does the business sell?' : 'What do you do?';
+    $('btypeHint').textContent = biz ? 'Groups your work and sets the words the AI uses. Businesses start on Net 30 terms with matter-of-fact reminders; change it anytime.' : 'Sets sensible payment terms, reminder style and invoice shortcuts. The demo loads sample work for this profession.';
+    $('teamWrap').classList.toggle('hidden', !biz);
+  }));
   $('btype').addEventListener('change', () => {
     const other = $('btype').value === 'other';
     $('btypeOther').classList.toggle('hidden', !other);
@@ -103,7 +119,7 @@
     $('go').disabled = true;
     $('go').textContent = 'Checking with PayPal…';
     try {
-      const r = await post('/api/settings/paypal/connect', { businessName: $('biz').value, businessType: $('btype').value, businessTypeOther: $('btypeOther').value, clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked, passcode: $('pass').value });
+      const r = await post('/api/settings/paypal/connect', { businessName: $('biz').value, accountType: acct(), teamSize: acct() === 'business' ? $('team').value : '', businessType: $('btype').value, businessTypeOther: $('btypeOther').value, clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked, passcode: $('pass').value });
       $('card').innerHTML = `<div class="ok"><div class="tick"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><h2>Connected to PayPal</h2><p class="sub">Sandbox keys verified${r.imported ? `, ${r.imported} invoice${r.imported > 1 ? 's' : ''} imported` : ''}. Invoices you approve now go out through PayPal.</p><a class="btn wide" href="/dashboard">Open PayPilot</a></div>`;
     } catch (err) {
       $('err').textContent = err.message;
@@ -118,7 +134,7 @@
     if (!passOk()) return;
     $('demo').disabled = true;
     try {
-      await post('/api/settings/paypal/demo', { businessName: $('biz').value, businessType: $('btype').value, businessTypeOther: $('btypeOther').value, passcode: $('pass').value });
+      await post('/api/settings/paypal/demo', { businessName: $('biz').value, accountType: acct(), teamSize: acct() === 'business' ? $('team').value : '', businessType: $('btype').value, businessTypeOther: $('btypeOther').value, passcode: $('pass').value });
       location.href = '/dashboard';
     } catch (err) {
       $('err').textContent = err.message;

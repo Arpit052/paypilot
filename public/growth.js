@@ -39,12 +39,18 @@ function renderKpis() {
     card(slipping ? 'Slipping away' : 'Champions', slipping ? `${slipping.count} client${slipping.count === 1 ? '' : 's'}` : `${champs ? champs.count : 0}`, slipping ? `${m(slipping.value)} billed by them last year` : 'high value, frequent, on time', slipping ? 'Clients past the point they usually send more work.' : 'Your most valuable, most reliable clients.');
 }
 
+let showAll = false;
 function renderOpps() {
   if (!G.opportunities.length) {
     $('opps').innerHTML = '<p class="muted small">Nothing stands out yet. Opportunities appear once you have a few months of invoices.</p>';
+    $('moreOpps').classList.add('hidden');
     return;
   }
-  $('opps').innerHTML = G.opportunities.map((o, k) => `
+  const list = showAll ? G.opportunities : G.opportunities.slice(0, 3);
+  const rest = G.opportunities.length - 3;
+  $('moreOpps').classList.toggle('hidden', rest <= 0);
+  $('moreOpps').textContent = showAll ? 'Show only the top 3' : `Show ${rest} more`;
+  $('opps').innerHTML = list.map((o, k) => `
     <article class="gr-opp">
       <div class="gr-opp-n">${String(k + 1).padStart(2, '0')}</div>
       <h3>${esc(o.title)}</h3>
@@ -122,6 +128,27 @@ function renderMap() {
   });
 }
 
+function renderBiz() {
+  const a = G.aging;
+  const owed = a.reduce((t, b) => t + b.amount, 0);
+  $('aging').innerHTML = owed
+    ? `<ul class="gr-aging">${a.map((b) => `<li class="${b.key}"><span>${esc(b.label)}</span><div class="gr-bar"><i style="width:${owed ? Math.max(b.amount ? 3 : 0, (b.amount / owed) * 100) : 0}%"></i></div><b>${esc(m(b.amount))}</b><em>${b.count || ''}</em></li>`).join('')}</ul>
+      <p class="muted small" style="margin:10px 0 0">${esc(m(owed))} owed in total. The older a debt, the less likely it is to be paid: chase the bottom rows first.</p>`
+    : '<p class="muted small">Nobody owes you anything right now.</p>';
+  const c = G.customers;
+  const co = G.cohorts;
+  $('cohorts').innerHTML = `<div class="gr-cstats">
+      <div><b>${c.active}</b><span>active customers</span></div>
+      <div><b>${c.newThisQuarter}</b><span>new in 3 months</span></div>
+      <div><b>${c.repeatRate}%</b><span>bought more than once</span></div>
+      <div><b>${c.repeatShare}%</b><span>of billing from repeat customers</span></div>
+    </div>
+    ${co.length ? `<table class="data gr-table gr-co"><thead><tr><th>First invoice</th><th class="r">New customers</th><th class="r">Came back</th><th class="r">Billed so far</th></tr></thead><tbody>${co
+      .map((r) => `<tr><td>${esc(new Date(`${r.month}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }))}</td><td class="r">${r.customers}</td><td class="r">${r.repeat} <span class="muted small">(${r.repeatRate}%)</span></td><td class="r">${esc(m(r.billed))}</td></tr>`)
+      .join('')}</tbody></table>` : '<p class="muted small">No new customers in the last 12 months.</p>'}
+    ${c.upfront.length ? `<p class="muted small" style="margin:10px 0 0">Pays up front: ${esc(c.upfront.join(', '))}. Their invoices are counted as paid on arrival, never as late.</p>` : ''}`;
+}
+
 function renderSegments() {
   if (!G.segments.length) { $('segments').innerHTML = '<p class="muted small">No clients yet.</p>'; return; }
   const total = G.segments.reduce((t, s) => t + s.value, 0) || 1;
@@ -162,12 +189,12 @@ function renderClients() {
     <thead><tr><th>Client</th><th>Industry</th><th>Segment</th><th class="r">Billed, 12 months</th><th class="r">Usually buys every</th><th class="r">Last invoice</th><th class="r">Pays in</th></tr></thead>
     <tbody>${cs.map((c) => `<tr>
       <td><div class="cl-who"><span class="avatar" aria-hidden="true">${esc(initials(c.name))}</span><span><b>${esc(c.name)}</b>${c.onPlan ? ' <span class="pill monthly">Retainer</span>' : ''}<br><span class="muted small">${esc(c.company || 'Private client')}</span></span></div></td>
-      <td><input class="gr-ind" list="indList" data-id="${esc(c.id)}" value="${esc(c.industry)}" placeholder="Set industry" aria-label="Industry for ${esc(c.name)}"></td>
+      <td><input class="gr-ind" list="indList" data-id="${esc(c.id)}" value="${esc(c.industry)}" placeholder="Set industry" aria-label="Industry for ${esc(c.name)}">${c.industrySource === 'rules' || c.industrySource === 'ai' ? `<span class="gr-auto" title="${c.industrySource === 'ai' ? 'Worked out by AI from the client\'s details and work' : 'Worked out from the company name, email and work'}">auto</span>` : ''}</td>
       <td><span class="gr-seg-pill ${SEG_CLASS[c.segment] || ''}">${SEG_LABEL[c.segment] || c.segment}</span></td>
       <td class="r">${esc(m(c.value))}</td>
       <td class="r">${c.cadence ? days(c.cadence) : '—'}</td>
       <td class="r">${esc(fmtDate(c.lastInvoice))}<br><span class="muted small">${c.daysSinceLast} days ago</span></td>
-      <td class="r">${c.daysToPay === null ? '—' : days(c.daysToPay)}</td>
+      <td class="r">${c.paysUpfront ? '<span class="gr-up">Up front</span>' : c.daysToPay === null ? '—' : days(c.daysToPay)}</td>
     </tr>`).join('')}</tbody></table>`;
   $('clients').querySelectorAll('.gr-ind').forEach((inp) => {
     let before = inp.value;
@@ -194,7 +221,9 @@ async function loadPlan(refresh) {
     const p = await api('/api/growth/plan', { method: 'POST', body: { refresh } });
     $('planHead').textContent = p.headline;
     $('planSteps').innerHTML = p.steps.map((s) => `<li>${esc(s)}</li>`).join('');
-    $('planSrc').textContent = p.source === 'ai' ? `Written by AI from the figures on this page${p.cached ? ' (saved earlier)' : ''}. Every number comes from your invoices.` : p.note || 'From your numbers.';
+    const b = p.basedOn;
+    const basis = b ? ` Based on ${b.invoices} invoice${b.invoices === 1 ? '' : 's'} and ${b.clients} client${b.clients === 1 ? '' : 's'}${b.latest ? `, up to ${fmtDate(b.latest)}` : ''}; it is rewritten when your invoices change.` : '';
+    $('planSrc').textContent = (p.source === 'ai' ? 'Written by AI from the figures on this page.' : p.note || 'From your numbers.') + basis;
   } catch (e) {
     $('planHead').textContent = 'Could not write a plan right now.';
     $('planSrc').textContent = e.message;
@@ -206,6 +235,9 @@ async function loadPlan(refresh) {
 async function load(withPlan = true) {
   G = await api('/api/growth');
   renderKpis();
+  renderBiz();
+  // a business reads customers and receivables first; a freelancer, the opportunities
+  if (G.accountType !== 'business') $('clients').closest('section').before($('biz'));
   renderOpps();
   renderIndustries();
   renderMap();
@@ -216,4 +248,8 @@ async function load(withPlan = true) {
 }
 
 $('planBtn').addEventListener('click', () => loadPlan(true));
+$('moreOpps').addEventListener('click', () => {
+  showAll = !showAll;
+  renderOpps();
+});
 await load();

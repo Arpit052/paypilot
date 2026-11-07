@@ -41,14 +41,17 @@
         <div><label for="cash">Have now</label><input id="cash" type="number" step="0.01" placeholder="0" inputmode="decimal"></div>
         <div><label for="buffer">Never go below</label><input id="buffer" type="number" min="0" step="0.01" placeholder="0" inputmode="decimal"></div>
       </div>
+      <p class="hint hidden" id="cashNote"></p>
+      <p class="hint">"Have now" is the money in your account today. "Never go below" is the cushion you always want to keep.</p>
       <button type="button" class="linkbtn small hidden" id="useBal" style="align-self:flex-start;margin-top:6px">Use PayPal balance</button>
 
-      <div class="bg-sep"><span>Money going out</span></div>
+      <div class="bg-sep"><span>Your regular costs</span></div>
+      <p class="hint" style="margin-top:0">Fixed bills that leave on the same day every month, like rent, software or a loan. Leave it empty if you have none.</p>
       <div class="bg-bills" id="bills"></div>
       <button type="button" class="linkbtn small" id="addBill" style="align-self:flex-start;margin-top:6px">+ Add a bill</button>
-      <label for="everyday">Everyday spending, per month</label>
-      <input id="everyday" type="number" min="0" step="0.01" placeholder="0" inputmode="decimal">
-      <p class="hint">Bills leave on their day of the month (rent on the 1st, say). Everyday spending (food, transport) is spread across the month.</p>
+      <label for="everyday">Everything else you spend in a month</label>
+      <input id="everyday" type="number" min="0" step="0.01" placeholder="e.g. 800 for food, transport, phone" inputmode="decimal">
+      <p class="hint">This is spread evenly across the month.</p>
 
       <div class="bg-sep"><span>From each client payment</span></div>
       <div class="two">

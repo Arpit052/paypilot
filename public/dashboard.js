@@ -3,6 +3,7 @@ import { api, header, esc, money, moneyMap, fmtDate, toast, RISK_TEXT, daysLateT
 const $ = (id) => document.getElementById(id);
 const cfg = await header('dashboard');
 const cur = cfg.currency;
+if (cfg.accountType === 'business') $('dashTitle').textContent = 'Business overview';
 
 const state = { filter: 'all', sort: { key: 'issueDate', dir: 'desc' }, q: '', month: null };
 let data = { invoices: [], dash: null };
@@ -217,8 +218,10 @@ function renderTable() {
     const active = key === k;
     return `<th class="${cls || ''}" aria-sort="${active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}"><button class="sort" data-sort="${k}">${label}<span class="arrow">${active ? (dir === 'asc' ? '▲' : '▼') : '↕'}</span></button></th>`;
   };
+  const recentOnly = state.filter === 'all' && !q && state.sort.key === 'issueDate' && rows.length > 8;
+  const shownRows = recentOnly ? rows.slice(0, 8) : rows;
   $('invoices').innerHTML = rows.length
-    ? `<table class="data"><thead><tr>${COLS.map(th).join('')}<th></th></tr></thead><tbody>${rows
+    ? `<table class="data"><thead><tr>${COLS.map(th).join('')}<th></th></tr></thead><tbody>${shownRows
         .map(
           (i) => `<tr class="clickable" data-inv="${esc(i.id)}" tabindex="0" title="Click to see this invoice's timeline">
             <td class="num">${esc(i.number)}</td>
@@ -236,7 +239,7 @@ function renderTable() {
             }</td>
           </tr>`
         )
-        .join('')}</tbody></table>`
+        .join("")}</tbody></table>${recentOnly ? `<a class="iv-more" href="/invoices">See all ${rows.length} invoices in Invoices</a>` : ""}`
     : '<div class="empty">No invoices match this filter.</div>';
 }
 
@@ -407,4 +410,39 @@ window.addEventListener('pp:changed', () => load());
     showInvoice(id);
     history.replaceState(null, '', '/');
   }
+}
+
+renderModeBlock();
+
+// freelancers start from billing; businesses from receivables and where to grow
+async function renderModeBlock() {
+  const box = $('modeBlock');
+  if (cfg.accountType === 'business') {
+    let g;
+    try {
+      g = await api('/api/growth?fast=1');
+    } catch {
+      return;
+    }
+    const owed = g.aging.reduce((t, b) => t + b.amount, 0);
+    box.innerHTML = `<div class="mb-biz">
+      <section class="panel"><div class="mb-h"><h2>Money owed, by age</h2><a class="linkbtn small" href="/invoices">Invoices</a></div>
+        ${owed ? `<ul class="gr-aging">${g.aging.map((b) => `<li class="${b.key}"><span>${esc(b.label)}</span><div class="gr-bar"><i style="width:${Math.max(b.amount ? 3 : 0, (b.amount / owed) * 100)}%"></i></div><b>${esc(money(Math.round(b.amount), cur))}</b><em>${b.count || ''}</em></li>`).join('')}</ul>` : '<p class="muted small">Nobody owes you anything right now.</p>'}
+        <p class="muted small" style="margin:12px 0 0">Days sales outstanding: <b>${g.dso.now ?? '—'}</b>${g.dso.change ? ` (${g.dso.change > 0 ? `${g.dso.change} days slower` : `${-g.dso.change} days faster`} than 90 days ago)` : ''} · ${g.customers.active} active customers · ${g.customers.repeatRate}% buy again</p>
+      </section>
+      <section class="panel"><div class="mb-h"><h2>Where to grow</h2><a class="linkbtn small" href="/growth">Growth</a></div>
+        ${g.opportunities.length ? `<ol class="mb-opps">${g.opportunities.slice(0, 3).map((o) => `<li><b>${esc(o.title)}</b><span>${esc(o.basis)}${o.amount ? ` · ${esc(money(Math.round(o.amount), cur))} ${esc(o.amountLabel || '')}` : ''}</span></li>`).join('')}</ol>` : '<p class="muted small">Opportunities appear once you have a few months of invoices.</p>'}
+      </section>
+    </div>`;
+    return;
+  }
+  box.innerHTML = `<form class="panel mb-quick" id="quick">
+    <div><h2>Bill a client in one sentence</h2><p class="muted small">Type the job the way you'd text it. The Assistant drafts the PayPal invoice for you to check and send.</p></div>
+    <div class="mb-row"><input id="quickIn" maxlength="400" placeholder="e.g. Bill Marcus Vance for the pitch deck, $1,200, due in 15 days" aria-label="Describe the invoice"><button class="btn" type="submit">Draft invoice</button></div>
+  </form>`;
+  $('quick').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = $('quickIn').value.trim();
+    location.href = v ? `/assistant?ask=${encodeURIComponent(v)}` : '/assistant';
+  });
 }

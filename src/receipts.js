@@ -24,6 +24,11 @@ export function ensureReceipt(inv) {
 }
 
 const linkFor = (r) => `${publicBase()}/r/${r.token}`;
+/** Path of the public receipt page for a paid invoice (null if unpaid). */
+export const receiptPathFor = (inv) => {
+  const r = ensureReceipt(inv);
+  return r ? `/r/${r.token}` : null;
+};
 const methodOf = (inv) => (inv.status === 'MARKED_AS_PAID' ? kvGet(`paidVia:${inv.id}`) || 'outside PayPal' : 'PayPal');
 
 /** Status of one receipt: auto (PayPal sent it), needed, sent, viewed. */

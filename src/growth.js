@@ -11,11 +11,12 @@
 //
 // Amounts are in the main currency only, like the Analytics page.
 import { config, isoDate, addDays, daysBetween } from './config.js';
-import { listInvoices, listClients, listSchedules } from './db.js';
+import { listInvoices, listClients, listSchedules, kvGet, kvSet } from './db.js';
 import { isOpen, isPaid, clientStats } from './analytics.js';
 import { retainerOffers } from './offers.js';
 import { complete, llmAvailable } from './llm.js';
-import { normalType } from './business.js';
+import { normalType, professionLabel } from './business.js';
+import { INDUSTRIES, learnLabels, learnedAreas, industrySource } from './labels.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
 const sum = (xs, f = (x) => x) => xs.reduce((t, x) => t + f(x), 0);
@@ -126,18 +127,13 @@ const BY_PROFESSION = {
   ],
 };
 
-export function areaOf(name, profession = normalType(config.businessType)) {
+export function areaOf(name, profession = normalType(config.businessType), learned = null) {
   for (const [area, re] of [...(BY_PROFESSION[profession] || []), ...AREAS]) if (re.test(name || '')) return area;
-  return 'Other work';
+  return learned?.get(name) || 'Other work';
 }
 const isRecurringArea = (name) => /retainer|ongoing|management|packages/i.test(name);
 
-/** Suggested sectors for the client industry picker (free text is allowed too). */
-export const INDUSTRIES = [
-  'Software & SaaS', 'E-commerce & retail', 'Marketing & agencies', 'Professional services', 'Healthcare',
-  'Education', 'Finance & insurance', 'Real estate', 'Hospitality & food', 'Energy & utilities',
-  'Manufacturing', 'Media & entertainment', 'Non-profit', 'Private clients',
-];
+export { INDUSTRIES };
 
 // ---------------- helpers ----------------
 const lateOf = (i) => daysBetween(i.dueDate, i.paidDate);
@@ -197,6 +193,9 @@ export function growthReport(today = isoDate()) {
       const value = sum(mineYear, (i) => i.total);
       const lateDays = paid.map(lateOf);
       const avgLate = lateDays.length ? Math.max(0, Math.round(avg(lateDays))) : null;
+      // some clients (often big firms, or private clients) pay before the work starts
+      const medLate = lateDays.length ? median(lateDays) : null;
+      const paysUpfront = lateDays.length >= 2 && medLate <= -7;
       const daysToPay = paid.length ? Math.round(avg(paid.map(toPay))) : null;
       const onTime = paid.length ? Math.round((paid.filter((i) => lateOf(i) <= 0).length / paid.length) * 100) : null;
       const openNow = mine.filter(isOpen);
@@ -210,7 +209,9 @@ export function growthReport(today = isoDate()) {
         name: c.name,
         company: c.company || '',
         industry: c.industry || '',
+        industrySource: industrySource(c),
         onPlan: onPlan.has(c.id),
+        paysUpfront,
         invoices: mine.length,
         invoicesYear: mineYear.length,
         value: r2(value),
@@ -286,6 +287,7 @@ export function growthReport(today = isoDate()) {
         name: r.name,
         clients: r.clients.length,
         clientNames: r.clients.map((c) => c.name),
+        invoices: r.invoices.length,
         revenue: r2(revenue),
         billed: r2(billed),
         share: 0, // filled below, as a share of everything billed
@@ -305,7 +307,8 @@ export function growthReport(today = isoDate()) {
     const speed = x.onTime === null ? 0.5 : x.onTime / 100;
     x.score = Math.round(((x.perClient / indMax) * 0.6 + speed * 0.4) * 100);
   }
-  const ranked = industries.filter((x) => x.name !== 'Not set' && x.billed > 0).sort((a, b) => b.score - a.score);
+  // a sector needs a few invoices behind it before it can be called the one to focus on
+  const ranked = industries.filter((x) => x.name !== 'Not set' && x.billed > 0 && x.invoices >= 3).sort((a, b) => b.score - a.score);
   for (const x of industries) {
     x.verdict =
       ranked.length >= 2 && x === ranked[0]
@@ -322,10 +325,13 @@ export function growthReport(today = isoDate()) {
   // ---- work areas ----
   const byArea = new Map();
   const profession = normalType(config.businessType);
+  const learned = learnedAreas();
+  const unplaced = new Set();
   for (const i of all) {
     for (const it of i.items || []) {
       if (it.lateFee) continue;
-      const k = areaOf(it.name, profession);
+      const k = areaOf(it.name, profession, learned);
+      if (k === 'Other work') unplaced.add(it.name);
       const amount = it.quantity * it.unitPrice;
       const row = byArea.get(k) || { name: k, lines: 0, amount: 0, recent: 0, before: 0, year: 0, buyers: new Map(), pay: [], examples: new Set() };
       row.lines += 1;
@@ -390,7 +396,8 @@ export function growthReport(today = isoDate()) {
   for (const o of offers.slice(0, 2)) {
     add({
       kind: 'retainer',
-      title: `Offer ${o.client} a monthly ${o.offer.word || 'plan'}`,
+      title: `Offer ${o.client} a ${o.offer.word || 'monthly plan'}`,
+      weight: Math.max(o.offer.yearChange || 0, o.offer.price * 2),
       body: `They already buy about monthly. A plan at ${fmtMoney(o.offer.price)}/month turns ${o.offer.invoicesNow} separate invoices a year into one predictable payment.`,
       amount: o.offer.yearChange > 0 ? o.offer.yearChange : null,
       amountLabel: o.offer.yearChange > 0 ? 'more a year' : null,
@@ -405,17 +412,19 @@ export function growthReport(today = isoDate()) {
       body: `They usually send work every ${c.cadence} days; it has been ${c.daysSinceLast}. A short "anything coming up?" note costs nothing.`,
       amount: c.value || null,
       amountLabel: c.value ? 'billed in the last year' : null,
+      weight: c.value,
       basis: `last invoice on ${new Date(c.lastInvoice + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`,
       link: { href: '/clients', label: 'Open client' },
     });
   }
-  for (const c of clients.filter((x) => x.segment === 'fix').slice(0, 1)) {
+  for (const c of clients.filter((x) => x.segment === 'fix' && !x.paysUpfront).slice(0, 1)) {
     add({
       kind: 'terms',
       title: `Ask ${c.name} for a deposit`,
       body: `They are worth ${fmtMoney(c.value)} a year but pay ${c.avgLate} days late on average. A 30–50% deposit or an early-pay discount gets the money in sooner without losing the client.`,
       amount: null,
       basis: `${c.invoices} invoices, ${c.onTime ?? 0}% on time`,
+      weight: c.value * 0.3 + c.overdue,
       link: { href: '/new-invoice', label: 'New invoice' },
     });
   }
@@ -427,6 +436,7 @@ export function growthReport(today = isoDate()) {
       body: `Your ${focus.name} clients are worth ${fmtMoney(focus.perClient)} each a year and ${focus.onTime ?? 0}% of their invoices are paid on time${focus.daysToPay !== null ? `, in ${focus.daysToPay} days on average` : ''}. That is your best mix of value and speed.`,
       amount: null,
       basis: `${focus.clients} client${focus.clients === 1 ? '' : 's'}: ${focus.clientNames.join(', ')}`,
+      weight: focus.perClient * 0.8,
     });
   }
   // retainers grow by plan, not demand, so they are not a "lean into" signal
@@ -438,6 +448,7 @@ export function growthReport(today = isoDate()) {
       body: `Billing for this work rose ${grow.trend.pct}% in the last 3 full months compared with the 3 before (${fmtMoney(grow.recent)} vs ${fmtMoney(grow.before)}). Package it, put it first on your site, and quote it to existing clients.`,
       amount: null,
       basis: `${grow.lines} line item${grow.lines === 1 ? '' : 's'} from ${grow.clients} client${grow.clients === 1 ? '' : 's'}`,
+      weight: grow.recent - grow.before,
     });
   }
   const priceArea = areas.find((a) => a.repeatClients >= 2 && a.revenue > 0 && !a.recurring);
@@ -450,6 +461,7 @@ export function growthReport(today = isoDate()) {
       amount: extra,
       amountLabel: 'a year at the same volume',
       basis: `${fmtMoney(priceArea.revenue)} billed in the last year`,
+      weight: extra,
     });
   }
   if (concentration.topClient && concentration.topClient.share >= 35) {
@@ -459,6 +471,8 @@ export function growthReport(today = isoDate()) {
       body: `${concentration.topClient.name} is ${concentration.topClient.share}% of last year's billing. Losing them would cut income by about that much. Aim to win one more client in ${focus ? focus.name : 'your best sector'} this quarter.`,
       amount: null,
       basis: `top 3 clients = ${concentration.top3Share}% of billing`,
+      // the more of the income one client is, the more this matters
+      weight: (top[0]?.value || 0) * (concentration.topClient.share / 100) * 1.5,
     });
   }
   const oneoffs = clients.filter((c) => c.segment === 'oneoff');
@@ -470,8 +484,57 @@ export function growthReport(today = isoDate()) {
       amount: null,
       basis: oneoffs.map((c) => c.name).join(', '),
       link: { href: '/clients', label: 'Clients' },
+      weight: sum(oneoffs, (c) => c.avgInvoice) * 0.5,
     });
   }
+  // a new client who is already big: look after them before anything else
+  for (const c of clients.filter((x) => daysBetween(x.firstInvoice, today) <= 60 && x.value > 0 && x.value >= Math.max(2 * valueMedian, 0.25 * sum(values)))) {
+    add({
+      kind: 'protect',
+      title: `Look after ${c.name}`,
+      body: `A new client who has already billed ${fmtMoney(c.value)}, ${Math.round((c.value / (sum(values) || 1)) * 100)}% of your year. Agree what comes next while the work is fresh: a follow-up project, a monthly plan${c.overdue ? ', and get the overdue amount in first' : ''}.`,
+      amount: c.value,
+      amountLabel: 'billed so far',
+      basis: `first invoice on ${new Date(c.firstInvoice + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}`,
+      link: { href: '/clients', label: 'Open client' },
+      weight: c.value * 1.2,
+    });
+  }
+  opportunities.sort((a, b) => (b.weight || 0) - (a.weight || 0));
+
+  // ---- for businesses: receivables aging, customer cohorts, repeat business ----
+  const open = all.filter(isOpen);
+  const buckets = [
+    { key: 'current', label: 'Not due yet', test: (d) => d <= 0 },
+    { key: 'd30', label: '1–30 days late', test: (d) => d >= 1 && d <= 30 },
+    { key: 'd60', label: '31–60 days late', test: (d) => d >= 31 && d <= 60 },
+    { key: 'd90', label: '61–90 days late', test: (d) => d >= 61 && d <= 90 },
+    { key: 'd90p', label: 'Over 90 days late', test: (d) => d > 90 },
+  ];
+  const aging = buckets.map((b) => {
+    const xs = open.filter((i) => b.test(daysBetween(i.dueDate, today)));
+    return { key: b.key, label: b.label, count: xs.length, amount: r2(sum(xs, (i) => i.total)) };
+  });
+  const cohortMap = new Map();
+  for (const c of clients) {
+    const m = c.firstInvoice.slice(0, 7);
+    if (monthsAgo(c.firstInvoice) > 11) continue;
+    const row = cohortMap.get(m) || { month: m, customers: 0, repeat: 0, billed: 0 };
+    row.customers++;
+    if (c.invoices >= 2) row.repeat++;
+    row.billed += sum(all.filter((i) => i.clientId === c.id), (i) => i.total);
+    cohortMap.set(m, row);
+  }
+  const cohorts = [...cohortMap.values()].sort((a, b) => a.month.localeCompare(b.month)).map((r) => ({ ...r, billed: r2(r.billed), repeatRate: Math.round((r.repeat / r.customers) * 100) }));
+  const repeatClients = clients.filter((c) => c.invoicesYear >= 2);
+  const customers = {
+    active: clients.filter((c) => c.invoicesYear > 0).length,
+    newThisQuarter: clients.filter((c) => daysBetween(c.firstInvoice, today) <= 91).length,
+    repeatRate: clients.length ? Math.round((clients.filter((c) => c.invoices >= 2).length / clients.length) * 100) : 0,
+    repeatShare: sum(values) ? Math.round((sum(repeatClients, (c) => c.value) / sum(values)) * 100) : 0,
+    perCustomer: clients.length ? r2(sum(values) / Math.max(1, values.length)) : 0,
+    upfront: clients.filter((c) => c.paysUpfront).map((c) => c.name),
+  };
 
   return {
     currency: cur,
@@ -487,54 +550,110 @@ export function growthReport(today = isoDate()) {
     dso,
     opportunities,
     medianValue: r2(valueMedian),
+    aging,
+    cohorts,
+    customers,
+    unplaced: [...unplaced],
+    profession,
   };
 }
 
+/** The report after labelling anything new (industries, unusual work), so new data is grouped too. */
+export async function growthReportLive(today = isoDate()) {
+  const first = growthReport(today);
+  const needs = first.unplaced.length || first.clients.some((c) => !c.industry);
+  if (!needs) return first;
+  const changed = await learnLabels({ unplaced: first.unplaced, profession: professionLabel(config.businessType, config.businessTypeOther) });
+  return changed.industries || changed.areas ? growthReport(today) : first;
+}
+
 // ---------------- the plan ----------------
-const CACHE_MS = 10 * 60 * 1000;
-let planCache = null;
+// The plan is rewritten whenever the book changes (a new invoice, a payment, a new client, an
+// industry you set), so it always reflects what's actually in your data right now.
+const PLAN_KEY = 'growth:plan';
+
+/** A fingerprint of everything the plan reads; any change means a new plan. */
+export function bookFingerprint() {
+  const parts = listInvoices().map((i) => `${i.id}:${i.status}:${i.total}:${i.paidDate || ''}`).sort();
+  parts.push(...listClients().map((c) => `${c.id}:${c.industry || ''}`).sort());
+  parts.push(`${config.accountType}:${config.businessType}`);
+  let h = 2166136261;
+  for (const ch of parts.join('|')) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  return (h >>> 0).toString(36);
+}
+
+const basisOf = (g) => {
+  const invs = listInvoices().filter((i) => i.currency === g.currency && i.status !== 'CANCELLED');
+  return { invoices: invs.length, clients: g.clients.length, latest: invs.map((i) => i.issueDate).sort().at(-1) || null };
+};
 
 /** A short deterministic plan from the report, used when AI is off or fails. */
 export function basicPlan(g) {
-  // one step per kind of move, so the plan covers clients, sectors, work and cash flow
+  // the biggest opportunities first, one per kind of move
   const seen = new Set();
   const picked = [];
   for (const o of g.opportunities) {
-    const kind = o.kind === 'price' || o.kind === 'area' ? 'work' : o.kind;
+    const kind = o.kind === 'price' || o.kind === 'area' ? 'work' : o.kind === 'focus' || o.kind === 'diversify' ? 'market' : o.kind;
     if (seen.has(kind)) continue;
     seen.add(kind);
     picked.push(o);
   }
   const steps = picked.slice(0, 4).map((o) => `${o.title}. ${o.body.split(/(?<=\.)\s/)[0]}`);
+  const top = g.opportunities[0];
   const focus = g.industries.find((x) => x.verdict === 'focus');
-  const headline = focus
-    ? `Your best clients are in ${focus.name}: grow there, keep retainers steady, and tighten terms for slow payers.`
-    : 'Keep your best clients close, turn regular buyers into retainers, and tighten terms for slow payers.';
+  let headline;
+  if (!g.clients.length) headline = 'Send your first invoices: the plan builds itself from your own clients and payments.';
+  else if (top?.kind === 'protect') headline = `${top.title.replace('Look after ', '')} is now a big part of your income: secure that relationship first, then spread the risk.`;
+  else if (top?.kind === 'diversify') headline = `${g.concentration.topClient.name} is ${g.concentration.topClient.share}% of your billing: win more clients${focus ? ` in ${focus.name}` : ''} so one loss can't hurt you.`;
+  else if (focus) headline = `Your best clients are in ${focus.name}: grow there, keep regular buyers on plans, and tighten terms for slow payers.`;
+  else headline = 'Keep your best clients close, turn regular buyers into monthly plans, and tighten terms for slow payers.';
   return { headline, steps };
 }
 
 function planFacts(g) {
+  const total = g.clients.reduce((t, c) => t + c.value, 0) || 1;
+  const d30 = addDays(g.today, -30);
+  const recent = listInvoices().filter((i) => i.currency === g.currency && i.issueDate > d30 && i.status !== 'CANCELLED');
   return {
+    accountType: config.accountType === 'business' ? 'registered business' : 'freelancer',
+    profession: professionLabel(config.businessType, config.businessTypeOther),
     currency: g.currency,
     lastYearBilled: g.yearBilled,
+    biggestClients: [...g.clients].sort((a, b) => b.value - a.value).slice(0, 6).map((c) => ({
+      name: c.name, industry: c.industry || 'unknown', billedLastYear: c.value, shareOfBilling: Math.round((c.value / total) * 100), segment: c.segment,
+      firstInvoice: c.firstInvoice, paysUpfront: c.paysUpfront, avgDaysLate: c.avgLate, overdueNow: c.overdue,
+    })),
+    last30Days: {
+      invoices: recent.length,
+      billed: Math.round(recent.reduce((t, i) => t + i.total, 0)),
+      newClients: g.clients.filter((c) => c.firstInvoice > d30).map((c) => c.name),
+      paid: recent.filter((i) => isPaid(i)).length,
+    },
     segments: g.segments.map((s) => ({ segment: s.label, clients: s.clients, value: s.value })),
     industries: g.industries.map((x) => ({ industry: x.name, clients: x.clients, billed: x.billed, perClient: x.perClient, onTimePct: x.onTime, daysToPay: x.daysToPay, trend: x.trend })),
-    workAreas: g.areas.map((a) => ({ area: a.name, billed: a.revenue, share: a.share, trend: a.trend, repeatClients: a.repeatClients })),
+    workAreas: g.areas.slice(0, 10).map((a) => ({ area: a.name, billed: a.revenue, share: a.share, trend: a.trend, repeatClients: a.repeatClients })),
     concentration: g.concentration,
     dso: g.dso,
-    opportunities: g.opportunities.map((o) => ({ title: o.title, amount: o.amount, basis: o.basis })),
+    receivablesAging: g.aging.filter((b) => b.count),
+    customers: g.customers,
+    opportunitiesRanked: g.opportunities.slice(0, 6).map((o) => ({ title: o.title, amount: o.amount, basis: o.basis })),
   };
 }
 
 export async function growthPlan({ refresh = false } = {}, today = isoDate()) {
-  const g = growthReport(today);
-  const basic = basicPlan(g);
-  if (!refresh && planCache && Date.now() - planCache.at < CACHE_MS) return { ...planCache.plan, cached: true };
-  if (!llmAvailable()) return { source: 'rules', ...basic, note: 'AI is not configured, so this plan comes straight from your numbers.' };
+  const g = await growthReportLive(today);
+  const fp = bookFingerprint();
+  const basedOn = basisOf(g);
+  const basic = { ...basicPlan(g), basedOn };
+  const saved = kvGet(PLAN_KEY);
+  if (!refresh && saved?.fp === fp && saved.plan) return { ...saved.plan, cached: true };
+  if (!llmAvailable() || !g.clients.length) {
+    return { source: 'rules', ...basic, note: g.clients.length ? 'AI is not configured, so this plan comes straight from your numbers.' : '' };
+  }
   try {
     const { content } = await complete({
       system:
-        'You are a practical growth advisor for a small service business. Plain US English, warm and direct. ' +
+        'You are a practical growth advisor for a small business. Plain US English, warm and direct. ' +
         'Use ONLY facts and numbers from the JSON; never invent figures, clients or market data. Name clients, industries and work areas.',
       messages: [
         {
@@ -543,11 +662,12 @@ export async function growthPlan({ refresh = false } = {}, today = isoDate()) {
             {
               type: 'text',
               text:
-                `Data from the last 12 months of invoices:\n${JSON.stringify(planFacts(g))}\n\n` +
-                'Write a 90-day growth plan. Reply in exactly this format:\n' +
+                `This ${planFacts(g).accountType}'s last 12 months of invoices, computed by the app:\n${JSON.stringify(planFacts(g))}\n\n` +
+                'Write a 90-day growth plan. Start from the biggest thing in this data: a client who is a large share of billing, a big new client, money overdue, or a sector that clearly works best. Do not ignore a client with a large shareOfBilling. ' +
+                'Reply in exactly this format:\n' +
                 'HEADLINE: <one sentence, max 22 words: where to focus>\n' +
                 '- <step 1, most valuable, specific, under 28 words>\n- <step 2>\n- <step 3>\n- <step 4>\n' +
-                'Cover: which industry to pursue, which work to push or reprice, which clients to protect or win back, and one cash-flow fix. No other text.',
+                'Cover: who to protect or win back, which industry or kind of customer to pursue, which work to push or reprice, and one cash-flow fix. No other text.',
             },
           ],
         },
@@ -562,8 +682,8 @@ export async function growthPlan({ refresh = false } = {}, today = isoDate()) {
       .filter((l) => /^[-*•]\s+/.test(l))
       .map((l) => l.replace(/^[-*•]\s+/, ''));
     if (!headline || !steps.length) throw new Error('empty AI reply');
-    const plan = { source: 'ai', headline, steps, generatedAt: new Date().toISOString() };
-    planCache = { at: Date.now(), plan };
+    const plan = { source: 'ai', headline, steps, generatedAt: new Date().toISOString(), basedOn };
+    kvSet(PLAN_KEY, { fp, plan });
     return plan;
   } catch (e) {
     console.log(`  [growth] AI plan failed: ${e.message}`);

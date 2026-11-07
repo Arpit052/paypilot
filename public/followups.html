@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PayPilot · Collections</title>
+  <title>PayPilot · Invoices</title>
   <link rel="stylesheet" href="/app.css">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <meta name="theme-color" content="#09090b">
@@ -12,28 +12,36 @@
 <main class="col3">
   <div class="dash-top">
     <div>
-      <h1>Collections</h1>
-      <p class="lede" style="margin:0">Every unpaid invoice, what's been sent, and what to do next.</p>
+      <h1>Invoices</h1>
+      <p class="lede" style="margin:0">Everything you've billed, in one place: what needs you, what's on its way, and what's paid.</p>
     </div>
-    <button class="btn ghost small" id="chaseAll" style="margin-left:auto">Draft reminders for all late</button>
+    <div class="iv-top-actions">
+      <button class="btn ghost small hidden" id="chaseAll">Draft reminders for all late</button>
+      <a class="btn small" href="/new-invoice">New invoice</a>
+    </div>
   </div>
 
-  <section class="stat-strip" id="stats" aria-label="Money owed"></section>
+  <section class="stat-strip four" id="stats" aria-label="Your invoices"></section>
 
   <div class="col3-grid">
     <section class="panel list-panel">
-      <div class="tabs" role="tablist" id="tabs">
-        <button role="tab" data-t="attention" aria-selected="true">Needs attention <span></span></button>
-        <button role="tab" data-t="upcoming">Upcoming <span></span></button>
-        <button role="tab" data-t="all">All unpaid <span></span></button>
-        <button role="tab" data-t="sent">Sent <span></span></button>
+      <div class="iv-bar">
+        <div class="tabs" role="tablist" id="tabs">
+          <button role="tab" data-t="needs" aria-selected="true">Needs you <span></span></button>
+          <button role="tab" data-t="waiting">Awaiting payment <span></span></button>
+          <button role="tab" data-t="upcoming">Upcoming <span></span></button>
+          <button role="tab" data-t="paid">Paid <span></span></button>
+        </div>
+        <input id="q" type="search" placeholder="Search client, work or #" aria-label="Search invoices">
       </div>
+      <p class="iv-help muted small" id="tabHelp"></p>
       <div id="list"></div>
     </section>
 
     <aside class="panel rail">
-      <div class="rail-h"><h2>Next 14 days</h2><span class="muted small" id="railSub"></span></div>
+      <div class="rail-h"><h2>Coming up</h2><span class="muted small" id="railSub"></span></div>
       <ol class="rail-list" id="rail"></ol>
+      <a class="linkbtn small iv-cal" href="/calendar">Open the calendar</a>
     </aside>
   </div>
 </main>

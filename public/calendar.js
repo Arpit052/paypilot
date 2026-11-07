@@ -12,7 +12,10 @@ const KIND = {
   recurring: { label: 'Recurring invoice', group: 'recurring' },
 };
 const TONE = { friendly: 'Friendly heads-up', firm: 'Firm reminder', final: 'Final reminder' };
-const show = new Set(['due', 'paid', 'planned', 'reminded', 'recurring']);
+// money first; reminders are one click away, so the month stays readable
+let showReminders = false;
+try { showReminders = localStorage.getItem('pp-cal-rem') === '1'; } catch {}
+const show = new Set(['due', 'paid', 'recurring', ...(showReminders ? ['planned', 'reminded'] : [])]);
 let data = null;
 let month = new URLSearchParams(location.search).get('m') || null;
 let selected = null;
@@ -47,8 +50,7 @@ function render() {
   $('calStats').innerHTML = `
     <div class="cs"><span class="cs-l">Received in ${label.split(' ')[0]}</span><b class="cs-v">${esc(moneyMap(data.totals.paid, cur))}</b></div>
     <div class="cs"><span class="cs-l">Due in ${label.split(' ')[0]}</span><b class="cs-v">${esc(moneyMap(data.totals.due, cur))}</b></div>
-    <div class="cs"><span class="cs-l">Autopilot reminders planned</span><b class="cs-v">${data.counts.planned}</b></div>
-    <div class="cs"><span class="cs-l">Reminders sent</span><b class="cs-v">${data.counts.reminded}</b></div>`;
+    <div class="cs"><span class="cs-l">Reminders this month</span><b class="cs-v">${data.counts.planned + data.counts.reminded}</b><span class="cs-s">${data.counts.reminded} sent · ${data.counts.planned} planned</span></div>`;
 
   const byDay = {};
   for (const e of data.events) if (show.has(KIND[e.kind].group)) (byDay[e.date] ||= []).push(e);
@@ -62,9 +64,9 @@ function render() {
     const ev = byDay[iso] || [];
     const money0 = ev.filter((e) => e.kind === 'paid').reduce((t, e) => t + e.amount, 0);
     cells.push(`<button class="cal-cell ${iso === data.today ? 'today' : ''} ${iso === selected ? 'sel' : ''} ${iso < data.today ? 'past' : ''}" data-d="${iso}">
-      <span class="cal-n">${d}${money0 ? `<em>+${esc(money(money0, ev.find((e) => e.kind === 'paid').currency))}</em>` : ''}</span>
-      ${ev.slice(0, 3).map((e) => `<span class="cal-ev k-${e.kind}${e.tone ? ` t-${e.tone}` : ''}">${esc(pillText(e))}</span>`).join('')}
-      ${ev.length > 3 ? `<span class="cal-more">+${ev.length - 3} more</span>` : ''}
+      <span class="cal-n">${d}</span>
+      ${ev.slice(0, 2).map((e) => `<span class="cal-ev k-${e.kind}${e.tone ? ` t-${e.tone}` : ''}">${esc(pillText(e))}</span>`).join('')}
+      ${ev.length > 2 ? `<span class="cal-more">+${ev.length - 2} more</span>` : ''}
     </button>`);
   }
   while (cells.length % 7) cells.push('<div class="cal-cell pad"></div>');
@@ -84,11 +86,11 @@ function renderDay(ev) {
             <div class="cd-body">
               <b>${esc(e.kind === 'planned' ? TONE[e.tone] : KIND[e.kind].label)}${e.kind === 'paid' && e.late ? ' <span class="muted">(late)</span>' : ''}</b>
               <span>${esc(e.client)}${e.number ? ` · #${esc(e.number)}` : ''} · ${esc(money(e.amount, e.currency))}${e.kind === 'recurring' ? ` · ${esc(e.frequency)}` : ''}</span>
-              ${e.kind === 'planned' ? `<span class="muted small">${e.state === 'waiting' ? 'Draft is ready in Collections' : 'Autopilot writes it this day for your OK'}</span>` : ''}
+              ${e.kind === 'planned' ? `<span class="muted small">${e.state === 'waiting' ? 'Draft is ready in Invoices' : 'Autopilot writes it this day for your OK'}</span>` : ''}
               <div class="cd-acts">
                 ${e.invoiceId ? `<a class="linkbtn small" href="/dashboard?inv=${esc(e.invoiceId)}">Open invoice</a>` : ''}
                 ${(e.kind === 'due' || e.kind === 'overdue') && e.payerUrl ? `<button class="linkbtn small" data-copy="${esc(e.payerUrl)}">Copy pay link</button>` : ''}
-                ${e.kind === 'planned' && e.state === 'waiting' ? `<a class="linkbtn small" href="/followups">Review draft</a>` : ''}
+                ${e.kind === 'planned' && e.state === 'waiting' ? `<a class="linkbtn small" href="/invoices">Review draft</a>` : ''}
                 ${e.kind === 'due' || e.kind === 'overdue' ? markPaidButton(e.invoiceId) : ''}
               </div>
             </div></li>`
@@ -111,12 +113,12 @@ $('day').addEventListener('click', (e) => {
 $('prev').onclick = () => { month = shift(month, -1); selected = null; load(); };
 $('next').onclick = () => { month = shift(month, 1); selected = null; load(); };
 $('todayBtn').onclick = () => { month = null; selected = null; load(); };
-$('filters').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-k]');
-  if (!b) return;
-  const on = b.getAttribute('aria-pressed') !== 'true';
-  b.setAttribute('aria-pressed', String(on));
-  on ? show.add(b.dataset.k) : show.delete(b.dataset.k);
+$('remToggle').setAttribute('aria-pressed', String(showReminders));
+$('remToggle').addEventListener('click', () => {
+  showReminders = !showReminders;
+  $('remToggle').setAttribute('aria-pressed', String(showReminders));
+  for (const k of ['planned', 'reminded']) showReminders ? show.add(k) : show.delete(k);
+  try { localStorage.setItem('pp-cal-rem', showReminders ? '1' : '0'); } catch {}
   render();
 });
 document.addEventListener('keydown', (e) => {

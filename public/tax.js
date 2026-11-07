@@ -60,8 +60,8 @@ async function load() {
     </section>
 
     <section class="panel" style="padding:0!important">
-      <div class="sec-pad"><div><h2>By client</h2><p class="muted small" style="margin:2px 0 0">Income excludes sales tax.</p></div></div>
-      ${r.clients.length ? `<div class="table-wrap"><table class="data tx-table"><thead><tr><th>Client</th><th class="r">Invoices</th><th class="r">Through PayPal</th><th class="r">Outside PayPal</th><th class="r">Total income</th><th>1099-NEC</th></tr></thead><tbody>
+      <div class="sec-pad"><div><h2>By client</h2><p class="muted small" style="margin:2px 0 0">Income excludes sales tax. "Paid by bank / cash" means payments you recorded with Mark paid: they did not go through PayPal, so a business client may send you a 1099-NEC for them.</p></div></div>
+      ${r.clients.length ? `<div class="table-wrap"><table class="data tx-table"><thead><tr><th>Client</th><th class="r">Invoices</th><th class="r">Paid via PayPal</th><th class="r" title="Bank transfer, cash or cheque, recorded with Mark paid">Paid by bank / cash</th><th class="r">Total income</th><th>1099-NEC</th></tr></thead><tbody>
         ${r.clients.map((c) => `<tr><td><b>${esc(c.client)}</b>${c.company ? `<br><span class="muted small">${esc(c.company)}</span>` : ''}</td><td class="r num">${c.invoices}</td><td class="r num">${esc(m(c.viaPaypal))}</td><td class="r num">${c.outside ? esc(m(c.outside)) : '<span class="muted">—</span>'}</td><td class="r num"><b>${esc(m(c.total))}</b></td><td>${c.expect1099NEC ? '<span class="pill low">Expected</span>' : '<span class="muted small">No</span>'}</td></tr>`).join('')}
       </tbody></table></div>` : '<div class="list-empty"><b>No payments this year</b><span>Paid invoices will appear here.</span></div>'}
     </section>
