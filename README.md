@@ -202,15 +202,15 @@ For each client over the last 180 days PayPilot measures how many months they bo
 
 ```bash
 git clone <this-repo> paypilot && cd paypilot
-npm install
-cp .env.example .env        # then fill in the keys below
+npm ci
 npm start                   # → http://localhost:3000
 ```
+Open the link. The welcome screen offers **Try the demo** (no keys, sample book loaded) or **Connect PayPal sandbox** (paste your Client ID and Secret; PayPilot checks them with PayPal before saving). You can also put keys in a `.env` file (`cp .env.example .env`).
 On Windows you can just double-click **`start-windows.bat`**. To check your AI setup, double-click **`check-ai.bat`**. It tests your key against Gemini and writes a working model and setting into `.env`.
 
 ### 1. PayPal sandbox keys
 1. Sign in at [developer.paypal.com](https://developer.paypal.com) and open **Apps & Credentials** with **Sandbox** selected.
-2. Create an app (type *Merchant*) and copy the **Client ID** and **Secret** into `.env`.
+2. Create an app (type *Merchant*) and paste the **Client ID** and **Secret** on the welcome screen or in **Settings → PayPal** (or put them in `.env`).
 3. Under **Testing tools → Sandbox accounts** you'll find a *Business* account (that's you, the invoicer) and a *Personal* account (use it as the client and to pay invoices).
 
 ### 2. AI key
@@ -219,14 +219,15 @@ Set **one** of:
 - `ANTHROPIC_API_KEY`: Claude
 - `OPENAI_API_KEY`: OpenAI, or any OpenAI-compatible provider via `OPENAI_BASE_URL` and `OPENAI_MODEL`
 
-### 3. (Optional) Demo history
+### 3. (Optional) Sample history
+Demo mode loads it for you. On a real account, tick *Add a few sample invoices* when connecting, or run:
 ```bash
-npm run seed      # adds a few months of paid invoices so risk scores and charts have data
+npm run seed      # a year of sample clients and paid invoices, so risk, budget and growth have data
 ```
-Seeded history is labelled **demo** in the UI. It is local only and never sent to PayPal.
+Sample rows are local only (never sent to PayPal) and **Settings → Data → Remove sample data** deletes exactly them.
 
 ### 4. (Optional) Webhooks for instant "Paid" updates
-Expose your local server (e.g. `cloudflared tunnel --url http://localhost:3000` or `ngrok http 3000`). In your sandbox app, add a webhook to `https://<your-url>/api/webhooks/paypal` for **Invoicing** events, then put the **Webhook ID** in `PAYPAL_WEBHOOK_ID`. Without webhooks, the dashboard's **Check PayPal for payments** button polls PayPal instead.
+Expose your local server (e.g. `cloudflared tunnel --url http://localhost:3000` or `ngrok http 3000`). In your sandbox app, add a webhook to `https://<your-url>/api/webhooks/paypal` for **Invoicing** events, then put the **Webhook ID** in `PAYPAL_WEBHOOK_ID`. Without webhooks, PayPilot checks PayPal by itself every 2 minutes (`PAYPAL_SYNC_SECONDS`), and the refresh button on the dashboard checks right away.
 
 ### No keys? Try mock mode
 With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-process and adds a **Simulate payment** button. Use this to explore the UI offline. An AI key is still needed for the assistant. Without one, follow-ups use template reminders.
@@ -255,7 +256,13 @@ With no PayPal keys (or `PAYPAL_MODE=mock`), PayPilot simulates PayPal in-proces
 
 **Render:** New → Blueprint → select this repo (`render.yaml` is included). Add your keys in the dashboard. Scheduled follow-ups: create a Render Cron Job (or any cron service) that calls `GET https://<app>/api/cron/followups?key=<CRON_SECRET>` daily.
 
-Data is stored in SQLite at `data/paypilot.db`. On free hosting the disk is temporary, which is fine for a demo; set `DATA_DIR` to a persistent disk for real use.
+The blueprint sets up a **shared demo for judges**:
+- `HOSTED_DEMO=1`: nobody can disconnect PayPal, reset or remove data, or change the passcode, so one visitor can't break it for the rest.
+- `SEED_SAMPLE_ON_BOOT=1`: the free plan's disk is wiped on every restart, so the sample history is loaded again on boot.
+- The free plan sleeps after 15 idle minutes and the first visit then takes about a minute. Open the link before you demo, ping `/api/health` with an uptime monitor, or use the Starter plan.
+- If you set `APP_PASSWORD`, put it in the Devpost testing instructions.
+
+Data is stored in SQLite at `data/paypilot.db`. Set `DATA_DIR` to a persistent disk for real use.
 
 ## Tests
 

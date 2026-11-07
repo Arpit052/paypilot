@@ -34,6 +34,19 @@ function fill() {
   renderPaypal(S.paypal);
   renderPlan();
   renderData();
+  if (cfg.hostedDemo) lockShared();
+}
+
+// shared copy for judges: the server refuses these, so the buttons say so up front
+function lockShared() {
+  const note = '<p class="muted small" style="margin:6px 0 0">This is a shared demo, so this is locked. Run PayPilot on your own machine to change it.</p>';
+  for (const id of ['ppActions', 'ppForm', 'sampleBtn', 'resetBtn', 'secSave', 'secRemove']) {
+    const el = $(id);
+    if (!el) continue;
+    el.querySelectorAll?.('button,input').forEach((b) => (b.disabled = true));
+    if (el.tagName === 'BUTTON') el.disabled = true;
+  }
+  for (const id of ['ppActions', 'secStatus']) if ($(id) && !$(id).dataset.locked) { $(id).insertAdjacentHTML('afterend', note); $(id).dataset.locked = '1'; }
 }
 
 // ---------------- account type ----------------

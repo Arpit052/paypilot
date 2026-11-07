@@ -86,6 +86,9 @@ export const config = {
   paypalCurrencies: ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'JPY', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'ILS', 'MXN', 'BRL', 'SGD', 'HKD', 'TWD', 'THB', 'PHP', 'MYR', 'CNY'],
   // Shift the app's clock forward for demos ("what happens in 10 days?").
   demoTimeOffsetDays: Number(env.DEMO_TIME_OFFSET_DAYS || 0),
+  // a shared copy for judges: nobody can disconnect PayPal or wipe data for everyone
+  hostedDemo: /^(1|true|yes)$/i.test(env.HOSTED_DEMO || ''),
+  seedSampleOnBoot: /^(1|true|yes)$/i.test(env.SEED_SAMPLE_ON_BOOT || ''),
   reminderCooldownDays: Number(env.REMINDER_COOLDOWN_DAYS || 3),
   cronSecret: env.CRON_SECRET || '',
   defaultTaxPercent: Number(env.DEFAULT_TAX_PERCENT || 0),

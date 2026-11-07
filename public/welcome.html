@@ -130,7 +130,6 @@
 
   $('demo').addEventListener('click', async () => {
     $('err').textContent = '';
-    if (!$('biz').value.trim()) { $('err').textContent = 'Add your business name first. It appears on your invoices.'; $('biz').focus(); return; }
     if (!passOk()) return;
     $('demo').disabled = true;
     try {

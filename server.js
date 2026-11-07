@@ -163,6 +163,28 @@ export function createApp() {
     });
     next();
   });
+  // CSRF: a write must come from this app's own pages (browsers always send Origin on POST)
+  app.use((req, res, next) => {
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path.startsWith('/api/webhooks/') || req.path.startsWith('/api/cron/')) return next();
+    const origin = req.get('origin');
+    if (!origin) return next(); // curl, server-to-server: no browser, no CSRF
+    let host;
+    try {
+      host = new URL(origin).host;
+    } catch {
+      host = '';
+    }
+    if (host && host === req.get('host')) return next();
+    res.status(403).json({ error: 'Cross-site request blocked.', requestId: req.id });
+  });
+  // hosted demo for judges: actions that would change the app for everyone are switched off
+  const SHARED_LOCKED = /^\/api\/(settings\/paypal\/(connect|disconnect|demo)|demo\/reset|sample\/remove|settings\/passcode|settings\/hidden\/clear)$/;
+  app.use((req, res, next) => {
+    if (config.hostedDemo && req.method === 'POST' && SHARED_LOCKED.test(req.path)) {
+      return res.status(403).json({ error: 'This is a shared demo for judges, so this setting is locked. Run PayPilot locally to change it.', requestId: req.id });
+    }
+    next();
+  });
   app.use(express.json({ limit: '12mb' })); // screenshots arrive as base64
   app.use((req, res, next) => {
     noteOrigin(`${req.protocol}://${req.get('host')}`);
@@ -184,9 +206,24 @@ export function createApp() {
     })
   );
 
+  const loginFails = new Map();
   api.post('/login', (req, res) => {
     if (!loginEnabled()) return res.json({ ok: true });
-    if (!checkPasscode(req.body?.password)) throw httpError(401, 'That passcode is not right.');
+    // at most 10 wrong guesses a minute per address, so a passcode can't be brute-forced
+    const key = req.ip || 'local';
+    const now = Date.now();
+    const fails = (loginFails.get(key) || []).filter((t) => now - t < 60000);
+    if (fails.length >= 10) {
+      res.set('Retry-After', String(Math.ceil((60000 - (now - fails[0])) / 1000)));
+      throw httpError(429, 'Too many wrong passcodes. Wait a minute and try again.');
+    }
+    if (!checkPasscode(req.body?.password)) {
+      fails.push(now);
+      loginFails.set(key, fails);
+      if (loginFails.size > 5000) loginFails.clear();
+      throw httpError(401, 'That passcode is not right.');
+    }
+    loginFails.delete(key);
     res.set('Set-Cookie', sessionCookie(req));
     res.json({ ok: true });
   });
@@ -208,6 +245,7 @@ export function createApp() {
     res.json({
       businessName: config.businessName,
       accountType: config.accountType || 'freelancer',
+      hostedDemo: config.hostedDemo,
       currency: config.currency,
       paypalMode: config.paypal.mode,
       llmProvider: llmAvailable() ? config.llm.provider : 'none',
@@ -279,7 +317,7 @@ export function createApp() {
     res.json({ ok: true, removedDemoInvoices: removed, imported: imp.imported, settings: publicSettings() });
   });
   api.post('/settings/paypal/demo', (req, res) => {
-    const bizName = String(req.body?.businessName || '').trim();
+    const bizName = String(req.body?.businessName || '').trim() || (config.businessName ? '' : 'Ortiz Design Studio');
     if (bizName) saveBusinessSettings({ businessName: bizName });
     if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true, ...(['freelancer', 'business'].includes(req.body?.accountType) ? { accountType: req.body.accountType, teamSize: req.body.teamSize || '' } : {}) });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
@@ -609,6 +647,7 @@ export function createApp() {
     res.json(applyWebhookEvent({ event_type: 'INVOICING.INVOICE.PAID', resource: { invoice: { id: req.params.paypalId, status: 'PAID' } } }));
   });
   api.get('/mock/invoice/:paypalId', (req, res) => {
+    if (!isMock()) throw httpError(400, 'Only available in demo mode');
     const inv = getInvoiceByPaypalId(req.params.paypalId);
     if (!inv) throw httpError(404, 'Not found');
     const ep = getEarlyPay(inv.id);
@@ -769,6 +808,12 @@ export function createApp() {
 }
 
 export function start(port = config.port) {
+  // a hosted copy on a free plan loses its disk on restart: reload the sample history so judges never see an empty book
+  if (config.seedSampleOnBoot && !listInvoices().length) {
+    seedSample();
+    noteDueDates();
+    console.log('  Sample history loaded on boot (SEED_SAMPLE_ON_BOOT)');
+  }
   return new Promise((resolve, reject) => {
     const server = createApp().listen(port, config.host, () => resolve(server));
     server.on('error', reject);

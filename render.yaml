@@ -1,4 +1,8 @@
 # One-click deploy on Render (https://render.com) → New → Blueprint → pick this repo.
+# HOSTED_DEMO=1 makes it a shared copy for judges: PayPal can't be disconnected and data can't
+# be wiped by one visitor. The free plan's disk is wiped on restart, so SEED_SAMPLE_ON_BOOT
+# reloads the sample history. The free plan also sleeps after 15 idle minutes (first visit then
+# takes ~50s): open the link a minute before you demo, or use the Starter plan.
 services:
   - type: web
     name: paypilot
@@ -6,7 +10,16 @@ services:
     plan: free
     buildCommand: npm install --omit=dev
     startCommand: node server.js
+    healthCheckPath: /api/health
     envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: BUSINESS_NAME
+        value: Ortiz Design Studio
+      - key: HOSTED_DEMO
+        value: "1"
+      - key: SEED_SAMPLE_ON_BOOT
+        value: "1"
       - key: PAYPAL_MODE
         value: sandbox
       - key: PAYPAL_CLIENT_ID
