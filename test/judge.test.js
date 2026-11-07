@@ -51,6 +51,21 @@ test('B8: cross-site write requests are refused (CSRF)', async () => {
   assert.equal(own.status, 200);
 });
 
+test('B17: the final-work link never reaches the client side before payment', async () => {
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK-') && ['SENT', 'UNPAID'].includes(i.status));
+  const secret = 'https://www.figma.com/file/SECRET-final-work';
+  const att = await call(`/api/invoices/${inv.id}/delivery`, { url: secret, label: 'Final logo' });
+  assert.equal(att.status, 200, JSON.stringify(att.data));
+  const token = att.data.delivery.token;
+  const page = await call(`/api/d/${token}`);
+  assert.equal(page.data.paid, false);
+  assert.ok(!JSON.stringify(page.data).includes('SECRET'), 'unlock page before payment');
+  const checkout = await call(`/api/mock/invoice/${inv.paypalId}`);
+  assert.ok(!JSON.stringify(checkout.data).includes('SECRET'), 'practice checkout (what the client sees)');
+  await call(`/api/mock/pay/${inv.paypalId}`, {});
+  assert.equal((await call(`/api/d/${token}`)).data.url, secret, 'after payment the link is there');
+});
+
 test('B1: wrong passcodes are rate-limited (no brute force)', async () => {
   await call('/api/settings/passcode', { passcode: 'correct-horse' });
   let last;

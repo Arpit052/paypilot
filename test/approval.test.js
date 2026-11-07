@@ -102,3 +102,19 @@ test('money: an invoice with $0.01 and one with $999,999.99 go through', async (
     assert.equal(listInvoices().find((i) => i.id === r.data.action.result?.invoiceId || i.total === unitPrice)?.total, unitPrice);
   }
 });
+
+test('when the AI provider fails, the user gets a plain message and the chat keeps working', async () => {
+  for (const err of [Object.assign(new Error('429 RESOURCE_EXHAUSTED quota'), { status: 429 }), Object.assign(new Error('fetch failed'), { name: 'TypeError' }), new Error('500 INTERNAL')]) {
+    setLlmOverride(async () => {
+      throw err;
+    });
+    const r = await call('/api/chat', { sessionId: 'down', message: 'who owes me?' });
+    assert.ok(r.status >= 400 && r.status < 600, String(r.status));
+    assert.ok(r.data.error && !/RESOURCE_EXHAUSTED|fetch failed|INTERNAL|stack/i.test(r.data.error), `readable: ${r.data.error}`);
+    assert.equal((await call('/api/chat/history?sessionId=down')).data.pending, false, 'not stuck "thinking"');
+  }
+  setLlmOverride(async () => ({ content: [{ type: 'text', text: 'back' }] }));
+  const ok = await call('/api/chat', { sessionId: 'down', message: 'hello' });
+  assert.equal(ok.status, 200);
+  setLlmOverride(null);
+});

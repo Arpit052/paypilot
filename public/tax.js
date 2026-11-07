@@ -54,7 +54,7 @@ async function load() {
     <section class="panel">
       <h2>1099 forms to expect</h2>
       <div class="tx-forms">
-        <div><b>Form 1099-K from PayPal</b><p>PayPal reports payments it processed once you pass $${r.forms.k.amount.toLocaleString('en-US')} and ${r.forms.k.count} transactions in a year. This year through PayPal: <b>${esc(m(r.forms.k.paypalGross))}</b> in ${r.forms.k.paypalCount} payment${r.forms.k.paypalCount === 1 ? '' : 's'}, so ${r.forms.k.likely ? '<b>expect a 1099-K</b>' : 'you <b>probably won\'t get one</b>'}. The income is taxable either way.</p></div>
+        <div><b>Form 1099-K from PayPal</b><p>PayPal reports payments it processed once you have more than $${r.forms.k.amount.toLocaleString('en-US')} and more than ${r.forms.k.count} payments in a year. This year through PayPal: <b>${esc(m(r.forms.k.paypalGross))}</b> in ${r.forms.k.paypalCount} payment${r.forms.k.paypalCount === 1 ? '' : 's'}, so ${r.forms.k.likely ? '<b>expect a 1099-K</b>' : 'you <b>probably won\'t get one</b>'}. The income is taxable either way.</p></div>
         <div><b>Form 1099-NEC from clients</b><p>A business client who paid you $${r.forms.necThreshold.toLocaleString('en-US')} or more ${r.year >= 2026 ? '(the threshold from 2026)' : ''} outside PayPal (bank transfer, cheque) usually sends one. Card and PayPal payments are reported on 1099-K instead. ${r.forms.necClients.length ? `Expect one from: <b>${r.forms.necClients.map(esc).join(', ')}</b>.` : 'None of your clients reach that this year.'}</p></div>
       </div>
     </section>
@@ -73,7 +73,8 @@ async function load() {
       </tbody><tfoot><tr><td colspan="4"><b>Total</b></td><td class="r num"><b>${esc(m(t.gross))}</b></td><td class="r num">${esc(m(t.salesTax))}</td><td class="r num">−${esc(m(t.fees))}</td><td class="r num"><b>${esc(m(t.net))}</b></td></tr></tfoot></table></div>` : ''}
     </section>
     ${r.otherCurrency.length ? `<p class="tx-note">Not included (other currencies): ${r.otherCurrency.map((o) => `#${esc(o.number)} ${esc(money(o.total, o.currency))}`).join(', ')}.</p>` : ''}
-    <p class="tx-disc">PayPilot prepares this summary from your invoices. It is not tax advice and not an IRS form. PayPal fees are estimated at the standard US invoicing rate; your PayPal annual statement has the exact figures. Other business expenses (software, equipment, home office) are not included.</p>`;
+    <p class="tx-disc">PayPilot prepares this summary from your invoices. It is not tax advice and not an IRS form. PayPal fees are estimated at the standard US invoicing rate; your PayPal annual statement has the exact figures. Other business expenses (software, equipment, home office) are not included.</p>
+    <p class="tx-disc">Rules used: 1099-K at more than $20,000 and 200 payments, 1099-NEC at $2,000 from 2026 ($600 before), both set by the One Big Beautiful Bill Act of 2025; self-employment tax of 12.4% Social Security up to the year's wage base ($184,500 in 2026) plus 2.9% Medicare, on 92.35% of net earnings. Sources: <a href="https://www.irs.gov/businesses/understanding-your-form-1099-k" target="_blank" rel="noopener">IRS: Form 1099-K</a>, <a href="https://www.irs.gov/businesses/small-businesses-self-employed/self-employment-tax-social-security-and-medicare-taxes" target="_blank" rel="noopener">IRS: self-employment tax</a>, <a href="https://www.ssa.gov/oact/cola/cbb.html" target="_blank" rel="noopener">SSA: wage base</a>.</p>`;
 }
 
 $('year').addEventListener('change', () => {

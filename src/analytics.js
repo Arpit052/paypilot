@@ -213,8 +213,10 @@ export function lifetimeStats(today = isoDate()) {
 }
 
 function csvCell(v) {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  let s = String(v ?? '');
+  // spreadsheet formula injection: a client named "=HYPERLINK(...)" must stay text in Excel/Sheets
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /** All invoices as CSV (for accountants / tax time). */

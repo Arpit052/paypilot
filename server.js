@@ -651,7 +651,9 @@ export function createApp() {
     const inv = getInvoiceByPaypalId(req.params.paypalId);
     if (!inv) throw httpError(404, 'Not found');
     const ep = getEarlyPay(inv.id);
-    res.json({ invoice: invoiceRow(inv, isoDate()), businessName: config.businessName, receipt: receiptPathFor(inv), earlyPay: ep && ep.status === 'active' ? ep : null, delivery: getDelivery(inv.id) ? { link: getDelivery(inv.id).link } : null });
+    // this is what the client's checkout sees: never the final-work link itself
+    const { delivery: _hidden, ...row } = invoiceRow(inv, isoDate());
+    res.json({ invoice: row, businessName: config.businessName, receipt: receiptPathFor(inv), earlyPay: ep && ep.status === 'active' ? ep : null, delivery: getDelivery(inv.id) ? { link: getDelivery(inv.id).link } : null });
   });
 
   // ---- demo data ----

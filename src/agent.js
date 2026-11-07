@@ -469,12 +469,26 @@ export async function chatWithTranscript(sessionId, input) {
     saveTranscript(sessionId, done);
     return r;
   } catch (e) {
+    const { text, status } = friendlyAiError(e);
+    if (text !== e.message) console.log(`  [AI] ${e.message}`.slice(0, 300));
     const failed = getTranscript(sessionId);
-    failed.messages.push({ role: 'err', text: e.message, at: new Date().toISOString() });
+    failed.messages.push({ role: 'err', text, at: new Date().toISOString() });
     failed.pending = null;
     saveTranscript(sessionId, failed);
-    throw e;
+    throw Object.assign(new Error(text), { status: e.status && e.status < 500 && e.status !== 429 ? e.status : status });
   }
+}
+
+/** What the person reads when the AI provider fails: what happened and what to do, no raw API text. */
+export function friendlyAiError(e) {
+  const m = String(e?.message || '');
+  if (e?.status && e.status >= 400 && e.status < 429 && !/^AI error:/.test(m)) return { text: m, status: e.status }; // our own checks
+  if (e?.rateLimited || e?.status === 429 || /quota|RESOURCE_EXHAUSTED|\b429\b|rate.?limit/i.test(m))
+    return { text: 'The AI has hit its usage limit for the moment. Wait a minute and try again. Everything else in PayPilot keeps working.', status: 429 };
+  if (/did not answer|timed? ?out|abort/i.test(m)) return { text: "The AI didn't answer in time. Try again in a moment.", status: 504 };
+  if (/fetch failed|ENOTFOUND|ECONNRE|network/i.test(m) || e?.name === 'TypeError') return { text: "Couldn't reach the AI service. Check the internet connection and try again.", status: 502 };
+  if (/api key|API_KEY|permission|unauthori[sz]ed|\b40[13]\b/i.test(m)) return { text: "The AI key wasn't accepted. Check GEMINI_API_KEY in your settings.", status: 502 };
+  return { text: 'The AI ran into a problem answering that. Try again, or ask in a different way.', status: 502 };
 }
 
 /**

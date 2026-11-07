@@ -135,8 +135,10 @@ export function taxReport(year = Number(isoDate().slice(0, 4))) {
 }
 
 const csvCell = (v) => {
-  const s = String(v ?? '');
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  let s = String(v ?? '');
+  // spreadsheet formula injection: a client named "=HYPERLINK(...)" must stay text in Excel/Sheets
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
 /** One row per paid invoice, ready for a spreadsheet or an accountant. */
