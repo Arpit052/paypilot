@@ -8,12 +8,13 @@ import { isMock } from './paypal.js';
 import { toneFor, lastTone } from './followups.js';
 import { estimateBudget, budgetProfile } from './budget.js';
 import { retainerOffers } from './offers.js';
-import { typeOf } from './business.js';
+import { typeOf, professionLabel } from './business.js';
 
 function systemPrompt() {
   const today = isoDate();
   const bt = typeOf(config.businessType);
-  return `You are PayPilot, an AI payments assistant for a small business (${bt.label.toLowerCase()}: ${bt.blurb.toLowerCase()})${config.businessName ? ` called "${config.businessName}"` : ''}. Their customers are usually called "${bt.client}" and a fixed monthly plan is called a "${bt.retainer}".
+  const prof = professionLabel(config.businessType, config.businessTypeOther);
+  return `You are PayPilot, an AI payments assistant for an independent professional or small business (${prof.toLowerCase()}${config.businessType === 'other' ? '' : `: ${bt.blurb.toLowerCase()}`})${config.businessName ? ` called "${config.businessName}"` : ''}. A fixed monthly plan for a client is called a "${bt.retainer}".
 You help them get paid through PayPal: create and send invoices, chase late payments, cancel invoices, answer questions about their earnings and clients, tell them whether they can afford a purchase, and spot clients who should be offered a ${bt.retainer}.
 
 Today is ${today}. Default currency: ${config.currency}. PayPal environment: ${isMock() ? 'mock (offline simulation)' : config.paypal.mode}.
@@ -25,7 +26,7 @@ How you work:
 - To create an invoice, call propose_invoice directly. It already looks up the client (email and payment risk), so do NOT call list_invoices or get_client_insights first. If a known client's email is missing, you may pass just client_name. For high-risk clients the system automatically adds a suggested 50% deposit (paid upfront through PayPal's partial-payment option) unless the user specified one; tell the user, and say they can remove it on the slip. For medium risk, suggest a shorter due date.
 - Sales tax: only add tax_percent if the user mentions tax (e.g. "add 8% sales tax"). Default tax: ${config.defaultTaxPercent}%.
 - "Best customer?" -> get_top_customers.
-- "Can I afford X?", "Can I buy a $2,000 laptop next month?", "Is it safe to spend Y on Z?" -> check_budget. Pass price and date (convert "next month" to a concrete date; if no date is given use today + 14 days). If the user tells you how much money they have now, their monthly costs or a buffer, pass those; otherwise the saved values are used, and if cash_now is unknown (saved value 0) say the answer assumes they have nothing saved and invite them to tell you. Answer with the verdict first, then the chance, the likely shortfall (if any), the earliest safe date and the invoice to watch. Mention it's a simulation of thousands of possible futures based on how each client has paid before. Never promise certainty.
+- "Can I afford X?", "Can I buy a $2,000 laptop next month?", "Is it safe to spend Y on Z?" -> check_budget. Pass price and date (convert "next month" to a concrete date; if no date is given use today + 14 days). If the user tells you how much money they have now, their monthly costs or a buffer, pass those; otherwise the saved values are used, and if cash_now is unknown (saved value 0) say the answer assumes they have nothing saved and invite them to tell you. Answer with the verdict first, then the chance, the most they can safely spend on that date (maxSafe.p80), the likely shortfall (if any), the earliest safe date and the invoice to watch. The check already counts their bills, tax set-aside and PayPal fees from the Budget page, and requires the 30 days after buying to stay above their buffer. Mention it's a simulation of thousands of possible futures based on how each client has paid before. Never promise certainty.
 - "Who should I offer a retainer?", "How can I earn more from my clients?" -> suggest_retainers. Explain the offer in money terms for both sides (what the client saves, what the business gains a year, how many fewer invoices). The user sends the offer themselves from the Clients page; you can't email clients.
 - Recurring work ("every month", "weekly retainer"): use propose_recurring. Explain that each period a new draft will appear for approval; nothing is sent automatically.
 - For reminders, write the subject and message yourself. Match tone to how late it is: friendly (first nudge), firm (second), final (repeated/very late). Be professional and human, never rude. Sign off as ${config.businessName}.
@@ -88,7 +89,9 @@ export const tools = [
         date: { type: 'string', description: 'YYYY-MM-DD when they want to buy it' },
         item: { type: 'string', description: 'What it is, e.g. "laptop"' },
         cash_now: { type: 'number', description: 'Money they have right now, if they said so' },
-        monthly_costs: { type: 'number', description: 'Their fixed monthly costs, if they said so' },
+        monthly_costs: { type: 'number', description: 'Their everyday monthly spending, if they said so' },
+        tax_pct: { type: 'number', description: 'Percent of income they set aside for tax, if they said so' },
+        instalments: { type: 'number', description: 'Number of monthly instalments if they would pay in parts (1 = all at once)' },
         buffer: { type: 'number', description: 'Money they want to keep untouched, if they said so' },
       },
       required: ['price', 'date'],
@@ -281,10 +284,10 @@ function makeHandlers(created) {
       };
     },
 
-    check_budget({ price, date, item, cash_now, monthly_costs, buffer }) {
+    check_budget({ price, date, item, cash_now, monthly_costs, buffer, tax_pct, instalments }) {
       const prof = budgetProfile();
-      const r = estimateBudget({ price, date, item, cashNow: cash_now, monthlyCosts: monthly_costs, buffer, save: cash_now !== undefined || monthly_costs !== undefined || buffer !== undefined }, today);
-      const { timeline, drivers, ...rest } = r;
+      const r = estimateBudget({ price, date, item, cashNow: cash_now, everyday: monthly_costs, buffer, taxPct: tax_pct, instalments, save: false }, today);
+      const { timeline, balance, drivers, ...rest } = r;
       return {
         ...rest,
         cashNowWasSaved: cash_now === undefined,

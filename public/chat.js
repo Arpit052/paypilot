@@ -218,7 +218,12 @@ $('newChat').onclick = async () => {
 
 // ---- boot ----
 const cfg = await header('chat');
-document.querySelectorAll('#chips [data-persona]').forEach((b) => b.dataset.persona !== (cfg.demoPersona || '') && b.remove());
+// sample prompts that name demo clients only make sense while the demo data is loaded
+if (!cfg.demoPersona) document.querySelectorAll('#chips [data-demo]').forEach((b) => b.remove());
+else if (cfg.typeItems?.[0] && document.getElementById('billChip')) {
+  const it = cfg.typeItems[0];
+  document.getElementById('billChip').textContent = `Bill Rachel Adams (rachel@summitpeakconsulting.com) for ${it.name.replace(/\s*\(.*\)$/, '').toLowerCase()} at $${it.price}, due in 15 days`;
+}
 if (cfg.llmProvider === 'none') {
   addMsg('err', 'AI is not configured yet. Add <b>ANTHROPIC_API_KEY</b> or <b>OPENAI_API_KEY</b> to your <code>.env</code> file and restart the server.');
 }

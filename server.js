@@ -29,7 +29,7 @@ import { verifyCredentials } from './src/paypal.js';
 import { isOpen } from './src/analytics.js';
 import { estimateBudget, budgetProfile } from './src/budget.js';
 import { retainerOffers, draftOffer, markOffered, dismissOffer, acceptPayload, markAccepted } from './src/offers.js';
-import { businessTypeList, typeOf, BUSINESS_TYPES } from './src/business.js';
+import { businessTypeList, typeOf, BUSINESS_TYPES, normalType, professionLabel } from './src/business.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 const startedAt = Date.now();
@@ -185,14 +185,14 @@ export function createApp() {
       })(),
       lateFeePercent: config.lateFeePercent,
       lateFeeAfterDays: config.lateFeeAfterDays,
-      businessType: config.businessType || 'freelancer',
-      businessTypeLabel: typeOf(config.businessType).label,
+      businessType: normalType(config.businessType),
+      businessTypeLabel: professionLabel(config.businessType, config.businessTypeOther),
       typeItems: typeOf(config.businessType).items.map(([name, price]) => ({ name, price })),
       retainerWord: typeOf(config.businessType).retainer,
       demoPersona: kvGet('demo:persona') || null,
     })
   );
-  api.get('/business-types', (req, res) => res.json({ types: businessTypeList(), current: config.businessType || 'freelancer' }));
+  api.get('/business-types', (req, res) => res.json({ types: businessTypeList(), current: normalType(config.businessType), other: config.businessTypeOther || '' }));
 
   // ---- settings: PayPal connection + business details ----
   api.get('/settings', (req, res) => res.json(publicSettings()));
@@ -207,7 +207,7 @@ export function createApp() {
     if (!check.ok) throw httpError(400, check.error);
     connectPaypal({ clientId, clientSecret });
     if (bizName) saveBusinessSettings({ businessName: bizName });
-    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, applyPreset: true });
+    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
@@ -230,7 +230,7 @@ export function createApp() {
   api.post('/settings/paypal/demo', (req, res) => {
     const bizName = String(req.body?.businessName || '').trim();
     if (bizName) saveBusinessSettings({ businessName: bizName });
-    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, applyPreset: true });
+    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));

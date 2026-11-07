@@ -231,7 +231,7 @@ $('invoices').addEventListener('keydown', (e) => {
   }
 });
 function showInvoice(id) {
-  const inv = data.invoices.find((x) => x.id === id);
+  const inv = data.invoices.find((x) => x.id === id) || data.invoices.find((x) => x.number === id);
   if (!inv) return;
   openInvoiceDrawer(inv, {
     today: data.dash?.today,
@@ -261,25 +261,35 @@ function pct(n) {
 function renderBrief(b) {
   const f = b.facts;
   const L = f.lifetime;
-  const step = (n, title, body) => `<li class="bstep"><span class="bnum">${n}</span><div><h3>${title}</h3>${body}</div></li>`;
-  let n = 0;
-  const steps = [];
-  steps.push(step(++n, 'Total earned so far', `<p><b class="big num">${moneyMap(L.totalEarned, cur)}</b> from ${L.paidInvoices} paid invoices${L.since ? ` since ${fmtDate(L.since)}` : ''}.</p>
-    <p class="muted">${L.onTimeRate !== null ? `${L.onTimeRate}% paid on time · ` : ''}${L.avgDaysToGetPaid !== null ? `clients take ${L.avgDaysToGetPaid} days on average to pay` : ''}</p>`));
   const tm = f.thisMonth;
-  steps.push(step(++n, `This month (${tm.label})`, `<p><b class="big num">${money(tm.earned, cur)}</b> from ${tm.paidInvoices} payment${tm.paidInvoices === 1 ? '' : 's'}.</p>
-    <p class="muted">${tm.lastMonthLabel}: ${money(tm.lastMonthEarned, cur)}${tm.changePct !== null ? (tm.changePct === 0 ? ' · same as last month' : ` · ${pct(tm.changePct)} vs last month`) : ''}</p>`));
-  steps.push(step(++n, 'Top customers', f.topCustomers.length ? `<ol class="mini">${f.topCustomers.map((c) => `<li><b>${esc(c.client)}</b>: ${money(c.totalPaid, c.currency)} <span class="muted">(${c.invoices} invoices, ${c.share}% of revenue)</span></li>`).join('')}</ol>` : '<p class="muted">No payments yet.</p>'));
-  steps.push(step(++n, 'Overdue, by customer', f.overdue.byCustomer.length ? `<p><b class="num">${money(f.overdue.total, cur)}</b> is late across ${f.overdue.invoices} invoice${f.overdue.invoices > 1 ? 's' : ''}:</p><ul class="mini">${f.overdue.byCustomer.map((o) => `<li><b>${esc(o.client)}</b>: <span style="color:var(--late)">${money(o.amount, o.currency)}</span> <span class="muted">(invoice ${o.invoices.map((x) => '#' + esc(x)).join(', ')} · up to ${o.maxDaysOverdue} days late · ${o.remindersSent} reminder${o.remindersSent === 1 ? '' : 's'} sent)</span></li>`).join('')}</ul>` : '<p>Nothing is overdue.</p>'));
-  steps.push(step(++n, 'Still to collect', `<p><b class="num">${money(f.outstanding.total, cur)}</b> open across ${f.outstanding.invoices} invoice${f.outstanding.invoices === 1 ? '' : 's'}. Expected in the next 30 days: <b class="num">${money(f.next30Days.expected, cur)}</b> <span class="muted">(best case ${money(f.next30Days.bestCase, cur)})</span>.</p>`));
-  if (f.watchList.length) steps.push(step(++n, 'Clients to watch', `<ul class="mini">${f.watchList.map((w) => `<li><b>${esc(w.client)}</b>: ${RISK_TEXT[w.risk]} risk, usually ${daysLateText(w.avgDaysLate).toLowerCase()}${w.outstanding ? `, owes ${money(w.outstanding, cur)}` : ''}</li>`).join('')}</ul>`));
+  const bold = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/#(\d{3,})/g, '<a href="/?inv=$1" class="br-inv">#$1</a>');
+  const delta = tm.changePct === null ? '' : tm.changePct === 0 ? '<span class="br-d">same as last month</span>' : `<span class="br-d ${tm.changePct > 0 ? 'up' : 'down'}">${tm.changePct > 0 ? '▲' : '▼'} ${Math.abs(tm.changePct)}% vs ${esc(tm.lastMonthLabel.split(' ')[0])}</span>`;
   const ai = b.ai
-    ? `${b.ai.headline ? `<p class="headline">${esc(b.ai.headline)}</p>` : ''}${b.ai.actions.length ? `<ol class="mini">${b.ai.actions.map((a) => `<li>${esc(a).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')}</li>`).join('')}</ol>` : ''}`
-    : `<p class="muted">AI recommendations are unavailable right now (${esc(b.aiError || 'unknown error')}). The numbers above are always up to date.</p>`;
-  steps.push(step(++n, 'Recommended next steps', ai));
-  $('briefBody').innerHTML = `<ol class="bsteps">${steps.join('')}</ol>`;
+    ? `<div class="br-ai"><div class="br-ai-h"><span class="br-ai-tag">PayPilot's take</span>${b.ai.headline ? `<p>${bold(b.ai.headline)}</p>` : ''}</div>
+        ${b.ai.actions.length ? `<ol class="br-acts">${b.ai.actions.map((a, i) => `<li><span>${i + 1}</span><div>${bold(a)}</div></li>`).join('')}</ol>` : ''}</div>`
+    : `<div class="br-ai off"><span class="br-ai-tag">PayPilot's take</span><p class="muted" title="${esc(b.aiError || '')}">AI notes are unavailable right now${/key/i.test(b.aiError || '') ? ' (check the AI key in .env)' : ''}. Every number below is computed from your invoices and always up to date.</p></div>`;
+  const maxTop = Math.max(...f.topCustomers.map((c) => c.share), 1);
+  $('briefBody').innerHTML = `${ai}
+    <div class="br-kpis">
+      <div><span>Earned so far</span><b>${moneyMap(L.totalEarned, cur)}</b><em>${L.paidInvoices} paid invoices${L.since ? ` since ${esc(fmtDate(L.since))}` : ''}</em></div>
+      <div><span>${esc(tm.label)}</span><b>${money(tm.earned, cur)}</b><em>${tm.paidInvoices} payment${tm.paidInvoices === 1 ? '' : 's'} ${delta}</em></div>
+      <div><span>Expected in 30 days</span><b>${money(f.next30Days.expected, cur)}</b><em>of ${money(f.outstanding.total, cur)} still open · best case ${money(f.next30Days.bestCase, cur)}</em></div>
+      <div><span>Overdue</span><b class="${f.overdue.total ? 'late-t' : ''}">${money(f.overdue.total, cur)}</b><em>${f.overdue.invoices ? `${f.overdue.invoices} invoice${f.overdue.invoices > 1 ? 's' : ''} past due` : 'nothing late'}</em></div>
+    </div>
+    <div class="br-cols">
+      <div class="br-col"><h3>Top customers</h3>${f.topCustomers.length ? `<ul class="br-list">${f.topCustomers.map((c, i) => `<li><span class="br-rank">${i + 1}</span><div class="br-who"><b>${esc(c.client)}</b><span>${c.invoices} invoices · ${c.share}% of revenue</span><i style="width:${(c.share / maxTop) * 100}%"></i></div><span class="br-amt">${money(c.totalPaid, c.currency)}</span></li>`).join('')}</ul>` : '<p class="muted small">No payments yet.</p>'}</div>
+      <div class="br-col"><h3>Late money</h3>${f.overdue.byCustomer.length ? `<ul class="br-list">${f.overdue.byCustomer.map((o) => `<li><span class="br-dot"></span><div class="br-who"><b>${esc(o.client)}</b><span>${o.invoices.map((x) => `<a href="/?inv=${esc(x)}" class="br-inv">#${esc(x)}</a>`).join(', ')} · ${o.maxDaysOverdue} day${o.maxDaysOverdue === 1 ? '' : 's'} late · ${o.remindersSent ? `${o.remindersSent} reminder${o.remindersSent === 1 ? '' : 's'} sent` : 'not reminded yet'}</span></div><span class="br-amt late-t">${money(o.amount, o.currency)}</span></li>`).join('')}</ul>` : '<p class="muted small">Nothing is overdue. Nice.</p>'}
+        ${f.watchList.length ? `<h3 style="margin-top:18px">Clients to watch</h3><ul class="br-list">${f.watchList.map((w) => `<li><span class="pill ${w.risk}">${RISK_TEXT[w.risk]}</span><div class="br-who"><b>${esc(w.client)}</b><span>usually ${esc(daysLateText(w.avgDaysLate).toLowerCase())}</span></div>${w.outstanding ? `<span class="br-amt">${money(w.outstanding, cur)} owed</span>` : ''}</li>`).join('')}</ul>` : ''}
+      </div>
+    </div>`;
 }
 
+$('briefBody').addEventListener('click', (e) => {
+  const a = e.target.closest('.br-inv');
+  if (!a) return;
+  e.preventDefault();
+  showInvoice(new URL(a.href).searchParams.get('inv'));
+});
 $('briefBtn').onclick = async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true;

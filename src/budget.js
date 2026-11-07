@@ -2,7 +2,9 @@
 //
 // The money you'll have on D is uncertain because you don't know when (or if) each client
 // pays. So instead of one guess we run thousands of possible futures (Monte Carlo) and count
-// in how many of them you can pay for X and still keep your safety buffer.
+// in how many of them you can pay for X and still never drop below your safety buffer in the
+// 30 days after buying it (so next month's rent is safe too), after tax set-aside, PayPal
+// fees, dated bills and everyday spending.
 //
 // The model, step by step:
 //  1. Payment timing. For every paid invoice we know how many days after the due date it was
@@ -19,7 +21,9 @@
 //  4. Retainers. Scheduled invoices up to D are added, with the same timing model.
 //  5. Optional: likely new work. Repeat clients send new work at their usual rate (a Poisson
 //     process with the rate and amounts taken from their last 180 days).
-//  6. Costs. Your monthly costs are spread evenly per day and taken off.
+//  6. Money out. Bills come off on their day of the month; everyday spending is spread per day.
+//     Every client payment is reduced by PayPal's fee and the share you set aside for tax.
+//  7. Buying in instalments checks every instalment and the month after the last one.
 // Result: probability, a range (P10 / P50 / P90), the likely shortfall, the earliest date it
 // becomes safe, and which invoices decide the answer.
 import { config, isoDate, addDays, addMonths, daysBetween } from './config.js';
@@ -120,24 +124,52 @@ const amountDue = (inv) => r2(inv.status === 'PARTIALLY_PAID' ? Math.max(0, inv.
 
 // ---------- saved inputs ----------
 const PROFILE_KEY = 'budget:profile';
+export const PAYPAL_FEE = { pct: 3.49, fixedUSD: 0.49 }; // US invoicing, PayPal wallet (Oct 2026 schedule)
+const WINDOW = 30; // days after buying that must stay above the buffer
+
 export function budgetProfile() {
-  return { cashNow: 0, monthlyCosts: 0, buffer: 0, ...(kvGet(PROFILE_KEY) || {}) };
+  const p = { cashNow: 0, everyday: 0, buffer: 0, bills: [], taxPct: 0, fees: true, ...(kvGet(PROFILE_KEY) || {}) };
+  if (p.monthlyCosts && !p.everyday) p.everyday = p.monthlyCosts; // older saved profile
+  delete p.monthlyCosts;
+  return p;
 }
 function saveProfile(p) {
-  kvSet(PROFILE_KEY, { cashNow: p.cashNow, monthlyCosts: p.monthlyCosts, buffer: p.buffer, updatedAt: new Date().toISOString() });
+  kvSet(PROFILE_KEY, { cashNow: p.cashNow, everyday: p.everyday, buffer: p.buffer, bills: p.bills, taxPct: p.taxPct, fees: p.fees, updatedAt: new Date().toISOString() });
 }
 
 const bad = (m) => Object.assign(new Error(m), { status: 400 });
 const num = (v, label, { min = 0, max = 1e8, dflt } = {}) => {
   if ((v === undefined || v === null || v === '') && dflt !== undefined) return dflt;
   const n = Number(v);
-  if (!Number.isFinite(n) || n < min || n > max) throw bad(`${label} must be a number between ${min} and ${max.toLocaleString('en-US')}`);
+  if (!Number.isFinite(n) || n < min || n > max) throw bad(`${label} must be a number between ${min.toLocaleString('en-US')} and ${max.toLocaleString('en-US')}`);
   return r2(n);
 };
+function cleanBills(list) {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((b) => b && (Number(b.amount) > 0))
+    .slice(0, 20)
+    .map((b) => ({ name: String(b.name || 'Bill').trim().slice(0, 40) || 'Bill', amount: num(b.amount, 'Bill amount', { min: 0.01 }), day: Math.min(31, Math.max(1, Math.round(Number(b.day) || 1))) }));
+}
+
+/** Day indexes (from today) on which a monthly bill on `day` falls, up to H. */
+function billDays(today, day, H) {
+  const out = [];
+  const [y, m] = today.split('-').map(Number);
+  for (let k = 0; k < 24; k++) {
+    const last = new Date(Date.UTC(y, m - 1 + k + 1, 0)).getUTCDate();
+    const d = new Date(Date.UTC(y, m - 1 + k, Math.min(day, last))).toISOString().slice(0, 10);
+    const t = daysBetween(today, d);
+    if (t > H) break;
+    if (t >= 0) out.push(t);
+  }
+  return out;
+}
 
 /**
- * Run the estimate. Inputs: price, date (YYYY-MM-DD), and optionally cashNow, monthlyCosts,
- * buffer (default to the saved profile), item (a label), save (remember the money inputs).
+ * Run the estimate. Inputs: price, date (YYYY-MM-DD) and optionally item, cashNow, everyday
+ * (monthly spending spread per day), bills [{name, amount, day}], buffer, taxPct, fees (bool),
+ * instalments (1-12, monthly), exclude (invoice numbers to treat as never paid), save.
  */
 export function estimateBudget(input = {}, today = isoDate()) {
   const prof = budgetProfile();
@@ -147,20 +179,42 @@ export function estimateBudget(input = {}, today = isoDate()) {
   if (date < today) throw bad('The date has to be today or later');
   if (daysBetween(today, date) > 365) throw bad('Pick a date within the next 12 months');
   const cashNow = num(input.cashNow, 'Money you have now', { min: -1e7, dflt: prof.cashNow });
-  const monthlyCosts = num(input.monthlyCosts, 'Monthly costs', { dflt: prof.monthlyCosts });
+  const everyday = num(input.everyday ?? input.monthlyCosts, 'Everyday spending', { dflt: prof.everyday });
   const buffer = num(input.buffer, 'Safety buffer', { dflt: prof.buffer });
-  if (input.save !== false) saveProfile({ cashNow, monthlyCosts, buffer });
+  const taxPct = num(input.taxPct, 'Tax set-aside', { max: 60, dflt: prof.taxPct });
+  const fees = input.fees === undefined ? prof.fees !== false : Boolean(input.fees);
+  const bills = input.bills === undefined ? cleanBills(prof.bills) : cleanBills(input.bills);
+  const n = Math.round(num(input.instalments, 'Instalments', { min: 1, max: 12, dflt: 1 }));
+  const exclude = new Set((Array.isArray(input.exclude) ? input.exclude : []).map(String));
+  if (input.save !== false) saveProfile({ cashNow, everyday, buffer, bills, taxPct, fees });
 
   const cur = config.currency;
   const M = learn(today);
-  const target = daysBetween(today, date); // day index of the purchase
-  const H = Math.max(target + 45, 90); // timeline we chart (days from today)
-  const costPerDay = monthlyCosts / 30.44;
-  const need = (t) => price + buffer + costPerDay * t - cashNow; // money that must arrive by day t
+  const target = daysBetween(today, date);
+  const inst = r2(price / n);
+  const span = WINDOW * n; // instalments every 30 days + a month after the last one
+  const scanTo = target + 90; // how far we look for a safe date
+  const H = scanTo + span; // simulation horizon (days from today)
+  const perDay = everyday / 30.44;
+
+  // money that leaves on its own, known in advance (bills on their day + everyday spending)
+  const out = new Float64Array(H + 1);
+  for (let t = 0; t <= H; t++) out[t] = perDay;
+  const billList = [];
+  for (const b of bills) for (const t of billDays(today, b.day, H)) {
+    out[t] += b.amount;
+    billList.push({ ...b, date: addDays(today, t), t });
+  }
+  const outCum = new Float64Array(H + 1);
+  for (let t = 0, c = 0; t <= H; t++) outCum[t] = c += out[t];
+  // what actually reaches you from a client payment
+  const fixedFee = fees && cur === 'USD' ? PAYPAL_FEE.fixedUSD : 0;
+  const net = (amt) => Math.max(0, amt - (fees ? amt * (PAYPAL_FEE.pct / 100) + fixedFee : 0)) * (1 - taxPct / 100);
 
   // ---- the things that might pay you ----
   const streams = [];
   const otherCurrency = [];
+  const excluded = [];
   for (const inv of listInvoices().filter(isOpen)) {
     if (inv.currency !== cur) {
       otherCurrency.push(inv.number);
@@ -168,41 +222,31 @@ export function estimateBudget(input = {}, today = isoDate()) {
     }
     const due = amountDue(inv);
     if (!(due > 0)) continue;
+    if (exclude.has(String(inv.number))) {
+      excluded.push({ number: inv.number, client: getClient(inv.clientId)?.name || 'Unknown', amount: due });
+      continue;
+    }
     const s = delaySampler(M, inv.clientId);
     const lateNow = Math.max(0, daysBetween(inv.dueDate, today));
     streams.push({
-      kind: 'invoice',
-      id: inv.id,
-      number: inv.number,
-      clientId: inv.clientId,
+      kind: 'invoice', id: inv.id, number: inv.number, clientId: inv.clientId,
       client: getClient(inv.clientId)?.name || 'Unknown',
-      amount: due,
-      dueDate: inv.dueDate,
-      daysOverdue: lateNow,
-      dueOffset: daysBetween(today, inv.dueDate), // day index of the due date
-      minDelay: daysBetween(inv.dueDate, today), // can't have been paid before today
-      pPay: collectChance(M, inv.clientId, lateNow, s.slowest),
-      sampler: s,
+      amount: due, net: net(due), dueDate: inv.dueDate, daysOverdue: lateNow,
+      dueOffset: daysBetween(today, inv.dueDate), minDelay: daysBetween(inv.dueDate, today),
+      pPay: collectChance(M, inv.clientId, lateNow, s.slowest), sampler: s,
     });
   }
   for (const sc of listSchedules().filter((x) => x.active && x.currency === cur)) {
     const total = invoiceTotals(sc.items, sc.taxPercent).total;
     const s = delaySampler(M, sc.clientId);
     let run = sc.nextRun < today ? today : sc.nextRun;
-    for (let n = 0; n < 60 && daysBetween(today, run) <= H; n++) {
-      const dueOffset = daysBetween(today, run) + sc.dueInDays;
+    for (let k = 0; k < 60 && daysBetween(today, run) <= H; k++) {
       streams.push({
-        kind: 'retainer',
-        id: `${sc.id}:${run}`,
-        clientId: sc.clientId,
+        kind: 'retainer', id: `${sc.id}:${run}`, clientId: sc.clientId,
         client: getClient(sc.clientId)?.name || 'Unknown',
-        amount: total,
-        dueDate: addDays(run, sc.dueInDays),
-        issueDate: run,
-        dueOffset,
-        minDelay: -sc.dueInDays, // can be paid any time after it's sent
-        pPay: collectChance(M, sc.clientId, 0, s.slowest),
-        sampler: s,
+        amount: total, net: net(total), dueDate: addDays(run, sc.dueInDays), issueDate: run,
+        dueOffset: daysBetween(today, run) + sc.dueInDays, minDelay: -sc.dueInDays,
+        pPay: collectChance(M, sc.clientId, 0, s.slowest), sampler: s,
       });
       run = sc.frequency === 'weekly' ? addDays(run, 7) : addMonths(run, 1);
     }
@@ -221,21 +265,59 @@ export function estimateBudget(input = {}, today = isoDate()) {
   }
 
   // ---- simulate ----
-  const seed = hash(JSON.stringify([today, price, date, cashNow, monthlyCosts, buffer, streams.map((s) => [s.id, s.amount]), M.sample]));
+  const seed = hash(JSON.stringify([today, price, date, cashNow, everyday, buffer, taxPct, fees, bills, n, [...exclude], streams.map((s) => [s.id, s.amount]), M.sample]));
   const rnd = mulberry32(seed);
-  const dayIn = new Float64Array((H + 1) * SIMS); // invoiced money arriving on each day, per sim
-  const dayNew = new Float64Array((H + 1) * SIMS); // likely new work arriving on each day, per sim
-  const arrivedBy = streams.map(() => new Uint8Array(SIMS)); // did stream k arrive by the target day?
+  const S = SIMS;
+  const arrivedBy = streams.map(() => new Uint8Array(S)); // arrived by the purchase date
+  const arrivedByEnd = streams.map(() => new Uint8Array(S)); // arrived before the safety window ends
   const payDays = streams.map(() => []);
-  for (let s = 0; s < SIMS; s++) {
-    const base = s * (H + 1);
+  const okBase = new Uint32Array(scanTo + 1); // futures where buying on day t is safe (invoiced money only)
+  const okNew = new Uint32Array(scanTo + 1); // ...including likely new work
+  const okAtTarget = new Uint8Array(S);
+  const lowAfter = new Float64Array(S); // lowest balance in the window after buying on the date
+  const lowAfterNew = new Float64Array(S);
+  const capacity = new Float64Array(S); // most you could spend on the date and stay above the buffer
+  const fan = Array.from({ length: Math.min(H, target + span + 30) + 1 }, () => new Float64Array(S)); // balance if you buy on the date
+  const inDay = new Float64Array(H + 1);
+  const newDay = new Float64Array(H + 1);
+  const bal = new Float64Array(H + 1);
+  const balN = new Float64Array(H + 1);
+  const m30 = new Float64Array(H + 1); // min balance over [t, t + 29]
+  const m30N = new Float64Array(H + 1);
+  const end = target + span - 1;
+
+  const slidingMin = (src, dst) => {
+    // dst[t] = min(src[t .. t + WINDOW - 1]) with a monotonic deque
+    const q = new Int32Array(H + 1);
+    let h = 0, tl = 0;
+    for (let i = H; i >= 0; i--) {
+      while (tl > h && src[q[tl - 1]] >= src[i]) tl--;
+      q[tl++] = i;
+      while (q[h] > i + WINDOW - 1) h++;
+      dst[i] = src[q[h]];
+    }
+  };
+  const safeFrom = (m, t) => {
+    for (let k = 0; k < n; k++) if (m[t + WINDOW * k] - inst * (k + 1) < buffer) return false;
+    return true;
+  };
+  const capFrom = (m, t) => {
+    let c = Infinity;
+    for (let k = 0; k < n; k++) c = Math.min(c, (m[t + WINDOW * k] - buffer) / (k + 1));
+    return c * n;
+  };
+
+  for (let s = 0; s < S; s++) {
+    inDay.fill(0);
+    newDay.fill(0);
     streams.forEach((st, k) => {
       if (rnd() > st.pPay) return; // never paid in this future
       const d = st.sampler.draw(rnd, st.minDelay);
       const day = Math.max(0, st.dueOffset + d);
       if (day <= target) arrivedBy[k][s] = 1;
+      if (day <= end) arrivedByEnd[k][s] = 1;
       if (day <= H) {
-        dayIn[base + day] += st.amount;
+        inDay[day] += st.net;
         payDays[k].push(day);
       }
     });
@@ -245,135 +327,116 @@ export function estimateBudget(input = {}, today = isoDate()) {
         const issued = 1 + Math.floor(rnd() * H);
         const amt = w.amounts[Math.floor(rnd() * w.amounts.length)];
         const day = issued + w.terms + w.sampler.draw(rnd, -w.terms);
-        if (day >= 0 && day <= H) dayNew[base + day] += amt;
+        if (day >= 0 && day <= H) newDay[day] += net(amt);
       }
     }
+    for (let t = 0, c = 0, cn = 0; t <= H; t++) {
+      c += inDay[t];
+      cn += inDay[t] + newDay[t];
+      bal[t] = cashNow + c - outCum[t];
+      balN[t] = cashNow + cn - outCum[t];
+    }
+    slidingMin(bal, m30);
+    slidingMin(balN, m30N);
+    for (let t = 0; t <= scanTo; t++) {
+      if (safeFrom(m30, t)) okBase[t]++;
+      if (safeFrom(m30N, t)) okNew[t]++;
+    }
+    okAtTarget[s] = safeFrom(m30, target) ? 1 : 0;
+    capacity[s] = capFrom(m30, target);
+    let lo = Infinity, loN = Infinity;
+    for (let k = 0; k < n; k++) {
+      lo = Math.min(lo, m30[target + WINDOW * k] - inst * (k + 1));
+      loN = Math.min(loN, m30N[target + WINDOW * k] - inst * (k + 1));
+    }
+    lowAfter[s] = lo;
+    lowAfterNew[s] = loN;
+    for (let t = 0; t < fan.length; t++) fan[t][s] = bal[t] - (t >= target ? inst * Math.min(n, 1 + Math.floor((t - target) / WINDOW)) : 0);
   }
 
   // ---- read the futures ----
-  const okAt = new Uint32Array(H + 1);
-  const okAtNew = new Uint32Array(H + 1);
-  const cumByDay = Array.from({ length: H + 1 }, () => new Float64Array(SIMS));
-  const atTarget = new Float64Array(SIMS);
-  const atTargetNew = new Float64Array(SIMS);
-  const affordAtTarget = new Uint8Array(SIMS);
-  for (let s = 0; s < SIMS; s++) {
-    let cum = 0;
-    let cumNew = 0;
-    const base = s * (H + 1);
-    for (let t = 0; t <= H; t++) {
-      cum += dayIn[base + t];
-      cumNew += dayIn[base + t] + dayNew[base + t];
-      cumByDay[t][s] = cum;
-      if (cum >= need(t)) okAt[t]++;
-      if (cumNew >= need(t)) okAtNew[t]++;
-      if (t === target) {
-        atTarget[s] = cum;
-        atTargetNew[s] = cumNew;
-        affordAtTarget[s] = cum >= need(t) ? 1 : 0;
-      }
-    }
-  }
-  const p = okAt[target] / SIMS;
-  const pNew = okAtNew[target] / SIMS;
-  const sorted = Float64Array.from(atTarget).sort();
-  const sortedNew = Float64Array.from(atTargetNew).sort();
-  const needed = r2(need(target));
-  const cashAt = (inflow) => r2(cashNow + inflow - costPerDay * target - price); // left after buying
-  const shortSims = [...atTarget].filter((v) => v < needed);
-  const expectedShortfall = shortSims.length ? r2(mean(shortSims.map((v) => needed - v))) : 0;
-  // earliest day, on or after the date you asked about, with at least chance q
+  const p = okBase[target] / S;
+  const pNew = okNew[target] / S;
+  const sortedLow = Float64Array.from(lowAfter).sort();
+  const sortedCap = Float64Array.from(capacity).sort();
+  const P = (arr, q) => r2(quantile(arr, q));
+  const short = [...lowAfter].filter((v) => v < buffer).map((v) => buffer - v);
   const firstDay = (arr, q) => {
-    for (let t = target; t <= H; t++) if (arr[t] / SIMS >= q) return addDays(today, t);
+    for (let t = target; t <= scanTo; t++) if (arr[t] / S >= q) return addDays(today, t);
     return null;
   };
+  const nowSafe = okBase[0] / S >= 0.8;
 
-  // which invoices decide it: P(afford | it arrives) - P(afford | it doesn't)
   const drivers = streams
     .map((st, k) => {
       let yes = 0, yesOk = 0, no = 0, noOk = 0;
-      for (let s = 0; s < SIMS; s++) {
-        if (arrivedBy[k][s]) {
-          yes++;
-          yesOk += affordAtTarget[s];
-        } else {
-          no++;
-          noOk += affordAtTarget[s];
-        }
+      for (let s = 0; s < S; s++) {
+        if (arrivedByEnd[k][s]) { yes++; yesOk += okAtTarget[s]; } else { no++; noOk += okAtTarget[s]; }
       }
+      let by = 0;
+      for (let s = 0; s < S; s++) by += arrivedBy[k][s];
       const days = payDays[k].slice().sort((a, b) => a - b);
       return {
-        kind: st.kind,
-        number: st.number || null,
-        client: st.client,
-        amount: st.amount,
-        dueDate: st.dueDate,
-        issueDate: st.issueDate || null,
-        daysOverdue: st.daysOverdue || 0,
-        risk: clientStats(st.clientId, today).riskLabel,
-        history: st.sampler.own,
+        kind: st.kind, number: st.number || null, client: st.client, amount: st.amount, net: r2(st.net),
+        dueDate: st.dueDate, issueDate: st.issueDate || null, daysOverdue: st.daysOverdue || 0,
+        risk: clientStats(st.clientId, today).riskLabel, history: st.sampler.own,
         chancePaidEver: Math.round(st.pPay * 100),
-        chanceByDate: Math.round((yes / SIMS) * 100),
+        chanceByDate: Math.round((by / S) * 100),
         likelyDate: days.length ? addDays(today, Math.round(quantile(days, 0.5))) : null,
         earlyDate: days.length ? addDays(today, Math.round(quantile(days, 0.1))) : null,
         lateDate: days.length ? addDays(today, Math.round(quantile(days, 0.9))) : null,
         impact: yes >= 40 && no >= 40 ? Math.round((yesOk / yes - noOk / no) * 100) : null,
       };
     })
-    .filter((d) => d.kind === 'invoice' || d.issueDate <= date);
+    .filter((d) => d.kind === 'invoice' || d.issueDate <= addDays(today, end));
 
-  // chart: chance and cash range per day
-  const step = H > 120 ? 3 : H > 60 ? 2 : 1;
+  // chart: chance of a safe purchase per start day, and the balance range if you buy on the date
   const timeline = [];
-  for (let t = 0; t <= H; t += step) {
-    const col = Float64Array.from(cumByDay[t]).sort();
-    const left = (v) => r2(cashNow + v - costPerDay * t);
-    timeline.push({
-      date: addDays(today, t),
-      chance: Math.round((okAt[t] / SIMS) * 1000) / 10,
-      chanceNew: Math.round((okAtNew[t] / SIMS) * 1000) / 10,
-      p10: left(quantile(col, 0.1)),
-      p50: left(quantile(col, 0.5)),
-      p90: left(quantile(col, 0.9)),
-      line: r2(price + buffer),
-    });
+  for (let t = 0; t <= scanTo; t += scanTo > 150 ? 2 : 1) timeline.push({ date: addDays(today, t), chance: Math.round((okBase[t] / S) * 1000) / 10, chanceNew: Math.round((okNew[t] / S) * 1000) / 10 });
+  const balance = [];
+  for (let t = 0; t < fan.length; t += fan.length > 160 ? 2 : 1) {
+    const col = Float64Array.from(fan[t]).sort();
+    balance.push({ date: addDays(today, t), p10: P(col, 0.1), p50: P(col, 0.5), p90: P(col, 0.9) });
   }
+  // "if you wait": the chance a week, two weeks and a month later
+  const wait = [0, 7, 14, 30].map((d) => target + d).filter((t) => t <= scanTo).map((t) => ({ date: addDays(today, t), chance: Math.round((okBase[t] / S) * 1000) / 10 }));
 
-  const P = (q) => r2(quantile(sorted, q));
+  const inflowTotal = streams.filter((s) => s.kind === 'invoice').reduce((t, s) => t + s.amount, 0);
   const result = {
     item: String(input.item || '').trim().slice(0, 80),
-    price,
-    date,
-    currency: cur,
-    inputs: { cashNow, monthlyCosts, buffer },
+    price, date, currency: cur, instalments: n, instalment: inst,
+    inputs: { cashNow, everyday, buffer, taxPct, fees, bills },
     days: target,
-    costsUntil: r2(costPerDay * target),
-    needed: Math.max(0, needed), // money that must still come in by the date
+    windowEnd: addDays(today, end),
+    outflowsUntilEnd: r2(outCum[Math.min(H, end)]),
+    billsInWindow: billList.filter((b) => b.t <= end).map(({ t, ...b }) => b),
+    feeRate: fees ? { pct: PAYPAL_FEE.pct, fixed: fixedFee } : null,
     chance: Math.round(p * 1000) / 10,
     chanceWithNewWork: Math.round(pNew * 1000) / 10,
-    margin: Math.round(Math.sqrt((p * (1 - p)) / SIMS) * 1.96 * 1000) / 10, // 95% Monte Carlo error, in points
-    inflow: { p10: P(0.1), p50: P(0.5), p90: P(0.9), mean: r2(mean([...atTarget])), withNewWorkP50: r2(quantile(sortedNew, 0.5)) },
-    leftAfter: { p10: cashAt(P(0.1)), p50: cashAt(P(0.5)), p90: cashAt(P(0.9)) },
+    margin: Math.round(Math.sqrt((p * (1 - p)) / S) * 1.96 * 1000) / 10, // 95% Monte Carlo error, in points
+    lowest: { p10: P(sortedLow, 0.1), p50: P(sortedLow, 0.5), p90: P(sortedLow, 0.9) }, // lowest balance after buying
+    lowestWithNewWork: r2(quantile(Float64Array.from(lowAfterNew).sort(), 0.5)),
     shortfall: {
-      likely: r2(Math.max(0, needed - P(0.5))), // in a typical future
-      badCase: r2(Math.max(0, needed - P(0.1))), // in a bad 1-in-10 future
-      ifShort: expectedShortfall, // average gap in the futures where it falls short
+      likely: r2(Math.max(0, buffer - P(sortedLow, 0.5))),
+      badCase: r2(Math.max(0, buffer - P(sortedLow, 0.1))),
+      ifShort: short.length ? r2(mean(short)) : 0,
     },
-    safeDates: { p50: firstDay(okAt, 0.5), p80: firstDay(okAt, 0.8), p95: firstDay(okAt, 0.95) },
-    safeDatesWithNewWork: { p80: firstDay(okAtNew, 0.8) },
-    owedTotal: r2(streams.filter((s) => s.kind === 'invoice').reduce((t, s) => t + s.amount, 0)),
+    maxSafe: { p80: r2(Math.max(0, quantile(sortedCap, 0.2))), p95: r2(Math.max(0, quantile(sortedCap, 0.05))) },
+    safeDates: { p50: firstDay(okBase, 0.5), p80: firstDay(okBase, 0.8), p95: firstDay(okBase, 0.95) },
+    safeDatesWithNewWork: { p80: firstDay(okNew, 0.8) },
+    safeNow: nowSafe,
+    wait,
+    owedTotal: r2(inflowTotal),
+    owedNet: r2(streams.filter((s) => s.kind === 'invoice').reduce((t, s) => t + s.net, 0)),
+    excluded,
     drivers: drivers.sort((a, b) => (b.impact ?? -1) - (a.impact ?? -1) || b.amount - a.amount),
     newWorkClients: newWork.map((w) => ({ client: w.client, perMonth: Math.round(w.ratePerDay * 30.44 * 10) / 10 })),
     timeline,
+    balance,
     model: {
-      simulations: SIMS,
-      paymentsLearnedFrom: M.sample,
-      clientsWithHistory: M.byClient.size,
-      smoothingDays: SMOOTH_SD,
-      priorWeight: PRIOR_WEIGHT,
-      halfLifeDays: HALF_LIFE,
-      otherCurrencyLeftOut: otherCurrency,
-      lowData: M.sample < 10,
+      simulations: S, paymentsLearnedFrom: M.sample, clientsWithHistory: M.byClient.size,
+      smoothingDays: SMOOTH_SD, priorWeight: PRIOR_WEIGHT, halfLifeDays: HALF_LIFE, windowDays: WINDOW,
+      otherCurrencyLeftOut: otherCurrency, lowData: M.sample < 10,
     },
   };
   result.verdict = verdict(result);
@@ -386,30 +449,31 @@ const nice = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { mon
 
 /** Plain-English answer built from the numbers (no AI needed, so it's always available). */
 export function verdict(r) {
-  // the invoice most likely to break the plan: matters a lot AND might not arrive in time
   const key = r.drivers
     .filter((d) => d.kind === 'invoice' && (d.impact ?? 0) >= 15 && d.chanceByDate < 97)
     .sort((a, b) => b.impact * (100 - b.chanceByDate) - a.impact * (100 - a.chanceByDate))[0];
   const keyText = key ? ` The invoice to watch is #${key.number} from ${key.client} (${fmt(r.currency, key.amount)}): it reaches you in time in ${key.chanceByDate}% of futures.` : '';
-  if (r.needed <= 0)
-    return { level: 'yes', headline: 'Yes, you can afford it now.', detail: `What you have already covers it, your costs until ${nice(r.date)} and your buffer, without waiting for any client.` };
+  const what = r.instalments > 1 ? `${r.instalments} payments of ${fmt(r.currency, r.instalment)}` : 'it';
+  const bills = r.billsInWindow.length ? ` That includes ${r.billsInWindow.length === 1 ? `${r.billsInWindow[0].name} on ${nice(r.billsInWindow[0].date)}` : `${r.billsInWindow.length} bills`} in the month after.` : '';
+  const cap = r.maxSafe.p80 > 0 ? ` To be 80% safe on ${nice(r.date)}, keep it under ${fmt(r.currency, r.maxSafe.p80)}.` : '';
+  if (r.chance >= 99.5 && r.lowest.p10 >= r.inputs.buffer)
+    return { level: 'yes', headline: `Yes, comfortably${r.days === 0 ? ', even today' : ''}.`, detail: `Even in a bad month (1 in 10) your balance stays at least ${fmt(r.currency, r.lowest.p10 - r.inputs.buffer)} above your buffer in the 30 days after buying ${what}.${bills}` };
   if (r.chance >= 90)
-    return { level: 'yes', headline: `Yes. ${pct(r.chance)} chance you can buy it on ${nice(r.date)}.`, detail: `In a typical future you'd have ${fmt(r.currency, r.leftAfter.p50)} left after buying it, above your buffer.${keyText}` };
+    return { level: 'yes', headline: `Yes. ${pct(r.chance)} chance you can buy ${what} on ${nice(r.date)}.`, detail: `Your balance stays above your ${fmt(r.currency, r.inputs.buffer)} buffer for the month after, with about ${fmt(r.currency, r.lowest.p50 - r.inputs.buffer)} to spare at its lowest in a typical future.${bills}${keyText}` };
   if (r.chance >= 60)
     return {
       level: 'maybe',
       headline: `Probably. ${pct(r.chance)} chance on ${nice(r.date)}.`,
-      detail: `It depends on clients paying on their usual schedule.${keyText}${r.safeDates.p80 && r.safeDates.p80 > r.date ? ` Waiting until ${nice(r.safeDates.p80)} raises the chance to 80%.` : ''}`,
+      detail: `It depends on clients paying on their usual schedule.${keyText}${r.safeDates.p80 && r.safeDates.p80 > r.date ? ` Waiting until ${nice(r.safeDates.p80)} raises the chance to 80%.` : cap}`,
     };
   const when = r.safeDates.p80
     ? ` The earliest date with an 80% chance is ${nice(r.safeDates.p80)}.`
     : r.safeDatesWithNewWork.p80
-      ? ` The money already owed to you isn't enough once your costs are paid. If your regular clients keep sending work at their usual pace, it reaches an 80% chance on ${nice(r.safeDatesWithNewWork.p80)}.`
-      : ' The money already owed to you isn\'t enough once your costs are paid, so this needs new work first.';
+      ? ` The money already owed to you isn't enough once bills, tax and fees are paid. If your regular clients keep sending work at their usual pace, it reaches an 80% chance on ${nice(r.safeDatesWithNewWork.p80)}.`
+      : ' The money already owed to you isn\'t enough once bills, tax and fees are paid, so this needs new work first.';
   return {
     level: 'no',
     headline: r.chance < 0.5 ? `Not yet. Very unlikely by ${nice(r.date)}.` : `Not yet. Only a ${Math.round(r.chance)}% chance on ${nice(r.date)}.`,
-    detail: `In a typical future you'd be about ${fmt(r.currency, r.shortfall.likely)} short, and ${fmt(r.currency, r.shortfall.badCase)} short in a bad month.${when}${keyText}`,
+    detail: `In a typical future you'd dip about ${fmt(r.currency, r.shortfall.likely)} below your buffer ${r.instalments > 1 ? 'while you pay it off' : 'in the month after buying'}, and ${fmt(r.currency, r.shortfall.badCase)} in a bad month.${r.chanceWithNewWork - r.chance >= 20 ? ` That counts only money already invoiced; if your regular clients keep sending work at their usual pace, the chance is ${pct(r.chanceWithNewWork).toLowerCase()}.` : when}${cap}${keyText}`,
   };
 }
-

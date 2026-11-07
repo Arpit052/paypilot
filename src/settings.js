@@ -5,7 +5,7 @@
 // The PayPal secret is kept server-side only and never sent back to the browser.
 import { config } from './config.js';
 import { kvGet, kvSet } from './db.js';
-import { BUSINESS_TYPES } from './business.js';
+import { BUSINESS_TYPES, normalType } from './business.js';
 
 const SANDBOX_URL = 'https://api-m.sandbox.paypal.com';
 // What .env said at start-up, so "Disconnect" can fall back to it.
@@ -25,9 +25,10 @@ const envBusiness = {
   signOff: '',
   aiInstructions: '',
   notify: { payment: true, overdue: true, due: true, approval: true, import: true },
-  businessType: 'freelancer',
+  businessType: 'graphic_designer',
+  businessTypeOther: '',
 };
-const PREF_KEYS = ['businessType', 'currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
+const PREF_KEYS = ['businessType', 'businessTypeOther', 'currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
 const envChoseMode = Boolean(process.env.PAYPAL_MODE);
 
 let paypalSource = 'env';
@@ -51,6 +52,7 @@ export function applySettings() {
   config.lateFeePercent = b.lateFeePercent ?? envBusiness.lateFeePercent;
   config.lateFeeAfterDays = b.lateFeeAfterDays ?? envBusiness.lateFeeAfterDays;
   for (const k of PREF_KEYS) config[k] = k === 'notify' ? { ...envBusiness.notify, ...(b.notify || {}) } : b[k] ?? envBusiness[k];
+  config.businessType = normalType(config.businessType);
 }
 
 /** Has the first-run choice been made (connect PayPal or try demo)? */
@@ -132,8 +134,10 @@ export function saveBusinessSettings(input = {}) {
     if (!['warm', 'neutral', 'brief'].includes(input.reminderStyle)) throw httpErr('Unknown reminder style');
     next.reminderStyle = input.reminderStyle;
   }
+  if (input.businessTypeOther !== undefined) next.businessTypeOther = String(input.businessTypeOther || '').trim().slice(0, 40);
   if (input.businessType !== undefined) {
-    if (!BUSINESS_TYPES[input.businessType]) throw httpErr('Unknown business type');
+    if (!BUSINESS_TYPES[input.businessType]) throw httpErr('Unknown profession');
+    if (input.businessType !== 'other' && input.businessTypeOther === undefined) next.businessTypeOther = '';
     next.businessType = input.businessType;
     // "Use these defaults": copy the type's terms, reminder style and invoice note
     if (input.applyPreset) {

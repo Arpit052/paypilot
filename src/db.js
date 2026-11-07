@@ -101,6 +101,7 @@ function migrate(d) {
   if (!cols.has('reference')) d.exec('ALTER TABLE invoices ADD COLUMN reference TEXT');
   const ccols = new Set(d.prepare('PRAGMA table_info(clients)').all().map((c) => c.name));
   if (!ccols.has('company')) d.exec('ALTER TABLE clients ADD COLUMN company TEXT');
+  if (!ccols.has('role')) d.exec('ALTER TABLE clients ADD COLUMN role TEXT');
 }
 
 let conn = null;
@@ -146,7 +147,7 @@ export function resetDb() {
 }
 
 // ---------------- clients ----------------
-const rowClient = (r) => r && { id: r.id, name: r.name, email: r.email, company: r.company || '', createdAt: r.created_at };
+const rowClient = (r) => r && { id: r.id, name: r.name, email: r.email, company: r.company || '', role: r.role || '', createdAt: r.created_at };
 
 export function listClients() {
   return sql().prepare('SELECT * FROM clients ORDER BY name').all().map(rowClient);
@@ -168,16 +169,17 @@ export function findClient(ref) {
   );
 }
 
-export function upsertClient({ name, email, company }) {
+export function upsertClient({ name, email, company, role }) {
   const d = sql();
   const existing = d.prepare('SELECT * FROM clients WHERE email = ? COLLATE NOCASE').get(email);
   if (existing) {
     if (name && name !== existing.name) d.prepare('UPDATE clients SET name = ? WHERE id = ?').run(name, existing.id);
     if (company && company !== existing.company) d.prepare('UPDATE clients SET company = ? WHERE id = ?').run(company, existing.id);
+    if (role && role !== existing.role) d.prepare('UPDATE clients SET role = ? WHERE id = ?').run(role, existing.id);
     return getClient(existing.id);
   }
   const id = newId('cli');
-  d.prepare('INSERT INTO clients (id, name, email, company, created_at) VALUES (?, ?, ?, ?, ?)').run(id, name, email, company || null, nowIso());
+  d.prepare('INSERT INTO clients (id, name, email, company, role, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, name, email, company || null, role || null, nowIso());
   return getClient(id);
 }
 

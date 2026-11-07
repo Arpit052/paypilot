@@ -20,29 +20,42 @@
     </div>
   </div>
 
+  <section class="panel an-sum" id="summary" aria-live="polite"></section>
+
   <section class="an-kpis" id="kpis"></section>
 
   <section class="panel an-trend">
     <div class="an-trend-h">
-      <div><span class="muted small">Revenue over time</span><div class="an-big" id="trendTotal"></div></div>
-      <div class="seg small-seg" role="group" aria-label="Series" id="series"><button data-s="received" aria-pressed="true">Received</button><button data-s="invoiced">Invoiced</button></div>
+      <div><span class="muted small" id="trendLabel">Money received each month</span><div class="an-big" id="trendTotal"></div></div>
+      <div class="an-trend-ctl">
+        <div class="seg small-seg hidden" role="group" aria-label="Series" id="series"><button data-s="received" aria-pressed="true">Received</button><button data-s="invoiced">Invoiced</button></div>
+        <div class="seg small-seg" role="group" aria-label="View" id="view"><button data-v="month" aria-pressed="true">By month</button><button data-v="week">By week</button></div>
+      </div>
     </div>
+    <div class="an-legend" id="legend"></div>
     <div class="an-chart" id="chart"></div>
   </section>
 
   <div class="an-grid3">
-    <section class="panel"><h2>When clients pay</h2><p class="muted small" style="margin:-6px 0 14px">Paid invoices in this period, by how late they were.</p><div id="timing"></div></section>
-    <section class="panel"><h2>Unpaid, by age</h2><p class="muted small" style="margin:-6px 0 14px">Money still owed to you, by days past due.</p><div id="aging"></div></section>
-    <section class="panel an-insights"><h2>Insights</h2><ul id="insights"></ul></section>
+    <section class="panel"><h2>When clients pay</h2><p class="muted small an-help">Paid invoices in this period, compared with their due date.</p><div id="timing"></div></section>
+    <section class="panel"><h2>Unpaid, by age</h2><p class="muted small an-help">Money still owed to you, by how long it's been past due. The older it gets, the harder it is to collect.</p><div id="aging"></div></section>
+    <section class="panel"><h2>How steady is your income?</h2><p class="muted small an-help">Full months only. A big swing means you need a bigger cash cushion.</p><div id="steady"></div></section>
   </div>
 
+  <section class="panel an-ins-panel" style="margin-top:18px">
+    <h2>What to do about it</h2>
+    <p class="muted small an-help">Plain-English notes from your numbers, most important first.</p>
+    <ul class="an-ins" id="insights"></ul>
+  </section>
+
   <section class="panel" style="margin-top:18px">
-    <div class="sec-head"><h2>Clients</h2><span class="muted small" style="margin-left:auto">Sorted by revenue in this period</span></div>
+    <div class="sec-head"><div><h2>Clients</h2><p class="muted small" style="margin:2px 0 0">Sorted by money received in this period. "Usually" is how late they pay on average; "On time" is the share of invoices paid by the due date.</p></div></div>
     <div class="table-wrap" id="clients"></div>
   </section>
 
   <section class="panel" style="margin-top:18px">
     <h2>What earns the most</h2>
+    <p class="muted small an-help">Line items billed in this period, grouped by name.</p>
     <div id="services"></div>
   </section>
 </main>

@@ -78,7 +78,15 @@ export async function copyPayLink(url) {
     document.execCommand('copy');
     t.remove();
   }
-  toast('Pay link copied. Paste it in a text, email or WhatsApp to your client.');
+  const demo = full.includes('/mock-pay.html');
+  const local = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(full);
+  toast(
+    demo
+      ? local
+        ? 'Demo pay link copied. It only opens on this computer. With PayPal connected, links go to PayPal and work anywhere.'
+        : 'Demo pay link copied. With PayPal connected, links go to PayPal itself.'
+      : 'Pay link copied. Paste it in a text, email or WhatsApp to your client.'
+  );
 }
 
 export function toast(msg) {

@@ -13,7 +13,7 @@ import { listClients, listInvoices, listSchedules, kvGet, kvSet, getClient } fro
 import { isPaid, clientStats } from './analytics.js';
 import { complete, llmAvailable } from './llm.js';
 import { cleanText } from './actions.js';
-import { typeOf } from './business.js';
+import { typeOf, professionLabel } from './business.js';
 
 const LOOKBACK = 180; // days of history we learn from
 const MONTH = 30.44;
@@ -177,10 +177,9 @@ ${sign}`),
 }
 
 async function aiOffer(o) {
-  const t = typeOf(config.businessType);
-  const prompt = `Write a short email offering a ${o.offer.word} to a ${t.client} of a ${t.label.toLowerCase()} business${config.businessName ? ` called "${config.businessName}"` : ''}.
+  const prompt = `Write a short email from a ${professionLabel(config.businessType, config.businessTypeOther).toLowerCase()}${config.businessName ? ` ("${config.businessName}")` : ''} offering a ${o.offer.word} to a client.
 Facts (use only these, do not invent others):
-- ${t.client} name: ${o.client}${o.company ? ` (${o.company})` : ''}
+- client: ${o.client}${o.company ? ` (${o.company})` : ''}
 - they worked with us in ${o.pattern.activeMonths} of the last ${o.pattern.months} months; usual work: ${o.pattern.usual.join('; ')}
 - offer: ${o.currency} ${o.offer.price} per month, ${o.offer.discount}% less than a typical month with us
 - one invoice on the same date every month, priority scheduling, can be adjusted

@@ -31,18 +31,18 @@ setLlmOverride(async ({ messages, tools }) => {
   const last = messages.at(-1);
   const userText = last.role === 'user' ? last.content.find((c) => c.type === 'text')?.text || '' : '';
   if (/HEADLINE:/.test(userText)) {
-    return { content: [{ type: 'text', text: 'HEADLINE: Ryan Castillo owes $1,240 and is 12 days late.\n- Send Ryan a firm reminder for #1001.\n- Nudge Marcus Hollis on #1002.' }] };
+    return { content: [{ type: 'text', text: 'HEADLINE: Marcus Vance owes $1,240 and is 12 days late.\n- Send Marcus a firm reminder for #1001.\n- Nudge William Evans on #1002.' }] };
   }
   if (last.role === 'user' && /bill/i.test(userText)) {
     return {
       content: [
-        { type: 'tool_call', id: 't1', name: 'get_client_insights', input: { client: 'Ryan Castillo' } },
+        { type: 'tool_call', id: 't1', name: 'get_client_insights', input: { client: 'Marcus Vance' } },
         {
           type: 'tool_call',
           id: 't2',
           name: 'propose_invoice',
           input: {
-            client_name: 'Ryan Castillo',
+            client_name: 'Marcus Vance',
             client_email: 'ryan@castillocoffee.co',
             items: [{ name: 'Logo concept', quantity: 3, unit_price: 150 }],
             due_in_days: 10,
@@ -52,10 +52,10 @@ setLlmOverride(async ({ messages, tools }) => {
     };
   }
   if (last.role === 'user' && /tax/i.test(userText)) {
-    return { content: [{ type: 'tool_call', id: 'tx', name: 'propose_invoice', input: { client_name: 'Danielle Okafor', client_email: 'dani@okaforfitness.com', items: [{ name: 'Instagram post', quantity: 10, unit_price: 25 }], tax_percent: 8, deposit_percent: 20 } }] };
+    return { content: [{ type: 'tool_call', id: 'tx', name: 'propose_invoice', input: { client_name: 'Rachel Adams', client_email: 'rachel@summitpeakconsulting.com', items: [{ name: 'Instagram post', quantity: 10, unit_price: 25 }], tax_percent: 8, deposit_percent: 20 } }] };
   }
   if (last.role === 'user' && /every month/i.test(userText)) {
-    return { content: [{ type: 'tool_call', id: 'rc', name: 'propose_recurring', input: { client_name: 'Priya Raman', client_email: 'office@brightlinedental.com', items: [{ name: 'Design retainer', quantity: 1, unit_price: 600 }], frequency: 'monthly' } }] };
+    return { content: [{ type: 'tool_call', id: 'rc', name: 'propose_recurring', input: { client_name: 'Kiran Deshmukh', client_email: 'kiran@overcastlabs.io', items: [{ name: 'Design retainer', quantity: 1, unit_price: 600 }], frequency: 'monthly' } }] };
   }
   if (last.role === 'user' && /owe/i.test(userText)) {
     return { content: [{ type: 'tool_call', id: 't3', name: 'list_invoices', input: { status: 'overdue' } }] };
@@ -79,9 +79,9 @@ test('seed demo history', async () => {
   assert.equal(r.status, 200);
   const { data } = await call('/api/clients');
   assert.equal(data.clients.length, 5);
-  const jake = data.clients.find((c) => c.name === 'Ryan Castillo');
+  const jake = data.clients.find((c) => c.name === 'Marcus Vance');
   assert.equal(jake.riskLabel, 'high', 'late payer should be high risk');
-  const emily = data.clients.find((c) => c.name === 'Priya Raman');
+  const emily = data.clients.find((c) => c.name === 'Kiran Deshmukh');
   assert.equal(emily.riskLabel, 'none', 'reliable payer = no risk');
   assert.ok(data.clients.every((c) => c.avgDaysLate === null || Number.isInteger(c.avgDaysLate)), 'whole days only');
 });
@@ -157,7 +157,7 @@ test('payment pushes a live notification over SSE and is stored', async () => {
   const res = await fetch(base + '/api/events', { signal: ctrl.signal });
   assert.match(res.headers.get('content-type'), /text\/event-stream/);
   const reader = res.body.getReader();
-  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Marcus Hollis');
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'William Evans');
   await call(`/api/mock/pay/${inv.paypalId}`, {});
   let text = '';
   const until = Date.now() + 3000;
@@ -172,7 +172,7 @@ test('payment pushes a live notification over SSE and is stored', async () => {
 });
 
 test('payment via webhook path flips status to PAID', async () => {
-  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Danielle Okafor');
+  const inv = (await call('/api/invoices')).data.invoices.find((i) => i.paypalId?.startsWith('INV2-MOCK') && i.client === 'Rachel Adams');
   const r = await call(`/api/mock/pay/${inv.paypalId}`, {});
   assert.equal(r.data.changed, true);
   const after = (await call('/api/invoices')).data.invoices.find((i) => i.id === inv.id);
@@ -183,11 +183,11 @@ test('payment via webhook path flips status to PAID', async () => {
 test('follow-up scan drafts reminders for overdue invoices only, then sends', async () => {
   const { data } = await call('/api/followups/scan', {});
   const reminders = data.created.filter((a) => a.type === 'send_reminder');
-  assert.deepEqual(reminders.map((a) => a.payload.client).sort(), ['Ryan Castillo']);
-  const jake = reminders.find((a) => a.payload.client === 'Ryan Castillo');
-  // Ryan is 12 days late (> 7-day policy), so a late-fee slip is drafted too
+  assert.deepEqual(reminders.map((a) => a.payload.client).sort(), ['Marcus Vance']);
+  const jake = reminders.find((a) => a.payload.client === 'Marcus Vance');
+  // Marcus is 12 days late (> 7-day policy), so a late-fee slip is drafted too
   const fees = data.created.filter((a) => a.type === 'add_late_fee');
-  assert.deepEqual(fees.map((a) => a.payload.client), ['Ryan Castillo']);
+  assert.deepEqual(fees.map((a) => a.payload.client), ['Marcus Vance']);
   assert.equal(fees[0].payload.fee, 62, '5% of $1,240');
   assert.equal(jake.payload.tone, 'firm', 'second reminder escalates');
   assert.equal(jake.payload.subject, 'Quick reminder', 'AI drafted');
@@ -281,7 +281,7 @@ test('recurring invoices: schedule → due draft → next month', async () => {
   assert.ok(sch[0].nextRun > ok.data.action.payload.startDate, 'next run advanced to next month');
   assert.equal((await call('/api/schedules/run', {})).data.created.length, 0, 'not due again yet');
   // manual form path (no AI)
-  const form = await call('/api/schedules', { clientName: 'Marcus Hollis', clientEmail: 'ap@hollisgrant.com', description: 'Weekly support', amount: 150, frequency: 'weekly' });
+  const form = await call('/api/schedules', { clientName: 'William Evans', clientEmail: 'william@voltlineenergy.com', description: 'Weekly support', amount: 150, frequency: 'weekly' });
   assert.equal(form.status, 200, JSON.stringify(form.data));
   assert.ok(form.data.action.result.firstDraftId);
   const bad = await call('/api/schedules', { clientName: 'X', clientEmail: 'nope', description: 'x', amount: 5, frequency: 'weekly' });
@@ -389,7 +389,7 @@ test('provider adapters map tool calls correctly', () => {
 test('PayPal invoice body shape', () => {
   const b = buildInvoiceBody({
     number: '0007',
-    client: { name: 'Priya Raman', email: 'p@x.com' },
+    client: { name: 'Kiran Deshmukh', email: 'p@x.com' },
     items: [{ name: 'Retainer', quantity: 1, unitPrice: 600 }],
     currency: 'USD',
     issueDate: '2026-11-01',
@@ -398,7 +398,7 @@ test('PayPal invoice body shape', () => {
   });
   assert.equal(b.detail.invoice_number, '0007');
   assert.equal(b.detail.payment_term.due_date, '2026-11-15');
-  assert.deepEqual(b.primary_recipients[0].billing_info.name, { given_name: 'Priya', surname: 'Raman' });
+  assert.deepEqual(b.primary_recipients[0].billing_info.name, { given_name: 'Kiran', surname: 'Deshmukh' });
   assert.deepEqual(b.items[0].unit_amount, { currency_code: 'USD', value: '600.00' });
   assert.equal(b.items[0].quantity, '1');
 });
@@ -430,7 +430,7 @@ test('AI text with literal \\n is turned into real line breaks', async () => {
 
 test('removing a client hides them (PayPal untouched)', async () => {
   const before = (await call('/api/clients')).data.clients;
-  const ben = before.find((c) => c.name === 'Ben Whitaker');
+  const ben = before.find((c) => c.name === 'Daniel Brooks');
   const r = await fetch(`${base}/api/clients/${ben.id}`, { method: 'DELETE' });
   assert.equal(r.status, 200);
   const after = (await call('/api/clients')).data.clients;

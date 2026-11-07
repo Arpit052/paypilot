@@ -1,6 +1,11 @@
-// Sample businesses for the demo, one per kind of work. Each client has a habit:
-// some pay like clockwork, some always a little late, one is a chronic late payer,
-// and one buys so often that a retainer would suit both sides.
+// Sample clients for the demo. The same six clients appear for every profession, each with
+// a real-world payment habit; only the work they buy changes with the profession.
+//   Kiran   pays a monthly retainer like clockwork
+//   Rachel  buys almost every month: the retainer suggestion
+//   Marcus  always pays late: high risk, one invoice overdue
+//   William a brand team on Net 30 that pays a couple of days late
+//   Sofia   reliable, an invoice due soon
+//   Daniel  a one-off private client
 //
 // A client has either a `plan` (repeat work every N days, with a cycle of how late each
 // invoice was paid) or a `list` of single invoices: [days ago issued, days late, work].
@@ -9,135 +14,99 @@
 
 const C = (name, quantity, unitPrice) => [name, quantity, unitPrice];
 
-export const PERSONAS = {
-  clinic: [
-    {
-      key: 'harbor', name: 'Elena Brooks', company: 'Harbor Logistics', email: 'hr@harborlogistics.com', net: 15,
-      plan: { every: 30, from: 170, delays: [0, 1, 0, 0, 2, 0], work: [[C('Corporate wellness programme (monthly)', 1, 1200)]] },
-      retainer: { item: C('Corporate wellness programme (monthly)', 1, 1200), due: 15 },
-    },
-    {
-      key: 'westfield', name: 'Sam Doyle', company: 'Westfield Rugby Club', email: 'treasurer@westfieldrfc.org', net: 7,
-      plan: {
-        every: 37, from: 172, delays: [1, 3, 0, 2, 4, 1, 2],
-        work: [
-          [C('Match-day taping and pitch-side physio', 1, 320)],
-          [C('Squad screening, 12 players', 12, 35)],
-          [C('Injury rehab sessions', 5, 85), C('Taping supplies', 1, 45)],
-          [C('Match-day taping and pitch-side physio', 1, 320), C('Travel to away fixture', 1, 60)],
-        ],
-      },
-    },
-    {
-      key: 'avery', name: 'Tom Avery', company: '', email: 'tom.avery@fastmail.com', net: 7,
-      list: [[150, 2, [C('6-session treatment pack', 1, 480)]], [92, 9, [C('Follow-up session', 3, 85)]], [30, null, [C('6-session treatment pack', 1, 480), C('Home exercise kit', 1, 45)]]],
-    },
-    {
-      key: 'lakeside', name: 'Karen Ruiz', company: 'Lakeside Senior Living', email: 'accounts@lakesideseniorliving.com', net: 30,
-      list: [[175, 8, [C('Group mobility classes', 8, 90)]], [140, 12, [C('Group mobility classes', 8, 90)]], [105, 9, [C('Falls-prevention screening', 20, 30)]], [70, 14, [C('Group mobility classes', 8, 90)]], [40, null, [C('Group mobility classes', 8, 90), C('Staff manual-handling workshop', 1, 380)]]],
-    },
-    {
-      key: 'mia', name: 'Mia Chen', company: '', email: 'mia.chen@outlook.com', net: 7,
-      list: [[60, 0, [C('Initial assessment', 1, 120), C('Follow-up session', 1, 85)]], [33, 0, [C('Follow-up session', 2, 85)]]],
-    },
-  ],
+export const ROSTER = [
+  { key: 'kiran', name: 'Kiran Deshmukh', role: 'Principal Engineer', company: 'Overcast Labs', email: 'kiran@overcastlabs.io', net: 15 },
+  { key: 'rachel', name: 'Rachel Adams', role: 'Operations Director', company: 'Summit Peak Consulting', email: 'rachel@summitpeakconsulting.com', net: 15 },
+  { key: 'marcus', name: 'Marcus Vance', role: 'Founder & CEO', company: 'Apex Growth Lab', email: 'marcus@apexgrowthlab.io', net: 15 },
+  { key: 'william', name: 'William Evans', role: 'Head of Brand', company: 'Voltline Energy', email: 'william@voltlineenergy.com', net: 30 },
+  { key: 'sofia', name: 'Sofia Martinez', role: 'Marketing Manager', company: 'Lumen Health', email: 'sofia@lumenhealth.co', net: 15 },
+  { key: 'daniel', name: 'Daniel Brooks', role: '', company: '', email: 'daniel.brooks@fastmail.com', net: 7 },
+];
 
-  tutor: [
-    {
-      key: 'patel', name: 'Raj Patel', company: '', email: 'raj.patel@yahoo.com', net: 7,
-      plan: { every: 30, from: 168, delays: [0, 0, 1, 0, 0, 1], work: [[C('Monthly lesson plan, 8 sessions', 1, 400)]] },
-      retainer: { item: C('Monthly lesson plan, 8 sessions', 1, 400), due: 7 },
-    },
-    {
-      key: 'morales', name: 'Ana Morales', company: '', email: 'ana.morales@gmail.com', net: 7,
-      plan: {
-        every: 34, from: 170, delays: [0, 2, 1, 0, 3, 1],
-        work: [
-          [C('Maths tutoring, 4 sessions', 4, 55)],
-          [C('Maths tutoring, 4 sessions', 4, 55), C('Practice test pack', 1, 25)],
-          [C('Maths and physics, 5 sessions', 5, 55)],
-        ],
-      },
-    },
-    {
-      key: 'greenfield', name: 'Laura Kim', company: 'Greenfield Academy', email: 'finance@greenfieldacademy.org', net: 30,
-      list: [[160, 6, [C('SAT prep workshop', 3, 180)]], [95, 11, [C('Exam prep workshop', 4, 180)]], [45, null, [C('Revision bootcamp (2 days)', 2, 450)]]],
-    },
-    {
-      key: 'owen', name: 'Owen Brooks', company: '', email: 'owen.brooks@icloud.com', net: 7,
-      list: [[120, 15, [C('Lesson pack, 8 sessions', 1, 400)]], [65, 21, [C('Lesson pack, 8 sessions', 1, 400)]], [26, null, [C('Lesson pack, 8 sessions', 1, 400), C('Progress report', 1, 40)]]],
-    },
-    {
-      key: 'sofia', name: 'Sofia Lindqvist', company: '', email: 'sofia.lindqvist@proton.me', net: 7,
-      list: [[80, 0, [C('IELTS speaking prep', 6, 60)]], [18, 0, [C('Mock exam with written feedback', 1, 90)]]],
-    },
-  ],
-
-  trades: [
-    {
-      key: 'dental', name: 'Dr. Omar Siddiqui', company: 'Maple Street Dental', email: 'office@maplestreetdental.com', net: 15,
-      plan: { every: 30, from: 172, delays: [0, 0, 2, 0, 1, 0], work: [[C('HVAC maintenance plan (monthly)', 1, 260)]] },
-      retainer: { item: C('HVAC maintenance plan (monthly)', 1, 260), due: 15 },
-    },
-    {
-      key: 'cedar', name: 'Nina Alvarez', company: 'Cedar Point Property Management', email: 'maintenance@cedarpointpm.com', net: 15,
-      plan: {
-        every: 36, from: 176, delays: [3, 5, 2, 6, 4, 8, 3, 5, 2, 4, 6],
-        work: [
-          [C('Leaking tap repair, unit 4B', 1, 145)],
-          [C('Call-out fee', 1, 95), C('Labour (per hour)', 2, 78), C('Parts and materials', 1, 64)],
-          [C('Water heater thermostat replacement', 1, 310)],
-          [C('Gutter clearing, 3 buildings', 3, 120)],
-          [C('Emergency call-out (weekend)', 1, 180), C('Labour (per hour)', 3, 78)],
-        ],
-      },
-    },
-    {
-      key: 'novak', name: 'Greg Novak', company: '', email: 'greg.novak@gmail.com', net: 0,
-      list: [[130, 12, [C('AC tune-up', 1, 180)]], [24, null, [C('Water heater replacement, 50 gal', 1, 1450), C('Labour (per hour)', 4, 78), C('Old unit haul-away', 1, 60)]]],
-    },
-    {
-      key: 'rossi', name: 'Marco Rossi', company: 'Rossi Bakery', email: 'marco@rossibakery.com', net: 15,
-      list: [[165, 6, [C('Oven vent cleaning', 1, 260)]], [110, 9, [C('Walk-in cooler repair', 1, 540)]], [52, 7, [C('Oven vent cleaning', 1, 260), C('Grease trap service', 1, 140)]], [12, null, [C('Walk-in cooler door seal', 1, 210)]]],
-    },
-    {
-      key: 'linda', name: 'Linda Park', company: '', email: 'linda.park@hotmail.com', net: 0,
-      list: [[75, 1, [C('Ceiling fan installation', 2, 140)]], [30, 0, [C('Smoke detector replacement', 5, 38)]]],
-    },
-  ],
-
-  consulting: [
-    {
-      key: 'ledgerly', name: 'Jordan Price', company: 'Ledgerly Inc.', email: 'ap@ledgerly.io', net: 30,
-      plan: { every: 30, from: 175, delays: [0, 2, 0, 1, 0, 0], work: [[C('Monthly advisory', 1, 3000)]] },
-      retainer: { item: C('Monthly advisory', 1, 3000), due: 30 },
-    },
-    {
-      key: 'summit', name: 'Hannah Lee', company: 'Summit Outdoor Co.', email: 'hannah@summitoutdoor.co', net: 15,
-      plan: {
-        every: 34, from: 170, delays: [1, 0, 3, 2, 0, 4],
-        work: [
-          [C('Strategy session (half day)', 1, 1100)],
-          [C('Advisory (per hour)', 6, 180)],
-          [C('Pricing review', 1, 1450)],
-          [C('Strategy session (half day)', 1, 1100), C('Advisory (per hour)', 2, 180)],
-        ],
-      },
-    },
-    {
-      key: 'crane', name: 'Victor Crane', company: 'Crane & Co. Logistics', email: 'payables@cranelogistics.com', net: 45,
-      list: [[175, 18, [C('Market entry study', 1, 4800)]], [110, 25, [C('Operations review', 1, 3600)]], [70, null, [C('Warehouse network analysis', 1, 4200)]]],
-    },
-    {
-      key: 'bluefin', name: 'Priyanka Shah', company: 'Bluefin Analytics', email: 'finance@bluefinanalytics.com', net: 30,
-      list: [[150, 2, [C('Board pack review', 1, 650)]], [90, 3, [C('Fundraising model', 1, 2800)]], [20, null, [C('Investor Q&A preparation', 1, 1200)]]],
-    },
-    {
-      key: 'nora', name: 'Nora Haddad', company: 'Haddad Coaching', email: 'nora@haddadcoaching.com', net: 15,
-      list: [[100, 0, [C('Leadership coaching', 4, 220)]], [40, 1, [C('Leadership coaching', 4, 220)]]],
-    },
-  ],
+// What each client buys, per profession.
+//   retainer: Kiran's monthly line   frequent: Rachel's rotating orders
+//   marcus: 4 jobs (last one open)   william: 4 jobs (last open)   sofia: 3 (last open)   daniel: 1
+const WORK = {
+  web_developer: {
+    retainer: C('Website maintenance and support (monthly)', 1, 650),
+    frequent: [[C('Landing page build', 1, 480)], [C('Bug fixes and updates (per hour)', 5, 95)], [C('CMS template changes', 1, 360), C('Bug fixes and updates (per hour)', 2, 95)], [C('Booking form integration', 1, 540)]],
+    marcus: [[C('Marketing site rebuild, phase 1', 1, 2400)], [C('Stripe checkout integration', 1, 950)], [C('Marketing site rebuild, phase 2', 1, 1800)], [C('Analytics dashboard API', 1, 1150), C('Bug fixes and updates (per hour)', 4, 95)]],
+    william: [[C('Product launch microsite', 1, 1600)], [C('Store locator API integration', 1, 950)], [C('Performance and accessibility fixes', 1, 720)], [C('Promo page build', 1, 680)]],
+    sofia: [[C('Blog theme customisation', 1, 420)], [C('Newsletter signup integration', 1, 380)], [C('Patient portal login page', 1, 560)]],
+    daniel: [[C('Personal portfolio site', 1, 900)]],
+  },
+  content_writer: {
+    retainer: C('Monthly content retainer (4 blog posts)', 1, 1200),
+    frequent: [[C('Blog post (1,500 words)', 2, 350)], [C('Case study', 1, 450), C('LinkedIn posts', 4, 60)], [C('Email newsletter', 2, 180), C('Blog post (1,500 words)', 1, 350)], [C('Website copy (per page)', 2, 250)]],
+    marcus: [[C('Website copy (per page)', 6, 250)], [C('Pitch deck copy', 1, 650)], [C('Sales email sequence (5 emails)', 1, 900)], [C('Website copy (per page)', 4, 250), C('Product descriptions', 12, 25)]],
+    william: [[C('Product launch press release', 1, 600)], [C('Can and packaging copy', 1, 850)], [C('Brand voice guide', 1, 1200)], [C('Campaign taglines and scripts', 1, 700)]],
+    sofia: [[C('Blog post (1,500 words)', 1, 350)], [C('Patient guide rewrite', 1, 520)], [C('Email newsletter', 2, 180)]],
+    daniel: [[C('Wedding speech editing', 1, 180)]],
+  },
+  digital_marketer: {
+    retainer: C('Social media management (monthly)', 1, 1200),
+    frequent: [[C('Google Ads campaign setup', 1, 750)], [C('Performance report', 1, 300), C('Ad creative refresh', 1, 280)], [C('SEO content plan', 1, 520)], [C('LinkedIn campaign setup', 1, 650)]],
+    marcus: [[C('SEO audit', 1, 950), C('Keyword research', 1, 400)], [C('Paid social launch', 1, 1400)], [C('Conversion rate review', 1, 850)], [C('Q4 campaign management', 1, 1100), C('Performance report', 1, 300)]],
+    william: [[C('Influencer campaign planning', 1, 1800)], [C('Paid social, product launch', 1, 1500)], [C('SEO audit', 1, 950)], [C('Holiday campaign setup', 1, 900)]],
+    sofia: [[C('Local SEO setup', 1, 600)], [C('Google Business profile optimisation', 1, 350)], [C('Email campaign setup', 1, 450)]],
+    daniel: [[C('Social media audit', 1, 250)]],
+  },
+  video_editor: {
+    retainer: C('Monthly editing package (4 videos)', 1, 1100),
+    frequent: [[C('YouTube video edit (10–15 min)', 2, 320)], [C('Short-form clips pack (10)', 1, 400)], [C('YouTube video edit (10–15 min)', 1, 320), C('Thumbnail design', 2, 45)], [C('Webinar recording edit', 1, 380)]],
+    marcus: [[C('Promo video (60 sec)', 1, 850), C('Colour grading and sound mix', 1, 180)], [C('Founder interview edit', 1, 640)], [C('Product demo video', 1, 980)], [C('Promo video (60 sec)', 1, 850), C('Short-form clips pack (10)', 1, 400)]],
+    william: [[C('Launch ad, 30 and 15 sec cuts', 1, 1400)], [C('Event highlight reel', 1, 900)], [C('Social cutdowns (12)', 1, 600)], [C('Athlete interview series edit', 1, 760)]],
+    sofia: [[C('Patient testimonial video', 1, 480)], [C('Clinic tour video', 1, 620)], [C('Short-form clips pack (10)', 1, 400)]],
+    daniel: [[C('Wedding highlights film', 1, 750)]],
+  },
+  consultant: {
+    retainer: C('Monthly advisory retainer', 1, 2500),
+    frequent: [[C('Strategy session (half day)', 1, 1100)], [C('Advisory (per hour)', 6, 180)], [C('Pricing review', 1, 1450)], [C('Strategy session (half day)', 1, 1100), C('Advisory (per hour)', 2, 180)]],
+    marcus: [[C('Go-to-market strategy', 1, 3200)], [C('Market research report', 1, 2400)], [C('Investor readiness review', 1, 1800)], [C('Competitor analysis', 1, 1500), C('Advisory (per hour)', 4, 180)]],
+    william: [[C('Retail channel strategy', 1, 2800)], [C('Customer survey and analysis', 1, 1900)], [C('Pricing study', 1, 1600)], [C('Quarterly strategy workshop', 1, 1400)]],
+    sofia: [[C('Patient journey mapping', 1, 1200)], [C('Advisory (per hour)', 5, 180)], [C('Referral programme design', 1, 950)]],
+    daniel: [[C('Business plan review', 1, 600)]],
+  },
+  photographer: {
+    retainer: C('Monthly content shoot (team and product)', 1, 900),
+    frequent: [[C('Product shoot (half day)', 1, 900)], [C('Edited photos (per image)', 20, 25)], [C('Event photography (3 hours)', 1, 650)], [C('Headshot session', 2, 350)]],
+    marcus: [[C('Brand photoshoot (full day)', 1, 1800)], [C('Office and team photos', 1, 750)], [C('Product shoot (half day)', 1, 900), C('Usage licence (1 year)', 1, 400)], [C('Campaign shoot', 1, 1300), C('Edited photos (per image)', 12, 25)]],
+    william: [[C('Product packshots (40 images)', 1, 1600)], [C('Athlete lifestyle shoot', 1, 2200)], [C('Event photography (3 hours)', 1, 650)], [C('Retail display photos', 1, 700)]],
+    sofia: [[C('Clinic interior photos', 1, 600)], [C('Headshot session', 3, 350)], [C('Edited photos (per image)', 15, 25)]],
+    daniel: [[C('Family portrait session', 1, 450)]],
+  },
+  virtual_assistant: {
+    retainer: C('Inbox and calendar management (monthly)', 1, 600),
+    frequent: [[C('Admin support (per hour)', 12, 35)], [C('Data entry (per hour)', 10, 30)], [C('Travel booking', 2, 75), C('Admin support (per hour)', 6, 35)], [C('CRM clean-up (per hour)', 9, 35)]],
+    marcus: [[C('Admin support (per hour)', 30, 35)], [C('Investor update preparation', 1, 280)], [C('Admin support (per hour)', 24, 35)], [C('Event logistics', 1, 450), C('Admin support (per hour)', 10, 35)]],
+    william: [[C('Trade show logistics', 1, 650)], [C('Data entry (per hour)', 25, 30)], [C('Vendor research', 1, 380)], [C('Sample shipping coordination', 1, 320)]],
+    sofia: [[C('Appointment reminders setup', 1, 260)], [C('Admin support (per hour)', 8, 35)], [C('Data entry (per hour)', 12, 30)]],
+    daniel: [[C('Move planning and bookings', 1, 300)]],
+  },
+  other: {
+    retainer: C('Monthly retainer', 1, 800),
+    frequent: [[C('Professional services (per hour)', 6, 75)], [C('Project fee', 1, 520)], [C('Consultation', 2, 150), C('Professional services (per hour)', 3, 75)], [C('Materials and expenses', 1, 100), C('Professional services (per hour)', 5, 75)]],
+    marcus: [[C('Project fee', 1, 1600)], [C('Professional services (per hour)', 12, 75)], [C('Project fee', 1, 1200)], [C('Project fee', 1, 1100), C('Materials and expenses', 1, 140)]],
+    william: [[C('Project fee', 1, 1400)], [C('Professional services (per hour)', 14, 75)], [C('Consultation', 3, 150)], [C('Project fee', 1, 700)]],
+    sofia: [[C('Consultation', 2, 150)], [C('Professional services (per hour)', 6, 75)], [C('Project fee', 1, 480)]],
+    daniel: [[C('Consultation', 1, 150), C('Professional services (per hour)', 2, 75)]],
+  },
 };
+
+/** The demo clients and their habits for one profession (null for the hand-made design studio). */
+export function personaFor(profession) {
+  const w = WORK[profession];
+  if (!w) return null;
+  const R = Object.fromEntries(ROSTER.map((c) => [c.key, c]));
+  return [
+    { ...R.kiran, plan: { every: 30, from: 170, delays: [0, 0, 1, 0, 0, 0], work: [[w.retainer]] }, retainer: { item: w.retainer, due: 15 } },
+    { ...R.rachel, plan: { every: 34, from: 170, delays: [0, 2, 1, 0, 3, 1], work: w.frequent } },
+    { ...R.marcus, list: [[160, 13, w.marcus[0]], [118, 16, w.marcus[1]], [75, 19, w.marcus[2]], [27, null, w.marcus[3]]] },
+    { ...R.william, list: [[165, 2, w.william[0]], [112, 3, w.william[1]], [64, 2, w.william[2]], [33, null, w.william[3]]] },
+    { ...R.sofia, list: [[130, 0, w.sofia[0]], [85, 1, w.sofia[1]], [14, null, w.sofia[2]]] },
+    { ...R.daniel, list: [[45, 0, w.daniel[0]]] },
+  ];
+}
 
 /** Small, repeatable wobble so plan dates don't look machine-made. */
 const WOBBLE = [0, 3, -2, 4, -3, 1, -1, 2];

@@ -3,7 +3,7 @@
 // Amounts are in the main currency (config.currency); other currencies are left out of
 // the sums and counted separately so nothing is silently mixed.
 import { config, isoDate, addDays, daysBetween } from './config.js';
-import { listInvoices, listClients } from './db.js';
+import { listInvoices, listClients, listSchedules } from './db.js';
 import { isOpen, isPaid, forecastCashflow } from './analytics.js';
 
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -82,6 +82,7 @@ export function analytics({ months = 6 } = {}, today = isoDate()) {
         id: c.id,
         name: c.name,
         company: c.company || '',
+        role: c.role || '',
         revenue: n.revenue,
         prevRevenue: p.revenue,
         change: pct(n.revenue, p.revenue),
@@ -123,19 +124,59 @@ export function analytics({ months = 6 } = {}, today = isoDate()) {
   const repeat = clients.filter((c) => c.invoices >= 2).length;
   const fc = forecastCashflow(30, today);
 
+  // calendar months, oldest first (the current month is marked partial)
+  const monthly = [];
+  const [ty, tm] = today.split('-').map(Number);
+  for (let k = months - 1; k >= 0; k--) {
+    const d = new Date(Date.UTC(ty, tm - 1 - k, 1));
+    const key = d.toISOString().slice(0, 7);
+    const inMonth = (date) => date && date.slice(0, 7) === key;
+    const paid = all.filter((i) => isPaid(i) && inMonth(i.paidDate));
+    monthly.push({
+      key,
+      label: d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }),
+      year: d.getUTCFullYear(),
+      received: r2(paid.reduce((t, i) => t + i.total, 0)),
+      payments: paid.length,
+      invoiced: r2(all.filter((i) => i.status !== 'CANCELLED' && inMonth(i.issueDate)).reduce((t, i) => t + i.total, 0)),
+      partial: k === 0,
+    });
+  }
+  // how steady income is (full months only)
+  const full = monthly.filter((x) => !x.partial);
+  const vals = full.map((x) => x.received);
+  const mean = avg(vals) || 0;
+  const sdv = vals.length > 1 ? Math.sqrt(vals.reduce((t, v) => t + (v - mean) ** 2, 0) / (vals.length - 1)) : 0;
+  const lo = full.length ? full.reduce((a, b) => (b.received < a.received ? b : a)) : null;
+  const hi = full.length ? full.reduce((a, b) => (b.received > a.received ? b : a)) : null;
+  const onPlan = new Set(listSchedules().filter((x) => x.active).map((x) => x.clientId));
+  const recurringRevenue = clients.filter((c) => onPlan.has(c.id)).reduce((t, c) => t + c.revenue, 0);
+  const stability = {
+    perMonth: r2(mean),
+    swingPct: mean ? Math.round((sdv / mean) * 100) : null, // coefficient of variation
+    low: lo && { label: `${lo.label} ${lo.year}`, amount: lo.received },
+    high: hi && { label: `${hi.label} ${hi.year}`, amount: hi.received },
+    recurringShare: now.revenue ? Math.round((recurringRevenue / now.revenue) * 100) : 0,
+    months: full.length,
+  };
+
+  const fmt = (v) => new Intl.NumberFormat('en-US', { style: 'currency', currency: cur, maximumFractionDigits: 0 }).format(v);
   const insights = [];
+  const add = (tone, text, link) => insights.push({ tone, text, link });
+  const overdueAmt = aging.filter((a) => a.key !== 'current').reduce((t, a) => t + a.amount, 0);
+  if (overdueAmt) add('warn', `${fmt(overdueAmt)} is overdue right now, across ${aging.filter((a) => a.key !== 'current').reduce((t, a) => t + a.count, 0)} invoices.`, { href: '/followups', label: 'Chase it' });
+  const slow = clients.filter((c) => c.avgDaysLate !== null && c.avgDaysLate >= 7).sort((a, b) => b.avgDaysLate - a.avgDaysLate)[0];
+  if (slow) add('warn', `${slow.name} pays ${slow.avgDaysLate} days late on average. Ask for a deposit on the next job, or send reminders sooner.`, { href: '/clients', label: 'See client' });
+  if (top && top.share >= 35) add('warn', `${top.name} brings in ${top.share}% of your revenue. If they left, income would drop by about a third; worth growing other clients.`);
   if (now.revenue && prev.revenue) {
     const ch = pct(now.revenue, prev.revenue);
-    insights.push(ch >= 0 ? `Revenue is up ${ch}% on the previous ${months} months.` : `Revenue is down ${-ch}% on the previous ${months} months.`);
+    add(ch >= 0 ? 'good' : 'warn', ch >= 0 ? `Revenue is up ${ch}% on the previous ${months} months.` : `Revenue is down ${-ch}% on the previous ${months} months.`);
   }
-  if (top && top.share >= 35) insights.push(`${top.name} brings in ${top.share}% of your revenue. Losing one client would hurt; worth growing others.`);
-  const slow = clients.filter((c) => c.avgDaysLate !== null && c.avgDaysLate >= 7).sort((a, b) => b.avgDaysLate - a.avgDaysLate)[0];
-  if (slow) insights.push(`${slow.name} pays ${slow.avgDaysLate} days late on average. A deposit upfront or a shorter reminder plan would help.`);
-  const fast = clients.filter((c) => c.onTimeRate === 100 && c.paidCount >= 2)[0];
-  if (fast) insights.push(`${fast.name} has paid every invoice on time. A good client to offer a retainer.`);
-  if (services[0]) insights.push(`Your best-earning work is “${services[0].name}” (${services[0].count} time${services[0].count > 1 ? 's' : ''}).`);
-  const overdueAmt = aging.filter((a) => a.key !== 'current').reduce((t, a) => t + a.amount, 0);
-  if (overdueAmt) insights.push(`${new Intl.NumberFormat('en-US', { style: 'currency', currency: cur }).format(overdueAmt)} is overdue right now. Collections can chase it in one click.`);
+  if (stability.swingPct !== null && stability.months >= 3 && stability.swingPct >= 35)
+    add('info', `Your monthly income swings by about ${stability.swingPct}% around ${fmt(stability.perMonth)}. Retainers make it steadier.`, { href: '/clients#offers', label: 'Suggested retainers' });
+  const fast = clients.filter((c) => c.onTimeRate === 100 && c.paidCount >= 2 && !onPlan.has(c.id))[0];
+  if (fast) add('good', `${fast.name} has paid every invoice on time. A good client to offer a monthly plan.`, { href: '/clients#offers', label: 'Retainers' });
+  if (services[0]) add('info', `Your best-earning work is “${services[0].name}”: ${fmt(services[0].amount)} from ${services[0].count} invoice line${services[0].count > 1 ? 's' : ''}.`);
 
   return {
     currency: cur,
@@ -143,6 +184,13 @@ export function analytics({ months = 6 } = {}, today = isoDate()) {
     from,
     to: today,
     otherCurrency,
+    hasPrev: prev.paidCount + prev.sentCount > 0,
+    paidCount: now.paidCount,
+    onTimeCount: paidNow.filter((i) => late(i) <= 0).length,
+    overdueTotal: r2(overdueAmt),
+    monthly,
+    stability,
+    topClient: top ? { name: top.name, share: top.share } : null,
     kpis: {
       revenue: { value: now.revenue, prev: prev.revenue, change: pct(now.revenue, prev.revenue) },
       invoiced: { value: now.invoiced, prev: prev.invoiced, change: pct(now.invoiced, prev.invoiced), count: now.sentCount },

@@ -44,36 +44,53 @@ test('setup demo', async () => {
 
 test('budget: probabilities are sane, repeatable and move the right way', async () => {
   const date = addDays(today, 21);
-  const a = await est({ price: 1500, date, cashNow: 400, monthlyCosts: 600, buffer: 200 });
+  const a = await est({ price: 1500, date, cashNow: 400, everyday: 600, buffer: 200 });
   assert.equal(a.status, 200, JSON.stringify(a.data));
   const r = a.data;
   assert.ok(r.chance >= 0 && r.chance <= 100);
-  assert.ok(r.inflow.p10 <= r.inflow.p50 && r.inflow.p50 <= r.inflow.p90, 'percentiles are ordered');
+  assert.ok(r.lowest.p10 <= r.lowest.p50 && r.lowest.p50 <= r.lowest.p90, 'percentiles are ordered');
+  assert.ok(r.maxSafe.p95 <= r.maxSafe.p80, 'being surer means spending less');
   assert.ok(r.margin >= 0 && r.margin < 3, 'Monte Carlo error is small');
   assert.ok(r.drivers.some((d) => d.kind === 'invoice' && d.number), 'lists the invoices that decide it');
   assert.ok(r.timeline.length > 30);
   assert.ok(['yes', 'maybe', 'no'].includes(r.verdict.level));
   if (r.safeDates.p80) assert.ok(r.safeDates.p80 >= date, 'safe date is never before the date asked about');
 
-  const again = await est({ price: 1500, date, cashNow: 400, monthlyCosts: 600, buffer: 200 });
+  const again = await est({ price: 1500, date, cashNow: 400, everyday: 600, buffer: 200 });
   assert.equal(again.data.chance, r.chance, 'same inputs give the same answer');
 
-  const richer = await est({ price: 1500, date, cashNow: 1400, monthlyCosts: 600, buffer: 200 });
+  const richer = await est({ price: 1500, date, cashNow: 1400, everyday: 600, buffer: 200 });
   assert.ok(richer.data.chance >= r.chance, 'more cash never lowers the chance');
-  const pricier = await est({ price: 4000, date, cashNow: 400, monthlyCosts: 600, buffer: 200 });
+  const pricier = await est({ price: 4000, date, cashNow: 400, everyday: 600, buffer: 200 });
   assert.ok(pricier.data.chance <= r.chance, 'a higher price never raises the chance');
   assert.ok(pricier.data.shortfall.likely > 0);
 
   const covered = await est({ price: 100, date, cashNow: 10000 });
   assert.equal(covered.data.verdict.level, 'yes');
-  assert.ok(covered.data.needed <= 0);
+  assert.ok(covered.data.lowest.p10 >= 0);
+
+  // real-world money out: tax, fees, a bill and instalments only ever lower the chance
+  const base = (await est({ price: 1500, date, cashNow: 800, buffer: 200, fees: false, taxPct: 0 })).data;
+  const taxed = (await est({ price: 1500, date, cashNow: 800, buffer: 200, fees: true, taxPct: 25 })).data;
+  assert.ok(taxed.chance <= base.chance && taxed.owedNet < base.owedNet, 'tax and fees reduce what reaches you');
+  assert.ok(Math.abs(taxed.owedNet - Math.round(base.owedTotal * 0.75 * (1 - 0.0349) * 100) / 100) < 5, 'fee 3.49% + $0.49, then 25% tax');
+  const billDay = Number(addDays(date, 3).slice(8));
+  const withBill = (await est({ price: 1500, date, cashNow: 800, buffer: 200, fees: false, bills: [{ name: 'Rent', amount: 1200, day: billDay }] })).data;
+  assert.ok(withBill.chance <= base.chance, 'a bill right after buying lowers the chance');
+  assert.ok(withBill.billsInWindow.some((b) => b.name === 'Rent'));
+  const split = (await est({ price: 1500, date, cashNow: 800, buffer: 200, fees: false, instalments: 3 })).data;
+  assert.equal(split.instalment, 500);
+  assert.ok(split.chance >= base.chance, 'paying in parts is easier than paying at once');
+  const marcus = base.drivers.find((d) => d.client === 'Marcus Vance');
+  const without = (await est({ price: 1500, date, cashNow: 800, buffer: 200, fees: false, exclude: [marcus.number] })).data;
+  assert.ok(without.chance <= base.chance && without.excluded[0].number === marcus.number, 'what-if: Marcus never pays');
 });
 
 test('budget: overdue invoice is never predicted to have been paid in the past', async () => {
   const r = (await est({ price: 1000, date: addDays(today, 10) })).data;
   for (const d of r.drivers.filter((x) => x.kind === 'invoice' && x.likelyDate)) assert.ok(d.earlyDate >= today, `${d.number} early date ${d.earlyDate}`);
-  const ryan = r.drivers.find((d) => d.client === 'Ryan Castillo');
-  const priya = r.drivers.find((d) => d.client === 'Priya Raman' && d.kind === 'invoice');
+  const ryan = r.drivers.find((d) => d.client === 'Marcus Vance');
+  const priya = r.drivers.find((d) => d.client === 'Kiran Deshmukh' && d.kind === 'invoice');
   assert.equal(ryan.risk, 'high');
   assert.ok(ryan.chancePaidEver <= priya.chancePaidEver);
 });
@@ -86,18 +103,18 @@ test('budget: bad input is refused clearly', async () => {
 });
 
 test('budget: money inputs are remembered', async () => {
-  await call('/api/budget/estimate', { price: 500, date: addDays(today, 7), cashNow: 321, monthlyCosts: 99, buffer: 50 });
+  await call('/api/budget/estimate', { price: 500, date: addDays(today, 7), cashNow: 321, everyday: 99, buffer: 50, taxPct: 20, bills: [{ name: 'Rent', amount: 900, day: 1 }] });
   const p = (await call('/api/budget/profile')).data.profile;
-  assert.deepEqual([p.cashNow, p.monthlyCosts, p.buffer], [321, 99, 50]);
+  assert.deepEqual([p.cashNow, p.everyday, p.buffer, p.taxPct, p.bills[0].name], [321, 99, 50, 20, 'Rent']);
 });
 
 test('retainer offers: frequent buyer suggested, late payer and retainer clients not', async () => {
   const { offers } = (await call('/api/offers')).data;
   const names = offers.map((o) => o.client);
-  assert.ok(names.includes('Danielle Okafor'), names.join(','));
-  assert.ok(!names.includes('Ryan Castillo'), 'high-risk client is not offered a retainer');
-  assert.ok(!names.includes('Priya Raman'), 'already on a retainer');
-  const d = offers.find((o) => o.client === 'Danielle Okafor');
+  assert.ok(names.includes('Rachel Adams'), names.join(','));
+  assert.ok(!names.includes('Marcus Vance'), 'high-risk client is not offered a retainer');
+  assert.ok(!names.includes('Kiran Deshmukh'), 'already on a retainer');
+  const d = offers.find((o) => o.client === 'Rachel Adams');
   assert.ok(d.pattern.coverage >= 0.75 && d.pattern.cadenceDays <= 40);
   assert.ok(d.offer.price < d.pattern.perActiveMonth, 'cheaper than a typical month');
   assert.ok(d.offer.discount > 0);
@@ -107,7 +124,7 @@ test('retainer offers: frequent buyer suggested, late payer and retainer clients
 
 test('retainer offers: draft (template without AI), send, accept', async () => {
   const { offers } = (await call('/api/offers')).data;
-  const d = offers.find((o) => o.client === 'Danielle Okafor');
+  const d = offers.find((o) => o.client === 'Rachel Adams');
   setLlmOverride(null);
   const dr = await call(`/api/offers/${d.clientId}/draft`, {});
   assert.equal(dr.status, 200, JSON.stringify(dr.data));
@@ -118,11 +135,11 @@ test('retainer offers: draft (template without AI), send, accept', async () => {
   const acc = await call(`/api/offers/${d.clientId}/accept`, { price: 480, startDate: addDays(today, 10) });
   assert.equal(acc.status, 200, JSON.stringify(acc.data));
   const { schedules } = (await call('/api/schedules')).data;
-  const s = schedules.find((x) => x.client === 'Danielle Okafor');
+  const s = schedules.find((x) => x.client === 'Rachel Adams');
   assert.ok(s && s.total === 480);
   assert.ok(!(await call('/api/offers')).data.offers.some((o) => o.clientId === d.clientId), 'gone once accepted');
   const r = (await est({ price: 500, date: addDays(today, 60) })).data;
-  assert.ok(r.drivers.some((x) => x.kind === 'retainer' && x.client === 'Danielle Okafor'), 'new retainer counts in the budget');
+  assert.ok(r.drivers.some((x) => x.kind === 'retainer' && x.client === 'Rachel Adams'), 'new retainer counts in the budget');
 });
 
 test('assistant answers "can I afford it?" and "who should get a retainer?"', async () => {
@@ -139,17 +156,21 @@ test('assistant answers "can I afford it?" and "who should get a retainer?"', as
   assert.deepEqual(a.data.tools, ['check_budget']);
   const out = JSON.parse(a.data.reply);
   assert.ok(typeof out.chance === 'number' && out.verdict.headline);
-  assert.ok(!out.timeline, 'chart data not sent to the model');
+  assert.ok(!out.timeline && !out.balance, 'chart data not sent to the model');
+  assert.ok(out.maxSafe && out.maxSafe.p80 >= 0);
   const b = await call('/api/chat', { sessionId: 'm2', message: 'Who should I offer a retainer?' });
   assert.deepEqual(b.data.tools, ['suggest_retainers']);
   assert.ok(Array.isArray(JSON.parse(b.data.reply).offers));
 });
 
 test('business types: presets and a sample business for each', async () => {
+  assert.equal((await call('/api/settings/business', { businessType: 'other', businessTypeOther: 'Interior designer' })).status, 200);
+  assert.equal((await call('/api/config')).data.businessTypeLabel, 'Interior designer');
   const { types } = (await call('/api/business-types')).data;
-  assert.deepEqual(types.map((t) => t.key), ['freelancer', 'agency', 'clinic', 'tutor', 'trades', 'consulting']);
+  assert.deepEqual(types.map((t) => t.key), ['web_developer', 'graphic_designer', 'content_writer', 'digital_marketer', 'video_editor', 'consultant', 'photographer', 'virtual_assistant', 'other']);
   assert.equal((await call('/api/settings/business', { businessType: 'plumber' })).status, 400);
-  for (const [type, someone] of [['clinic', 'Westfield Rugby Club'], ['tutor', 'Greenfield Academy'], ['trades', 'Cedar Point Property Management'], ['consulting', 'Ledgerly Inc.']]) {
+  for (const type of ['web_developer', 'content_writer', 'digital_marketer', 'video_editor', 'consultant', 'photographer', 'virtual_assistant', 'other']) {
+    const someone = 'Overcast Labs';
     assert.equal((await call('/api/settings/business', { businessType: type, applyPreset: true })).status, 200);
     await call('/api/demo/reset', {});
     await call('/api/demo/seed', {});
@@ -166,6 +187,9 @@ test('business types: presets and a sample business for each', async () => {
     assert.equal(new Set(nums).size, nums.length, 'invoice numbers are unique');
     const { offers } = (await call('/api/offers')).data;
     assert.ok(offers.length >= 1 && offers[0].offer.yearChange > 0, `${type} has a retainer suggestion that pays off`);
+    assert.equal(offers[0].client, 'Rachel Adams');
+    assert.ok(clients.find((c) => c.name === 'Marcus Vance').riskLabel === 'high', `${type}: Marcus is the late payer`);
+    assert.ok(clients.find((c) => c.name === 'Kiran Deshmukh').role === 'Principal Engineer');
     const cfg = (await call('/api/config')).data;
     assert.equal(cfg.typeItems.length, t.items.length);
     assert.equal((await est({ price: 1000, date: addDays(today, 30) })).status, 200);

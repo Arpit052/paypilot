@@ -10,13 +10,13 @@ document.querySelector('.cur').textContent = cfg.currency;
 // ---------------- clients ----------------
 function renderClients() {
   const q = $('q').value.trim().toLowerCase();
-  const list = clients.filter((c) => !q || [c.name, c.company, c.email].some((x) => String(x || '').toLowerCase().includes(q)));
+  const list = clients.filter((c) => !q || [c.name, c.company, c.role, c.email].some((x) => String(x || '').toLowerCase().includes(q)));
   $('clients').innerHTML = list.length
     ? `<table class="data cl-table"><thead><tr><th>Client</th><th>Risk</th><th class="r">Usually pays</th><th class="r">Invoices</th><th class="r">Total paid</th><th class="r">Owed</th><th class="r">Overdue</th><th></th></tr></thead><tbody>${list
         .map((c) => {
           const r = rank[c.id];
           return `<tr id="${esc(c.id)}">
-            <td><div class="cl-who"><span class="avatar" aria-hidden="true">${esc(initials(c.name))}</span><span><b>${esc(c.name)}</b>${r?.rank === 1 ? ' <span class="pill top">Top client</span>' : ''}<br><span class="muted small">${c.company ? `${esc(c.company)} · ` : ''}${esc(c.email)}</span></span></div></td>
+            <td><div class="cl-who"><span class="avatar" aria-hidden="true">${esc(initials(c.name))}</span><span><b>${esc(c.name)}</b>${r?.rank === 1 ? ' <span class="pill top">Top client</span>' : ''}<br><span class="muted small">${[c.role, c.company].filter(Boolean).map(esc).join(', ')}${c.role || c.company ? ' · ' : ''}${esc(c.email)}</span></span></div></td>
             <td><span class="pill ${c.riskLabel}">${RISK_TEXT[c.riskLabel]}</span></td>
             <td class="r">${daysLateText(c.avgDaysLate)}</td>
             <td class="r num">${c.invoiceCount}</td>

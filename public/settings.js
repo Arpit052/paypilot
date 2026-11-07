@@ -37,24 +37,25 @@ function fill() {
 
 // ---------------- business type ----------------
 function renderTypes() {
-  const cur = S.business.businessType || 'freelancer';
+  const cur = S.business.businessType || 'graphic_designer';
   $('btGrid').innerHTML = TYPES.map(
     (t) => `<label class="bt ${t.key === cur ? 'on' : ''}"><input type="radio" name="businessType" value="${t.key}" ${t.key === cur ? 'checked' : ''}><b>${esc(t.label)}</b><span>${esc(t.blurb)}</span></label>`
   ).join('');
   showPreset();
 }
 function showPreset() {
-  const key = document.querySelector('[name=businessType]:checked')?.value || 'freelancer';
+  const key = document.querySelector('[name=businessType]:checked')?.value || 'graphic_designer';
   const t = TYPES.find((x) => x.key === key);
   const b = S.business;
   const same = b.defaultTermsDays === t.terms && b.reminderStyle === t.style && (b.defaultNote || '') === t.note;
   document.querySelectorAll('.bt').forEach((el) => el.classList.toggle('on', el.querySelector('input').checked));
-  $('btPreset').innerHTML = `<div class="bt-p-h"><b>Usual for ${esc(t.label.toLowerCase())}</b>${same ? '<span class="muted small">In use</span>' : `<button type="button" class="btn ghost small" id="btApply">Use these defaults</button>`}</div>
+  const otherVal = document.querySelector('[name=businessTypeOther]')?.value ?? S.business.businessTypeOther ?? '';
+  $('btPreset').innerHTML = `${key === 'other' ? `<label class="bt-other"><span>Your profession</span><input name="businessTypeOther" maxlength="40" value="${esc(otherVal)}" placeholder="e.g. Interior designer, Translator"></label>` : ''}<div class="bt-p-h"><b>Usual for ${esc(key === 'other' ? 'other work' : `${t.label.toLowerCase()}s`)}</b>${same ? '<span class="muted small">In use</span>' : `<button type="button" class="btn ghost small" id="btApply">Use these defaults</button>`}</div>
     <dl><div><dt>Terms</dt><dd>${TERMS(t.terms)}</dd></div><div><dt>Reminders</dt><dd>${STYLE[t.style]}</dd></div><div><dt>Monthly plan</dt><dd>${esc(t.retainer[0].toUpperCase() + t.retainer.slice(1))}</dd></div></dl>
     <p>${esc(t.note)}</p>
     <div class="bt-items">${t.items.map((i) => `<span>${esc(i.name)} · ${esc(money(i.price, cfg.currency))}</span>`).join('')}</div>`;
   $('btApply')?.addEventListener('click', async () => {
-    await api('/api/settings/business', { body: { businessType: key, applyPreset: true } });
+    await api('/api/settings/business', { body: { businessType: key, businessTypeOther: document.querySelector('[name=businessTypeOther]')?.value || '', applyPreset: true } });
     S = await api('/api/settings');
     toast(`Using ${t.label.toLowerCase()} defaults: ${TERMS(t.terms)}, ${STYLE[t.style].toLowerCase()} reminders`);
     fill();
@@ -216,8 +217,8 @@ async function renderData() {
     <div><dt>Collected</dt><dd>${money(paid.reduce((t, i) => t + (i.currency === cfg.currency ? i.total : 0), 0), cfg.currency)}</dd></div>`;
   $('restoreSub').textContent = S.hiddenClients ? `${S.hiddenClients} removed client${S.hiddenClients > 1 ? 's' : ''} can be imported from PayPal again` : 'No removed clients';
   $('restoreBtn').disabled = !S.hiddenClients;
-  const t = TYPES.find((x) => x.key === (S.business.businessType || 'freelancer'));
-  $('resetSub').textContent = `Start over with sample clients of a ${t.label.toLowerCase()} business. Settings are kept.`;
+  const t = TYPES.find((x) => x.key === (S.business.businessType || 'graphic_designer')) || TYPES[1];
+  $('resetSub').textContent = `Start over with sample clients and ${t.key === 'other' ? 'general' : t.label.toLowerCase()} work. Settings are kept.`;
 }
 $('restoreBtn').onclick = async () => {
   const r = await api('/api/settings/hidden/clear', { body: {} });
