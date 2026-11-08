@@ -801,7 +801,7 @@ tr:hover .rm-client, .rm-client:focus-visible, .rm-client.sure { opacity: 1; }
   --glass-line-2: #2a2a30;
   --ink: #f4f4f5;
   --ink-2: #a1a1aa;
-  --ink-3: #71717a;
+  --ink-3: #8a8a93;
   --rule: rgba(255, 255, 255, 0.08);
   --display: var(--font);
   --grad: linear-gradient(180deg, #fafafa, #e4e4e7);
