@@ -31,7 +31,7 @@ function renderKpis() {
   const card = (label, value, sub, help) => `<div class="cs kpi" title="${esc(help)}"><div class="kpi-top"><span class="cs-l">${label}</span></div><b class="cs-v">${value}</b><span class="cs-s">${sub}</span></div>`;
   const dsoSub = d.now === null ? 'not enough billing in the last 90 days' :
     `${d.change === null ? '' : d.change > 0 ? `<span class="bad-t">${d.change} days slower</span> than 90 days ago · ` : d.change < 0 ? `<span class="good-t">${-d.change} days faster</span> than 90 days ago · ` : 'same as 90 days ago · '}your terms are ${d.terms} days`;
-  const concLabel = { spread: 'Spread out', moderate: 'Moderate', concentrated: 'Concentrated' }[c.label];
+  const concLabel = c.topClient && c.clients ? { spread: 'Spread out', moderate: 'Moderate', concentrated: 'Concentrated' }[c.label] : '—';
   $('kpis').innerHTML =
     card('Billed in 12 months', m(G.yearBilled), `${m(G.yearRevenue)} of it already received`, 'Every invoice issued in the last 365 days, paid or not.') +
     card('Days sales outstanding', d.now === null ? '—' : days(d.now), dsoSub, 'Money owed to you, divided by what you billed in the last 90 days, times 90. Roughly: how many days of work you are waiting to be paid for.') +
@@ -187,7 +187,7 @@ function renderClients() {
   $('clients').innerHTML = `<datalist id="indList">${G.industryOptions.map((o) => `<option value="${esc(o)}"></option>`).join('')}</datalist>
   <table class="data gr-table">
     <thead><tr><th>Client</th><th>Industry</th><th>Segment</th><th class="r">Billed, 12 months</th><th class="r">Usually buys every</th><th class="r">Last invoice</th><th class="r">Pays in</th></tr></thead>
-    <tbody>${cs.map((c) => `<tr>
+    <tbody>${cs.length ? '' : '<tr><td colspan="7" class="muted">No clients yet. They appear here after your first invoice.</td></tr>'}${cs.map((c) => `<tr>
       <td><div class="cl-who"><span class="avatar" aria-hidden="true">${esc(initials(c.name))}</span><span><b>${esc(c.name)}</b>${c.onPlan ? ' <span class="pill monthly">Retainer</span>' : ''}<br><span class="muted small">${esc(c.company || 'Private client')}</span></span></div></td>
       <td><input class="gr-ind" list="indList" data-id="${esc(c.id)}" value="${esc(c.industry)}" placeholder="Set industry" aria-label="Industry for ${esc(c.name)}">${c.industrySource === 'rules' || c.industrySource === 'ai' ? `<span class="gr-auto" title="${c.industrySource === 'ai' ? 'Worked out by AI from the client\'s details and work' : 'Worked out from the company name, email and work'}">auto</span>` : ''}</td>
       <td><span class="gr-seg-pill ${SEG_CLASS[c.segment] || ''}">${SEG_LABEL[c.segment] || c.segment}</span></td>

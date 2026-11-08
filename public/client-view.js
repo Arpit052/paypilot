@@ -3,8 +3,14 @@ import { api, header, esc, money, fmtDate } from './common.js';
 await header('clientview');
 const $ = (id) => document.getElementById(id);
 const id = new URLSearchParams(location.search).get('inv');
-if (!id) location.href = '/dashboard';
-const v = await api(`/api/invoices/${encodeURIComponent(id)}/client-view`);
+if (!id) {
+  location.replace('/invoices'); // nothing to show without an invoice; stop here
+  await new Promise(() => {});
+}
+const v = await api(`/api/invoices/${encodeURIComponent(id)}/client-view`).catch((e) => {
+  $('lede').textContent = "This invoice can't be found. It may have been deleted.";
+  throw e;
+});
 const d = v.document;
 const m = (x) => money(x, d.currency);
 const first = d.client.name.split(' ')[0] || 'there';

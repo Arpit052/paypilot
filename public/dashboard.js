@@ -99,7 +99,7 @@ function chartStats({ months }) {
   }
   const stat = (label, value, sub) => `<div class="cstat"><span class="muted">${label}</span><b>${value}</b><span class="muted">${sub}</span></div>`;
   return `<div class="chart-stats">
-    ${stat('Best month', money(best.value, cur), best.label)}
+    ${stat('Best month', best.value ? money(best.value, cur) : '—', best.value ? best.label : 'no payments yet')}
     ${stat('Monthly average', money(Math.round(avg * 100) / 100, cur), `last ${done.length} full months`)}
     ${stat(`${cur0.label} so far`, money(cur0.value, cur), trend)}
   </div>`;
