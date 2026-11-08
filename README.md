@@ -265,6 +265,9 @@ Data is stored in SQLite at `data/paypilot.db`. Set `DATA_DIR` to a persistent d
 
 ## Tests
 
+A full judge-style QA pass (24 bugs found and fixed, 77 → 113 tests) is written up in [docs/QA-REPORT.md](docs/QA-REPORT.md). To check the live PayPal sandbox with your own keys: `npm run sandbox-check`.
+
+
 ```bash
 npm test
 ```
