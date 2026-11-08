@@ -18,7 +18,6 @@ Getting paid is a small-business problem, not just a freelancer one:
 
 - **56%** of US small businesses have unpaid invoices, owed **$17,500** on average, and **47%** have invoices more than 30 days overdue (Intuit QuickBooks Small Business Late Payments Report, 2025).
 - In the UK, businesses hit by late payment spend about **86 staff hours a year** chasing it, and late payment is linked to about **14,000 business closures a year** (UK Office of the Small Business Commissioner research, July 2025).
-- **52%** of small business owners simply write off late payments up to 10 times a year because chasing isn't worth the time (FSB / GoCardless Late Payments Report, 2025).
 - The US alone has about **72.9 million** independent workers (MBO Partners, State of Independence 2025), on top of millions of small service businesses.
 
 Behind those numbers are three everyday pains: invoicing gets put off, chasing is awkward so it doesn't happen, and nobody can say with confidence *"can I afford this next month?"* because it depends on when clients pay.
@@ -323,7 +322,6 @@ test/                End-to-end tests
 ## Sources for the numbers above
 - [Intuit QuickBooks, Small Business Late Payments Report 2025](https://agiled.app/statistics/late-payment-statistics) (summary)
 - [UK Office of the Small Business Commissioner late-payments research, July 2025](https://stealthagents.com/research/small-business-overdue-invoice-statistics-2026) (summary)
-- [FSB / GoCardless Late Payments Report 2025](https://blog-j3o.pages.dev/late-payment-statistics-uk.html) (summary)
 - [MBO Partners State of Independence 2025](https://www.makerstations.io/?p=11005) (summary)
 
 ## License

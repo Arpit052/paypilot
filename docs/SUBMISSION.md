@@ -10,7 +10,7 @@ Describe the work. PayPilot invoices through PayPal, chases late payers, tells y
 
 ## Text description
 
-**The problem.** Getting paid is one of the biggest everyday problems for small businesses. 56% of US small businesses have unpaid invoices, owed $17,500 on average, and 47% have invoices more than 30 days late (QuickBooks, 2025). In the UK, affected businesses spend about 86 hours a year chasing late payments, and late payment is linked to about 14,000 closures a year. Half of owners simply write some of it off because chasing isn't worth the time. Web developers, designers, writers, marketers, video editors, consultants, photographers and virtual assistants all have the same problem. The work is done, but the money isn't in, and nobody can say whether they can afford something next month.
+**The problem.** Getting paid is one of the biggest everyday problems for small businesses. 56% of US small businesses have unpaid invoices, owed $17,500 on average, and 47% have invoices more than 30 days late (QuickBooks, 2025). In the UK, affected businesses spend about 86 hours a year chasing late payments, and late payment is linked to about 14,000 closures a year. Web developers, designers, writers, marketers, video editors, consultants, photographers and virtual assistants all have the same problem. The work is done, but the money isn't in, and nobody can say whether they can afford something next month.
 
 **What PayPilot does.** It's an AI agent on top of PayPal Invoicing that runs the whole money loop for a small business. The AI proposes; the owner approves every write.
 

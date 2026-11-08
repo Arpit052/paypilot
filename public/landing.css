@@ -237,3 +237,4 @@ body.lp {
 .ag-opp b { display: block; font-size: 14px; }
 .ag-opp span { font-size: 12.5px; color: var(--lp-ink-2); }
 @media (max-width: 520px) { .ag-row { grid-template-columns: 1fr 90px; } .ag-row i { display: none; } }
+.lp-stats em a { color: inherit; text-decoration: underline; text-decoration-color: rgba(255,255,255,.25); text-underline-offset: 3px; } .lp-stats em a:hover { text-decoration-color: currentColor; }

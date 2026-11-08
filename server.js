@@ -123,6 +123,8 @@ function securityHeaders(req, res, next) {
       "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
       "font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
   });
+  if (req.secure) res.set('Strict-Transport-Security', 'max-age=15552000'); // only once served over https (Render)
+  res.removeHeader('X-Powered-By');
   next();
 }
 
