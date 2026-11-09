@@ -117,13 +117,13 @@ function paidDateFrom(inv) {
 }
 
 // ======================= REAL PAYPAL =======================
-let token = null;
-let tokenExp = 0;
-let tokenFor = '';
+// one access token per set of keys (each visitor workspace may have its own)
+const tokens = new Map();
 
 async function getToken() {
   const { clientId, clientSecret, baseUrl } = config.paypal;
-  if (token && tokenFor === clientId && Date.now() < tokenExp - 60000) return token;
+  const have = tokens.get(clientId);
+  if (have && Date.now() < have.exp - 60000) return have.token;
   if (!clientId || !clientSecret) throw new PayPalError('PayPal credentials missing (PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET).', 500);
   const res = await timedFetch(`${baseUrl}/v1/oauth2/token`, {
     method: 'POST',
@@ -135,10 +135,9 @@ async function getToken() {
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new PayPalError(`PayPal auth failed: ${json.error_description || res.status}`, res.status, json);
-  token = json.access_token;
-  tokenExp = Date.now() + json.expires_in * 1000;
-  tokenFor = clientId;
-  return token;
+  tokens.set(clientId, { token: json.access_token, exp: Date.now() + json.expires_in * 1000 });
+  if (tokens.size > 500) tokens.delete(tokens.keys().next().value);
+  return json.access_token;
 }
 
 /**
@@ -194,7 +193,7 @@ async function api(method, path, body, extraHeaders = {}) {
       if (!(e instanceof PayPalError)) throw e;
       if (e.status === 401 && !refreshed && !e.auth) {
         refreshed = true;
-        token = null;
+        tokens.delete(config.paypal.clientId);
         continue;
       }
       const retryable = read ? e.status === 429 || e.status >= 500 || e.network : idempotent && (e.status === 429 || e.status === 503) && !e.timeout;

@@ -6,6 +6,8 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { kvGet, kvSet, kvDel, getInvoice, logActivity } from './db.js';
 import { notify } from './notify.js';
+import { currentSpace } from './context.js';
+import { notePublicToken } from './workspace.js';
 
 let lastOrigin = '';
 /** Remember how the app is being reached, for building links when PUBLIC_URL isn't set. */
@@ -47,6 +49,7 @@ export function attachDelivery(invoiceId, { url, label = '', token = newToken() 
   const d = { url: clean, label: String(label || '').trim().slice(0, 80), token, createdAt: new Date().toISOString(), unlockedAt: prev?.unlockedAt || null, views: prev?.views || 0 };
   kvSet(`delivery:${invoiceId}`, d);
   kvSet(`dtoken:${token}`, invoiceId);
+  notePublicToken(currentSpace(), token); // so the client's link finds this workspace
   return { ...d, link: unlockLink(token) };
 }
 

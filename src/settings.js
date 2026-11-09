@@ -4,6 +4,7 @@
 //   - Business: name, default tax, late-fee policy.
 // The PayPal secret is kept server-side only and never sent back to the browser.
 import { config } from './config.js';
+import { currentSpace, perSpace } from './context.js';
 import { kvGet, kvSet } from './db.js';
 import { BUSINESS_TYPES, normalType } from './business.js';
 import { activeProfile } from './bizprofile.js';
@@ -35,20 +36,22 @@ const envBusiness = {
 const PREF_KEYS = ['accountType', 'teamSize', 'businessType', 'businessTypeOther', 'businessDescription', 'currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
 const envChoseMode = Boolean(process.env.PAYPAL_MODE);
 
-let paypalSource = 'env';
+// where the PayPal keys came from, per visitor workspace on the hosted demo
+const source = perSpace(() => ({ value: 'env' }));
 
 /** Re-read stored settings into the live config. Call after any change. */
 export function applySettings() {
   const p = kvGet('settings:paypal');
   if (p?.state === 'connected' && p.clientId && p.clientSecret) {
     Object.assign(config.paypal, { mode: 'sandbox', clientId: p.clientId, clientSecret: p.clientSecret, baseUrl: SANDBOX_URL });
-    paypalSource = 'app';
-  } else if (p?.state === 'demo') {
-    Object.assign(config.paypal, { mode: 'mock' });
-    paypalSource = 'demo';
+    source.value = 'app';
+  } else if (p?.state === 'demo' || currentSpace()) {
+    // demo mode holds no keys at all; a visitor workspace never falls back to the server's .env keys
+    Object.assign(config.paypal, { mode: 'mock', clientId: '', clientSecret: '', webhookId: '' });
+    source.value = p?.state === 'demo' ? 'demo' : 'none';
   } else {
     Object.assign(config.paypal, envPaypal);
-    paypalSource = envPaypal.mode === 'mock' ? 'none' : 'env';
+    source.value = envPaypal.mode === 'mock' ? 'none' : 'env';
   }
   const b = kvGet('settings:business') || {};
   config.businessName = b.businessName || envBusiness.businessName;
@@ -61,6 +64,7 @@ export function applySettings() {
 
 /** Has the first-run choice been made (connect PayPal or try demo)? */
 export function setupDone() {
+  if (currentSpace()) return Boolean(kvGet('settings:paypal')); // a visitor workspace chooses for itself
   return Boolean(kvGet('settings:paypal')) || envChoseMode || envPaypal.mode !== 'mock';
 }
 
@@ -87,10 +91,10 @@ export function publicSettings() {
   return {
     paypal: {
       mode: config.paypal.mode, // 'sandbox' | 'live' | 'mock'
-      source: paypalSource, // 'app' | 'env' | 'demo' | 'none'
+      source: source.value, // 'app' | 'env' | 'demo' | 'none'
       clientId: config.paypal.mode === 'mock' ? '' : mask(config.paypal.clientId),
       connectedAt: p?.state === 'connected' ? p.connectedAt : null,
-      envKeysAvailable: envPaypal.mode !== 'mock',
+      envKeysAvailable: envPaypal.mode !== 'mock' && !currentSpace(),
     },
     business: {
       businessName: config.businessName,

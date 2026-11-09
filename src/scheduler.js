@@ -11,14 +11,19 @@ import { noteDueDates } from './alerts.js';
 import { runAutopilot } from './autopilot.js';
 import { settleEarlyPay } from './earlypay.js';
 import { listInvoices } from './db.js';
+import { spacesEnabled, forEachSpace, sweep } from './workspace.js';
 
-let running = false;
-export const lastRun = { at: null, result: null };
+// on the hosted demo, background jobs run once per visitor workspace that was used recently
+const each = (fn) => (spacesEnabled() ? forEachSpace(fn) : Promise.resolve().then(fn));
+import { perSpace } from './context.js';
+
+const jobs = perSpace(() => ({ running: false }));
+export const lastRun = perSpace(() => ({ at: null, result: null }));
 
 export async function runJobs() {
   if (!setupDone()) return { skipped: 'waiting for the welcome screen' }; // nothing to do before PayPal/demo is chosen
-  if (running) return { skipped: 'already running' };
-  running = true;
+  if (jobs.running) return { skipped: 'already running' };
+  jobs.running = true;
   try {
     const result = {};
     if (!isMock()) {
@@ -45,7 +50,7 @@ export async function runJobs() {
     console.log(`  [jobs] ${JSON.stringify(result)}`);
     return result;
   } finally {
-    running = false;
+    jobs.running = false;
   }
 }
 
@@ -57,11 +62,12 @@ function startPaymentWatcher() {
   const secs = Number(process.env.PAYPAL_SYNC_SECONDS ?? 120);
   if (!(secs > 0)) return;
   let n = 0;
-  const tick = () => {
+  const tick = () => each(watch);
+  const watch = () => {
     if (isMock() || !setupDone()) return;
     // webhooks are arriving: polling is only a safety net, so run it every 5th time (10 min)
     if (Date.now() - syncState.lastWebhookAt < 30 * 60 * 1000 && n++ % 5 !== 0) return;
-    importIfStale(10)
+    return importIfStale(10)
       .catch(() => {})
       .then(() => syncInvoices())
       .catch(() => {});
@@ -74,21 +80,23 @@ function startPaymentWatcher() {
 export function startScheduler() {
   startPaymentWatcher();
   // due-date alerts for the bell: soon after start, then every 30 minutes
-  const alerts = () => {
-    if (!setupDone()) return;
-    noteDueDates();
-    runAutopilot().catch(() => {});
-  };
+  const alerts = () =>
+    each(async () => {
+      if (!setupDone()) return;
+      noteDueDates();
+      await runAutopilot().catch(() => {});
+    });
   setTimeout(alerts, 8000).unref();
   setInterval(alerts, 30 * 60 * 1000).unref();
   // early-pay windows: close them within a few minutes of ending
-  const early = () => setupDone() && settleEarlyPay().catch(() => {});
+  const early = () => each(() => setupDone() && settleEarlyPay().catch(() => {}));
   setTimeout(early, 12000).unref();
   setInterval(early, 5 * 60 * 1000).unref();
   const minutes = config.schedulerMinutes;
   if (!(minutes > 0)) return false;
   // first pass shortly after start-up, then on the interval
-  setTimeout(() => runJobs().catch(() => {}), 90 * 1000).unref();
-  setInterval(() => runJobs().catch(() => {}), minutes * 60 * 1000).unref();
+  setTimeout(() => each(() => runJobs()).catch(() => {}), 90 * 1000).unref();
+  setInterval(() => each(() => runJobs()).catch(() => {}), minutes * 60 * 1000).unref();
+  if (spacesEnabled()) setInterval(() => sweep(), 6 * 3600 * 1000).unref(); // drop workspaces idle for 3 days
   return true;
 }

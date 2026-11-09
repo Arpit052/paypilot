@@ -12,6 +12,7 @@ import { growthSummary } from './growth.js';
 import { suggestEarlyPay } from './earlypay.js';
 import { typeOf, professionLabel } from './business.js';
 import { activeType } from './bizprofile.js';
+import { perSpace } from './context.js';
 
 function systemPrompt() {
   const today = isoDate();
@@ -420,7 +421,7 @@ function makeHandlers(created) {
 }
 
 // ---------- sessions (in-memory chat history) ----------
-const sessions = new Map();
+const chats = perSpace(() => ({ sessions: new Map() }));
 const MAX_TURNS = 12;
 
 function stripImages(messages) {
@@ -452,7 +453,7 @@ function saveTranscript(id, t) {
 }
 
 export function resetSession(id) {
-  sessions.delete(id);
+  chats.sessions.delete(id);
   kvSet(tKey(id), { messages: [], pending: null });
 }
 
@@ -499,7 +500,7 @@ export function friendlyAiError(e) {
  * @param {{text?: string, image?: {mediaType: string, data: string}}} input
  */
 export async function chat(sessionId, { text, image }) {
-  const turns = sessions.get(sessionId) || [];
+  const turns = chats.sessions.get(sessionId) || [];
   const userContent = [];
   if (image) userContent.push({ type: 'image', mediaType: image.mediaType, data: image.data });
   userContent.push({ type: 'text', text: text?.trim() || 'Please create an invoice from this screenshot.' });
@@ -517,6 +518,6 @@ export async function chat(sessionId, { text, image }) {
 
   // store this turn (everything after the old history), with images stripped
   turns.push(stripImages(messages.slice(history.length)));
-  sessions.set(sessionId, turns.slice(-MAX_TURNS));
+  chats.sessions.set(sessionId, turns.slice(-MAX_TURNS));
   return { reply, actions: created, tools: toolLog };
 }

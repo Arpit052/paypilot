@@ -444,6 +444,12 @@ async function renderModeBlock() {
   const owed = cards.reduce((t, c) => t + (c.currency === cur ? c.total : 0), 0);
   const late = cards.filter((c) => c.daysLate > 0);
   const nextOf = (c) => c.drafts.length ? 'Reminder written, waiting for your OK' : c.plan.next?.state === 'due' ? `${c.plan.next.label} is due now` : c.plan.next ? `${c.plan.next.label} ${fmtDate(c.plan.next.date)}` : c.lastContact ? `Reminded ${fmtDate(c.lastContact.at)}` : '';
+  const lowerFirst = (n) => (/^[A-Z][a-z]/.test(n) ? n[0].toLowerCase() + n.slice(1) : n);
+  // example sentences in this business's own words: its clients and its usual invoice lines
+  const items = cfg.typeItems?.length ? cfg.typeItems : [{ name: 'Project fee', price: 1200 }];
+  const who = [...new Set(cards.map((c) => c.client))];
+  const names = [who[0] || 'Marcus Vance', who[1] || 'Rachel Adams', who[2] || 'Sofia Martinez'];
+  const examples = items.slice(0, 3).map((it, i) => `Bill ${names[i]} for ${lowerFirst(it.name.replace(/\s*\(.*\)$/, ''))}, ${money(it.price, cur)}${i === 0 ? ', due in 15 days' : i === 2 ? ', and remind them after a week' : ''}`);
   box.innerHTML = `<div class="mb-biz">
     <section class="panel"><div class="mb-h"><h2>To collect</h2><a class="linkbtn small" href="/invoices">Invoices</a></div>
       ${cards.length ? `<p class="muted small" style="margin:-4px 0 12px">${esc(money(owed, cur))} owed to you${late.length ? `, ${late.length} invoice${late.length === 1 ? '' : 's'} past due` : ', nothing late'}.</p>
@@ -452,9 +458,14 @@ async function renderModeBlock() {
     </section>
     <form class="panel mb-quick" id="quick">
       <div><h2>Bill a client in one sentence</h2><p class="muted small">Type the job the way you'd text it. The Assistant drafts the PayPal invoice for you to check and send.</p></div>
-      <div class="mb-row"><input id="quickIn" maxlength="400" placeholder="e.g. Bill Marcus Vance for the pitch deck, $1,200, due in 15 days" aria-label="Describe the invoice"><button class="btn" type="submit">Draft invoice</button></div>
+      <div class="mb-row"><input id="quickIn" maxlength="400" placeholder="${esc(examples[0])}" aria-label="Describe the invoice"><button class="btn" type="submit">Draft invoice</button></div>
+      <div class="mb-ex"><span class="muted small">Try:</span>${examples.map((x) => `<button type="button" class="chip" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
     </form>
   </div>`;
+  box.querySelectorAll('[data-ex]').forEach((b) => (b.onclick = () => {
+    $('quickIn').value = b.dataset.ex;
+    $('quickIn').focus();
+  }));
   $('quick').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = $('quickIn').value.trim();

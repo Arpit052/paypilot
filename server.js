@@ -38,6 +38,8 @@ import { markIndustryByOwner } from './src/labels.js';
 import { setClientIndustry } from './src/db.js';
 import { receiptPathFor, listReceipts, markReceiptSent, receiptView, documentFor, ensureReceipt } from './src/receipts.js';
 import { businessTypeList, typeOf, BUSINESS_TYPES, normalType, professionLabel } from './src/business.js';
+import { runInSpace } from './src/context.js';
+import { spacesEnabled, getSpace, createSpace, touch, spaceForToken, onNewSpace, COOKIE as SPACE_COOKIE, sweep as sweepSpaces } from './src/workspace.js';
 import { interpretBusiness, writeDemoWork, activeType, activeProfile, ruleProfile } from './src/bizprofile.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
@@ -163,6 +165,44 @@ function refreshSampleForBusiness() {
   notify({ kind: 'import', title: 'Sample invoices now fit your business', body: `The AI wrote sample work for a ${p.label.toLowerCase()}. Open Invoices to see it.`, link: '/invoices' });
 }
 
+// ---- hosted demo: one private workspace per visitor (src/workspace.js) ----
+const NO_SPACE = /^\/($|api\/health$|api\/webhooks\/|api\/cron\/|fonts\/|landing)|\.(css|js|svg|png|jpe?g|ico|woff2?|ttf|webp|map)$/i;
+const newSpaces = new Map(); // ip -> times, so a script can't create thousands of workspaces
+
+function visitorSpace(req, res, next) {
+  if (NO_SPACE.test(req.path)) return next();
+  // a client opening an unlock or receipt link belongs to the workspace that made the link
+  const pub = req.path.match(/^\/(?:api\/)?[dr]\/([A-Za-z0-9_-]{16,64})$/);
+  let space = (pub && spaceForToken(pub[1])) || getSpace(readCookie(req, SPACE_COOKIE));
+  if (!space) {
+    if (pub) return next(); // unknown link: the page itself says it can't be found
+    const now = Date.now();
+    const recent = (newSpaces.get(req.ip) || []).filter((t) => now - t < 3600 * 1000);
+    if (recent.length >= 30) return res.status(429).send('Too many new sessions from this address. Try again in an hour.');
+    newSpaces.set(req.ip, [...recent, now]);
+    if (newSpaces.size > 5000) newSpaces.clear();
+    space = createSpace();
+    res.append('Set-Cookie', `${SPACE_COOKIE}=${space.id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${3 * 86400}${req.secure ? '; Secure' : ''}`);
+  }
+  touch(space);
+  runInSpace(space, () => {
+    if (!space.applied) {
+      applySettings();
+      space.applied = true;
+    }
+    next();
+  });
+}
+
+// a brand-new visitor workspace opens straight into the demo, with sample data
+onNewSpace(() => {
+  applySettings();
+  saveBusinessSettings({ businessName: process.env.BUSINESS_NAME || 'Ortiz Design Studio' });
+  useDemoMode();
+  seedSample();
+  noteDueDates();
+});
+
 function securityHeaders(req, res, next) {
   res.set({
     'X-Content-Type-Options': 'nosniff',
@@ -229,15 +269,20 @@ export function createApp() {
     if (host && host === req.get('host')) return next();
     res.status(403).json({ error: 'Cross-site request blocked.', requestId: req.id });
   });
-  // hosted demo for judges: actions that would change the app for everyone are switched off
+  // Hosted demo. With private visitor workspaces every visitor can connect their own PayPal
+  // sandbox and reset their own data; only the app-wide passcode stays locked. Without them
+  // (one shared copy), anything that would change the app for everyone is locked.
   const SHARED_LOCKED = /^\/api\/(settings\/paypal\/(connect|disconnect|demo)|demo\/reset|sample\/remove|settings\/passcode|settings\/hidden\/clear)$/;
+  const SPACE_LOCKED = /^\/api\/settings\/passcode$/;
   app.use((req, res, next) => {
-    if (config.hostedDemo && req.method === 'POST' && SHARED_LOCKED.test(req.path)) {
-      return res.status(403).json({ error: 'This is a shared demo for judges, so this setting is locked. Run PayPilot locally to change it.', requestId: req.id });
+    const locked = spacesEnabled() ? SPACE_LOCKED : SHARED_LOCKED;
+    if (config.hostedDemo && req.method === 'POST' && locked.test(req.path)) {
+      return res.status(403).json({ error: 'This is a shared demo, so this setting is locked. Run PayPilot on your own computer to change it.', requestId: req.id });
     }
     next();
   });
   app.use(express.json({ limit: '12mb' })); // screenshots arrive as base64
+  if (spacesEnabled()) app.use(visitorSpace);
   app.use((req, res, next) => {
     noteOrigin(`${req.protocol}://${req.get('host')}`);
     next();
@@ -298,6 +343,7 @@ export function createApp() {
       businessName: config.businessName,
       accountType: config.accountType || 'freelancer',
       hostedDemo: config.hostedDemo,
+      privateSpace: spacesEnabled(),
       currency: config.currency,
       paypalMode: config.paypal.mode,
       llmProvider: llmAvailable() ? config.llm.provider : 'none',
@@ -882,7 +928,10 @@ export function createApp() {
 
 export function start(port = config.port) {
   // a hosted copy on a free plan loses its disk on restart: reload the sample history so judges never see an empty book
-  if (config.seedSampleOnBoot && !listInvoices().length) {
+  if (spacesEnabled()) {
+    const n = sweepSpaces();
+    console.log(`  Visitor workspaces on: each visitor gets a private copy${n ? ` (${n} old ones removed)` : ''}`);
+  } else if (config.seedSampleOnBoot && !listInvoices().length) {
     seedSample();
     noteDueDates();
     console.log('  Sample history loaded on boot (SEED_SAMPLE_ON_BOOT)');

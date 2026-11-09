@@ -11,6 +11,7 @@ import { notOnCurrentPaypal } from './paypal.js';
 import { createAction, lateFeeDraft, hasLateFee } from './actions.js';
 import { draftReminder, TONES } from './followups.js';
 import { notify } from './notify.js';
+import { perSpace } from './context.js';
 
 const DEFAULTS = { enabled: true, beforeDays: 2, firmAfter: 3, finalAfter: 10, feeWithFinal: true };
 const rank = (t) => TONES.indexOf(t);
@@ -99,11 +100,11 @@ export function comingUp(days = 21, today = isoDate()) {
 }
 
 /** Run the plan: draft every step that's due today (or overdue). Returns created drafts. */
-let inFlight = null;
+const run = perSpace(() => ({ inFlight: null }));
 export function runAutopilot(today = isoDate()) {
   // one run at a time, so a background run and a button click can't both draft the same reminder
-  inFlight ||= runOnce(today).finally(() => (inFlight = null));
-  return inFlight;
+  run.inFlight ||= runOnce(today).finally(() => (run.inFlight = null));
+  return run.inFlight;
 }
 
 async function runOnce(today) {

@@ -7,6 +7,8 @@ import { kvGet, kvSet, listInvoices, getInvoice, getClient, logActivity } from '
 import { isPaid, invoiceTotals } from './analytics.js';
 import { newToken, publicBase } from './delivery.js';
 import { getEarlyPay } from './earlypay.js';
+import { currentSpace } from './context.js';
+import { notePublicToken } from './workspace.js';
 
 const PAID = ['PAID', 'MARKED_AS_PAID'];
 const r2 = (n) => cents(n);
@@ -19,6 +21,7 @@ export function ensureReceipt(inv) {
     r = { token: newToken(), number: `R-${inv.number}`, createdAt: new Date().toISOString(), sentAt: null, sentVia: null, viewedAt: null, views: 0 };
     kvSet(`receipt:${inv.id}`, r);
     kvSet(`rtoken:${r.token}`, inv.id);
+    notePublicToken(currentSpace(), r.token);
   }
   return r;
 }

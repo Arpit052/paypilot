@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { currentSpace } from './context.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -72,7 +73,7 @@ function validTimeZone(tz) {
   }
 }
 
-export const config = {
+const baseConfig = {
   root: ROOT,
   port: Number(env.PORT || 3000),
   // Only this computer can open the app, unless HOST says otherwise. Hosting platforms
@@ -129,8 +130,31 @@ export const config = {
   },
 };
 
-config.paypal.baseUrl =
-  config.paypal.mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+baseConfig.paypal.baseUrl =
+  baseConfig.paypal.mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+
+/**
+ * The live settings. Inside a visitor workspace (hosted demo), anything the app changes at run
+ * time (business name, PayPal keys, preferences) is kept on that workspace, never on the shared
+ * object, so one visitor's settings and keys can't be seen by another.
+ */
+export const config = new Proxy(baseConfig, {
+  get(t, k) {
+    const s = currentSpace();
+    if (!s) return t[k];
+    if (Object.hasOwn(s.cfg, k)) return s.cfg[k];
+    // each workspace starts in demo mode with no keys, whatever the server's own .env says
+    if (k === 'paypal') return (s.cfg.paypal = { ...t.paypal, mode: 'mock', clientId: '', clientSecret: '', webhookId: '' });
+    if (k === 'notify') return (s.cfg.notify = { ...t.notify });
+    return t[k];
+  },
+  set(t, k, v) {
+    const s = currentSpace();
+    if (s) s.cfg[k] = v;
+    else t[k] = v;
+    return true;
+  },
+});
 
 /** "Today" for the app, respecting DEMO_TIME_OFFSET_DAYS. Returns a Date. */
 export function now() {

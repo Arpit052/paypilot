@@ -1,40 +1,39 @@
-# One-click deploy on Render (https://render.com) → New → Blueprint → pick this repo.
-# HOSTED_DEMO=1 makes it a shared copy for judges: PayPal can't be disconnected and data can't
-# be wiped by one visitor. The free plan's disk is wiped on restart, so SEED_SAMPLE_ON_BOOT
-# reloads the sample history. The free plan also sleeps after 15 idle minutes (first visit then
-# takes ~50s): open the link a minute before you demo, or use the Starter plan.
+# Render blueprint for the public demo (render.com → New → Blueprint → pick this repo).
+#
+# Every visitor gets a private copy of the app with sample data (VISITOR_WORKSPACES=1), so
+# nobody sees anyone else's invoices, settings or keys. Visitors who want to try real PayPal
+# sandbox invoices connect their own sandbox keys in Settings → PayPal.
+#
+# Do not add your own PayPal keys here. The server never gives its own keys to a visitor
+# anyway, but there is no reason for them to be on a public demo.
+#
+# The only secret to set is GEMINI_API_KEY (the AI features use it).
+#
+# Free plan notes: the service sleeps after 15 idle minutes, so the first visit after that
+# takes about a minute. Its disk is also wiped on every restart, which simply means visitor
+# copies start fresh. For judging, open the link a few minutes early or use the Starter plan.
 services:
   - type: web
     name: paypilot
     runtime: node
     plan: free
-    buildCommand: npm install --omit=dev
+    buildCommand: npm ci --omit=dev
     startCommand: node server.js
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: "22"
-      - key: BUSINESS_NAME
-        value: Ortiz Design Studio
       - key: HOSTED_DEMO
         value: "1"
-      - key: SEED_SAMPLE_ON_BOOT
+      - key: VISITOR_WORKSPACES
         value: "1"
-      - key: PAYPAL_MODE
-        value: sandbox
-      - key: PAYPAL_CLIENT_ID
-        sync: false
-      - key: PAYPAL_CLIENT_SECRET
-        sync: false
-      - key: PAYPAL_WEBHOOK_ID
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
+      - key: BUSINESS_NAME
+        value: Ortiz Design Studio
       - key: DEFAULT_CURRENCY
         value: USD
-      - key: CRON_SECRET
-        generateValue: true
-      - key: APP_PASSWORD
-        sync: false
       - key: APP_TIMEZONE
         value: America/New_York
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CRON_SECRET
+        generateValue: true

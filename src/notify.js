@@ -2,14 +2,17 @@
 // over Server-Sent Events (GET /api/events).
 import { insertNotification } from './db.js';
 import { config } from './config.js';
+import { perSpace } from './context.js';
 
-const subscribers = new Set();
+// open tabs, per visitor workspace: a payment in one workspace never pings another's browser
+const live = perSpace(() => ({ subscribers: new Set() }));
 
 export function notify(n) {
   // Settings → Notifications can switch kinds off (they're then not stored or shown)
   if (config.notify && config.notify[n.kind] === false) return null;
   const note = insertNotification(n);
   const payload = `event: notification\ndata: ${JSON.stringify(note)}\n\n`;
+  const subscribers = live.subscribers;
   for (const res of subscribers) {
     try {
       res.write(payload);
@@ -30,6 +33,7 @@ export function eventStream(req, res) {
   });
   res.flushHeaders?.();
   res.write('retry: 5000\n\n');
+  const subscribers = live.subscribers;
   subscribers.add(res);
   const ping = setInterval(() => res.write(': ping\n\n'), 25000);
   req.on('close', () => {
@@ -38,4 +42,4 @@ export function eventStream(req, res) {
   });
 }
 
-export const subscriberCount = () => subscribers.size;
+export const subscriberCount = () => live.subscribers.size;

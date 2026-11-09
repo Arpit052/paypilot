@@ -258,6 +258,28 @@ export async function header(active) {
   const scrim = document.createElement('div');
   scrim.className = 'sb-scrim';
   document.body.prepend(side, scrim, bar);
+  // hosted demo: say once, quietly, that this copy is the visitor's own
+  let hideSpace = false;
+  try {
+    hideSpace = sessionStorage.getItem('pp-space-note') === 'hidden';
+  } catch {}
+  if (CONFIG.privateSpace && !hideSpace) {
+    const note = document.createElement('div');
+    note.className = 'nudge space-note';
+    note.innerHTML = `<span>${CONFIG.paypalMode === 'mock' ? 'This is your own private copy with sample data. Nothing you do here is seen by anyone else.' : 'Connected to your PayPal sandbox. Your keys stay in your private copy and are deleted after 3 days without use.'}</span>
+      <span class="space-acts">${CONFIG.paypalMode === 'mock' ? '<a href="/settings#paypal">Use your own PayPal sandbox</a>' : ''}<button type="button" class="linkbtn" id="spaceReset">Start over</button><button type="button" class="linkbtn" id="spaceHide" aria-label="Hide this note">Hide</button></span>`;
+    bar.after(note);
+    note.querySelector('#spaceHide').onclick = () => {
+      note.remove();
+      try {
+        sessionStorage.setItem('pp-space-note', 'hidden');
+      } catch {}
+    };
+    note.querySelector('#spaceReset').onclick = async () => {
+      await api('/api/demo/reset', { body: {} }).catch(() => {});
+      location.href = '/welcome';
+    };
+  }
   if (!CONFIG.businessName && active !== 'settings') {
     const nudge = document.createElement('div');
     nudge.className = 'nudge';

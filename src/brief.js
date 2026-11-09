@@ -15,9 +15,10 @@ import {
   lifetimeStats,
 } from './analytics.js';
 import { listActions } from './actions.js';
+import { perSpace } from './context.js';
 
 const CACHE_MS = 10 * 60 * 1000;
-let aiCache = null;
+const cache = perSpace(() => ({ ai: null }));
 
 const cur = (map) => map?.[config.currency] ?? Object.values(map || {})[0] ?? 0;
 
@@ -121,13 +122,13 @@ export async function moneyBrief({ refresh = false } = {}) {
   let ai = null;
   let aiError = null;
   let cached = false;
-  if (!refresh && aiCache && Date.now() - aiCache.at < CACHE_MS) {
-    ai = aiCache.ai;
+  if (!refresh && cache.ai && Date.now() - cache.ai.at < CACHE_MS) {
+    ai = cache.ai.ai;
     cached = true;
   } else if (llmAvailable()) {
     try {
       ai = await aiRecommendations(facts);
-      aiCache = { at: Date.now(), ai };
+      cache.ai = { at: Date.now(), ai };
     } catch (e) {
       aiError = e.message;
     }

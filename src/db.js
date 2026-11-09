@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { config } from './config.js';
+import { currentSpace } from './context.js';
 
 // node:sqlite prints an "experimental" warning on some Node versions - keep the console clean.
 const origEmit = process.emitWarning;
@@ -105,14 +106,20 @@ function migrate(d) {
   if (!ccols.has('industry')) d.exec('ALTER TABLE clients ADD COLUMN industry TEXT');
 }
 
+function openDb(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const d = new DatabaseSync(path.join(dir, 'paypilot.db'));
+  d.exec(SCHEMA);
+  migrate(d);
+  return d;
+}
+
 let conn = null;
+/** The database of the current visitor workspace, or the single local database. */
 function sql() {
-  if (conn) return conn;
-  fs.mkdirSync(config.dataDir, { recursive: true });
-  conn = new DatabaseSync(path.join(config.dataDir, 'paypilot.db'));
-  conn.exec(SCHEMA);
-  migrate(conn);
-  return conn;
+  const space = currentSpace();
+  if (space) return (space.conn ||= openDb(space.dir));
+  return (conn ||= openDb(config.dataDir));
 }
 
 const nowIso = () => new Date().toISOString();

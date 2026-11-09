@@ -5,6 +5,7 @@ import { listInvoices, getInvoice, getInvoiceByPaypalId, updateInvoice, logActiv
 import { paypal, notOnCurrentPaypal, isMock } from './paypal.js';
 import { isOpen, clientName } from './analytics.js';
 import { notify } from './notify.js';
+import { perSpace } from './context.js';
 
 // Once an invoice is paid or cancelled, only a refund can move it again. PayPal can deliver
 // events late or out of order (an UPDATED/SENT after PAID), and those must not reopen it.
@@ -84,7 +85,7 @@ export function fromPaypalInvoice(raw) {
   };
 }
 
-let lastImportAt = 0;
+const imports = perSpace(() => ({ lastAt: 0 }));
 
 /**
  * Bring in invoices that were created directly on PayPal (website, app, other tools),
@@ -92,7 +93,7 @@ let lastImportAt = 0;
  */
 export async function importFromPaypal({ max = 300 } = {}) {
   if (isMock()) return { imported: 0 };
-  lastImportAt = Date.now();
+  imports.lastAt = Date.now();
   const list = await paypal.listInvoices({ max });
   const hidden = new Set((kvGet('hidden:emails') || []).map((e) => e.toLowerCase()));
   const fresh = list.filter(
@@ -121,11 +122,11 @@ export async function importFromPaypal({ max = 300 } = {}) {
 
 /** Import at most every few minutes (used by the background payment watcher). */
 export function importIfStale(minutes = 10) {
-  if (Date.now() - lastImportAt < minutes * 60000) return Promise.resolve({ imported: 0, skipped: true });
+  if (Date.now() - imports.lastAt < minutes * 60000) return Promise.resolve({ imported: 0, skipped: true });
   return importFromPaypal();
 }
 
-export const syncState = { lastAt: null, lastWebhookAt: 0, cursor: 0 };
+export const syncState = perSpace(() => ({ lastAt: null, lastWebhookAt: 0, cursor: 0 }));
 const BATCH = 25;
 
 /**
