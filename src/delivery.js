@@ -16,7 +16,7 @@ export function noteOrigin(origin) {
   if (origin) lastOrigin = origin;
 }
 export function publicBase() {
-  return (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || lastOrigin || `http://localhost:${config.port || 3000}`).replace(/\/+$/, '');
+  return (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || (process.env.WEBSITE_HOSTNAME ? `https://${process.env.WEBSITE_HOSTNAME}` : '') || lastOrigin || `http://localhost:${config.port || 3000}`).replace(/\/+$/, '');
 }
 export const isLocalBase = () => /^https?:\/\/(localhost|127\.0\.0\.1)/.test(publicBase());
 

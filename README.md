@@ -146,7 +146,7 @@ This makes a few real sandbox calls. It checks your keys and the Invoicing permi
 
 ## Deploy
 
-The repo includes a [Render](https://render.com) blueprint. See [docs/DEPLOY.md](docs/DEPLOY.md) for the step-by-step version. In short: New → Blueprint → pick this repo → paste a `GEMINI_API_KEY` → Deploy.
+It runs on [Render](https://render.com) (a blueprint is included) or [Azure App Service](https://azure.microsoft.com/products/app-service) (built-in Node on Linux). [docs/DEPLOY.md](docs/DEPLOY.md) has the step-by-step for both.
 
 The blueprint turns on visitor workspaces (`VISITOR_WORKSPACES=1`):
 - Each visitor lands on a working dashboard with sample data and never sees anyone else's.
@@ -180,7 +180,7 @@ All of these are optional. [.env.example](.env.example) lists them with comments
 npm test
 ```
 
-The suite contains 124 end-to-end tests. They run PayPal as a local twin and use a scripted AI, so they need no keys. They cover approvals and duplicate protection, webhooks arriving twice or out of order, PayPal errors and timeouts, exact cents, the budget model's properties, aging/DSO/concentration against hand-worked numbers, CSV injection, pay-to-unlock, and visitor isolation. GitHub Actions runs them on every push. [docs/TESTING.md](docs/TESTING.md) describes what was tested and what was fixed.
+The suite contains 127 end-to-end tests. They run PayPal as a local twin and use a scripted AI, so they need no keys. They cover approvals and duplicate protection, webhooks arriving twice or out of order, PayPal errors and timeouts, exact cents, the budget model's properties, aging/DSO/concentration against hand-worked numbers, CSV injection, pay-to-unlock, and visitor isolation. GitHub Actions runs them on every push. [docs/TESTING.md](docs/TESTING.md) describes what was tested and what was fixed.
 
 ## Security and privacy
 

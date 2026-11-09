@@ -2,7 +2,7 @@
 import path from 'node:path';
 import crypto from 'node:crypto';
 import express from 'express';
-import { config, isoDate, addDays, addMonths, envFile, daysBetween } from './src/config.js';
+import { config, isoDate, addDays, addMonths, envFile, daysBetween, clientIp } from './src/config.js';
 import { listInvoices, listClients, listActivity, getInvoiceByPaypalId, resetDb, listSchedules, getSchedule, updateSchedule, deleteSchedule, getClient, logActivity } from './src/db.js';
 import { chatWithTranscript, getTranscript, resetSession } from './src/agent.js';
 import { listActions, approveAction, rejectAction, normaliseInvoiceDraft, dropStaleActions, markPaid } from './src/actions.js';
@@ -94,7 +94,7 @@ function rateLimit({ perMinute, message }) {
   const hits = new Map();
   return (req, res, next) => {
     const now = Date.now();
-    const key = req.ip || 'local';
+    const key = clientIp(req);
     const recent = (hits.get(key) || []).filter((t) => now - t < 60000);
     if (recent.length >= perMinute) {
       res.set('Retry-After', String(Math.ceil((60000 - (now - recent[0])) / 1000)));
@@ -177,9 +177,9 @@ function visitorSpace(req, res, next) {
   if (!space) {
     if (pub) return next(); // unknown link: the page itself says it can't be found
     const now = Date.now();
-    const recent = (newSpaces.get(req.ip) || []).filter((t) => now - t < 3600 * 1000);
+    const recent = (newSpaces.get(clientIp(req)) || []).filter((t) => now - t < 3600 * 1000);
     if (recent.length >= 30) return res.status(429).send('Too many new sessions from this address. Try again in an hour.');
-    newSpaces.set(req.ip, [...recent, now]);
+    newSpaces.set(clientIp(req), [...recent, now]);
     if (newSpaces.size > 5000) newSpaces.clear();
     space = createSpace();
     res.append('Set-Cookie', `${SPACE_COOKIE}=${space.id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${3 * 86400}${req.secure ? '; Secure' : ''}`);
@@ -307,7 +307,7 @@ export function createApp() {
   api.post('/login', (req, res) => {
     if (!loginEnabled()) return res.json({ ok: true });
     // at most 10 wrong guesses a minute per address, so a passcode can't be brute-forced
-    const key = req.ip || 'local';
+    const key = clientIp(req);
     const now = Date.now();
     const fails = (loginFails.get(key) || []).filter((t) => now - t < 60000);
     if (fails.length >= 10) {

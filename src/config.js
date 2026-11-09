@@ -78,8 +78,10 @@ const baseConfig = {
   port: Number(env.PORT || 3000),
   // Only this computer can open the app, unless HOST says otherwise. Hosting platforms
   // (Render sets RENDER=true) need 0.0.0.0 so visitors can reach it.
-  host: env.HOST || (env.RENDER ? '0.0.0.0' : '127.0.0.1'),
-  dataDir: env.DATA_DIR || path.join(ROOT, 'data'),
+  // Render sets RENDER, Azure App Service sets WEBSITE_SITE_NAME.
+  host: env.HOST || (env.RENDER || env.WEBSITE_SITE_NAME ? '0.0.0.0' : '127.0.0.1'),
+  // On Azure App Service only /home survives restarts and redeploys
+  dataDir: env.DATA_DIR || (env.WEBSITE_SITE_NAME ? '/home/data' : path.join(ROOT, 'data')),
 
   businessName: env.BUSINESS_NAME || '', // set on the welcome screen or in Settings
   currency: (env.DEFAULT_CURRENCY || 'USD').toUpperCase(),
@@ -197,4 +199,17 @@ export function cents(n) {
   if (!Number.isFinite(x)) return x;
   const scaled = Number((Math.abs(x) * 100).toPrecision(12));
   return (Math.sign(x) * Math.round(scaled)) / 100 || 0;
+}
+
+/**
+ * The visitor's address for rate limits. Some proxies (Azure App Service) forward it with the
+ * client's port ("203.0.113.5:51234"), which changes on every connection; drop the port.
+ */
+export function clientIp(req) {
+  const ip = String(req?.ip || '');
+  if (!ip) return 'local';
+  const v4 = ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  if (v4) return v4[1];
+  const v6 = ip.match(/^\[([0-9a-f:.]+)\]:\d+$/i);
+  return v6 ? v6[1] : ip;
 }

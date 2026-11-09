@@ -6,7 +6,7 @@
 npm test
 ```
 
-There are 124 tests in `test/`, run with Node's built-in test runner. Each file starts the real server on a random port and calls it over HTTP. PayPal runs as a local twin of the Invoicing API, and the AI is a scripted stub, so the suite needs no keys or network. GitHub Actions runs it on Node 22 and 24 on every push.
+There are 127 tests in `test/`, run with Node's built-in test runner. Each file starts the real server on a random port and calls it over HTTP. PayPal runs as a local twin of the Invoicing API, and the AI is a scripted stub, so the suite needs no keys or network. GitHub Actions runs it on Node 22 and 24 on every push.
 
 | File | What it checks |
 |---|---|
