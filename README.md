@@ -6,7 +6,7 @@ Built for the *Build What's Next with PayPal and AI* hackathon (2026).
 
 ![PayPilot dashboard](docs/screenshots/dashboard.png)
 
-- **Try it:** the live demo link is on the Devpost page. Every visitor gets a private copy with sample data, so you can click anything.
+- **Try it:** https://paypilot-app.azurewebsites.net. Every visitor gets a private copy. Click *Try the demo* for sample data, or connect your own PayPal sandbox.
 - **Run it yourself:** [three commands](#run-it-on-your-computer).
 - **How it's built:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). A file-by-file tour is in [docs/CODE-WALKTHROUGH.md](docs/CODE-WALKTHROUGH.md).
 
@@ -149,7 +149,7 @@ This makes a few real sandbox calls. It checks your keys and the Invoicing permi
 It runs on [Render](https://render.com) (a blueprint is included) or [Azure App Service](https://azure.microsoft.com/products/app-service) (built-in Node on Linux). [docs/DEPLOY.md](docs/DEPLOY.md) has the step-by-step for both.
 
 The blueprint turns on visitor workspaces (`VISITOR_WORKSPACES=1`):
-- Each visitor lands on a working dashboard with sample data and never sees anyone else's.
+- Each visitor starts on the setup screen in their own private copy, picks *Try the demo* (one click, sample data) or connects their own sandbox, and never sees anyone else's data.
 - Visitors can connect their own PayPal sandbox in Settings.
 - The server holds no PayPal keys of its own.
 

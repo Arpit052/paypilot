@@ -104,7 +104,7 @@ When `VISITOR_WORKSPACES=1`, each visitor gets a cookie with a random 128-bit id
 - caches and live notifications are per visitor (`perSpace()`);
 - the rest of the code didn't need to change.
 
-A new workspace opens straight into demo mode with sample data. The server's own `.env` PayPal keys are never used inside a workspace. Workspaces nobody has opened for 3 days are deleted.
+A new workspace starts empty on the setup screen, where the visitor picks the demo or connects their own sandbox. The server's own `.env` PayPal keys are never used inside a workspace. Workspaces nobody has opened for 3 days are deleted.
 
 ## Tests
 

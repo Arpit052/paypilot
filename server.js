@@ -194,13 +194,10 @@ function visitorSpace(req, res, next) {
   });
 }
 
-// a brand-new visitor workspace opens straight into the demo, with sample data
+// a brand-new visitor workspace starts empty, on the setup screen: the visitor chooses
+// "Try the demo" or connects their own PayPal sandbox
 onNewSpace(() => {
   applySettings();
-  saveBusinessSettings({ businessName: process.env.BUSINESS_NAME || 'Ortiz Design Studio' });
-  useDemoMode();
-  seedSample();
-  noteDueDates();
 });
 
 function securityHeaders(req, res, next) {
@@ -389,7 +386,8 @@ export function createApp() {
     connectPaypal({ clientId, clientSecret });
     if (bizName) saveBusinessSettings({ businessName: bizName });
     await describeBusiness(req.body || {}, { preset: true });
-    if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
+    // a shared public demo never sets a passcode (one visitor could lock their copy and forget it)
+    if (!config.hostedDemo && !config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
     }
@@ -418,7 +416,8 @@ export function createApp() {
     const bizName = String(req.body?.businessName || '').trim() || (config.businessName ? '' : 'Ortiz Design Studio');
     if (bizName) saveBusinessSettings({ businessName: bizName });
     await describeBusiness(req.body || {}, { preset: true, demo: true });
-    if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
+    // a shared public demo never sets a passcode (one visitor could lock their copy and forget it)
+    if (!config.hostedDemo && !config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
     }

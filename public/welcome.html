@@ -28,6 +28,7 @@
     <div class="auth-card" id="card">
       <h2>Set up PayPilot</h2>
       <p class="sub">Connect your PayPal sandbox app, or look around with demo data first.</p>
+      <p class="space-hint hidden" id="spaceHint">This is a public demo, so you get your own private copy. Anything you add, including sandbox keys, stays in it and is deleted after 3 days without use.</p>
       <form id="connect" autocomplete="off">
         <fieldset class="acct" id="acct">
           <legend>How will you use PayPilot?</legend>
@@ -71,8 +72,10 @@
             <li>Copy the <b>Client ID</b>, click <b>Show</b> and copy the <b>Secret</b>.</li>
           </ol>
         </details>
+        <div id="passRow">
         <label for="pass">Passcode <span class="opt">optional</span></label>
         <input id="pass" type="password" autocomplete="new-password" placeholder="Lock PayPilot with a passcode">
+        </div>
         <label class="check"><input type="checkbox" id="sample"> Add a few sample invoices to try things out (remove them anytime in Settings)</label>
         <button class="btn wide" type="submit" id="go">Connect PayPal</button>
         <div class="err" id="err" role="alert"></div>
@@ -104,6 +107,13 @@
     if (other) $('btypeOther').focus();
   });
   fetch('/api/settings').then((r) => r.json()).then((s) => { if (s?.business?.businessName && !$('biz').value) $('biz').value = s.business.businessName; }).catch(() => {});
+  // public demo: each visitor has a private copy, and a passcode makes no sense there
+  fetch('/api/config').then((r) => r.json()).then((c) => {
+    if (!c?.hostedDemo) return;
+    $('passRow').classList.add('hidden');
+    $('pass').value = '';
+    if (c.privateSpace) $('spaceHint').classList.remove('hidden');
+  }).catch(() => {});
 
   async function post(url, body) {
     const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) });

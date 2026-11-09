@@ -40,16 +40,21 @@ function visitor() {
 const A = visitor();
 const B = visitor();
 
-test('a new visitor lands on a working demo, not a setup form', async () => {
+test('a new visitor gets a fresh private copy that starts on the setup screen', async () => {
   const r = await A('/app');
   assert.equal(r.status, 302);
-  assert.equal(r.headers.get('location'), '/dashboard');
+  assert.equal(r.headers.get('location'), '/welcome', 'setup first: choose demo or connect PayPal');
   assert.match(r.headers.get('set-cookie'), /pp_space=[a-f0-9]{32}; Path=\/; HttpOnly; SameSite=Lax/);
-  const inv = (await A('/api/invoices')).data.invoices;
-  assert.ok(inv.length > 10);
+  assert.equal((await A('/api/invoices')).data.invoices.length, 0, 'nothing preloaded');
   const cfg = (await A('/api/config')).data;
   assert.equal(cfg.privateSpace, true);
-  assert.equal(cfg.businessName, 'Ortiz Design Studio');
+  assert.equal(cfg.hostedDemo, true);
+  // "Try the demo" on the welcome screen loads the sample book into this copy only
+  const demo = await A('/api/settings/paypal/demo', { businessName: 'Ortiz Design Studio', accountType: 'freelancer', businessType: 'graphic_designer', passcode: 'abcd1234' });
+  assert.equal(demo.status, 200, JSON.stringify(demo.data));
+  assert.ok((await A('/api/invoices')).data.invoices.length > 10);
+  assert.equal((await A('/app')).headers.get('location'), '/dashboard');
+  assert.equal((await A('/api/config')).data.loginEnabled, false, 'no passcode on a shared demo');
 });
 
 test("the server's own PayPal keys never reach a visitor", async () => {
@@ -62,7 +67,7 @@ test("the server's own PayPal keys never reach a visitor", async () => {
 });
 
 test('two visitors never see each other', async () => {
-  await B('/api/config');
+  await B('/api/settings/paypal/demo', { businessName: 'Ortiz Design Studio', accountType: 'freelancer', businessType: 'graphic_designer' });
   const nB = (await B('/api/invoices')).data.invoices.length;
   // A renames the business, drafts and approves an invoice, and pays one
   await A('/api/settings/business', { businessName: 'Visitor A Co' });

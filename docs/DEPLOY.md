@@ -4,7 +4,7 @@ There are two options below: [Render](#render) and [Azure App Service](#azure-ap
 
 ## What visitors get
 
-- The link opens straight into a working dashboard with sample data. There's no sign-up or setup form.
+- The link opens on the setup screen. One click on **Try the demo** loads sample data; there's no sign-up.
 - Every visitor gets a **private copy**, so nobody sees anyone else's invoices, settings or keys.
 - A visitor can connect **their own** PayPal sandbox keys in Settings → PayPal and send real sandbox invoices. Their keys stay in their copy only.
 - Copies nobody has opened for 3 days are deleted.
@@ -22,9 +22,9 @@ Render uses the `render.yaml` blueprint in this repo, on the free plan.
    Do **not** add PayPal keys. The demo doesn't need them, because visitors use demo mode or their own sandbox.
 5. Click **Apply**. The first build takes 2–4 minutes. When the log shows `PayPilot running`, open the URL Render gives you (something like `https://paypilot-xxxx.onrender.com`).
 6. **Test it in a private browser window:**
-   - The landing page opens. **Open PayPilot** goes straight to the dashboard.
+   - The landing page opens. **Open PayPilot** shows the setup screen, and **Try the demo** opens the dashboard.
    - A second private window gets its own separate copy.
-   - The note at the top says "This is your own private copy".
+   - The setup screen says it's your own private copy, and there's no passcode box.
 
 ## Before judging (Render)
 
@@ -68,7 +68,7 @@ PayPilot runs on App Service's built-in Node.js on Linux with no changes. When i
 4. **Startup and health.**
    - **Settings → Configuration → General settings:** set **Startup Command** to `node server.js`, turn **Always on** on (B1 and up), then **Save**.
    - **Monitoring → Health check:** turn it on with path `/api/health`.
-5. **Test it.** Open `https://<your-app>.azurewebsites.net` in a private window and check that **Open PayPilot** goes straight to the dashboard. If something is wrong, look at **Monitoring → Log stream**. A healthy start prints `PayPilot running`.
+5. **Test it.** Open `https://<your-app>.azurewebsites.net` in a private window and check that **Open PayPilot** shows the setup screen and **Try the demo** opens the dashboard. If something is wrong, look at **Monitoring → Log stream**. A healthy start prints `PayPilot running`.
 
 **If the page says "Application Error"**, open Log stream:
 - `node:sqlite` errors mean the runtime is older than Node 22.13. Set the runtime to Node 22 LTS or 24 LTS under Configuration.

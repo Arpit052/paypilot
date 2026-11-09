@@ -2057,3 +2057,4 @@ a.cv-btn { display: block; text-decoration: none; transition: background .15s; }
 .mb-ex { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 4px; }
 .mb-ex .chip { text-align: left; font-size: 12.5px; padding: 7px 11px; border-radius: 9px; background: #121215; border: 1px solid var(--glass-line); color: var(--ink-2); cursor: pointer; }
 .mb-ex .chip:hover { color: var(--ink); border-color: var(--glass-line-2); }
+.auth-card .space-hint { margin: -6px 0 16px; padding: 10px 12px; border-radius: 9px; background: #0e0e11; box-shadow: inset 0 0 0 1px var(--glass-line); color: var(--ink-2); font-size: 13px; line-height: 1.5; }

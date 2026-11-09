@@ -71,7 +71,7 @@ Rather than passing a workspace through every function, the request runs inside 
 - `config` is a proxy that stores run-time settings (business name, PayPal keys, preferences) on the workspace instead of the shared object;
 - `perSpace()` gives module state its own copy per workspace. That covers sync cursors, the Autopilot run lock, the brief cache, chat sessions and the open notification streams.
 
-Inside a workspace the server's `.env` PayPal keys are never used, so a visitor is in demo mode until they connect their own sandbox. Background jobs run once per recently used workspace. Unlock and receipt links are opened by clients who don't have the owner's cookie, so the shared database keeps a small index from token to workspace. New workspaces are rate limited per address, and workspaces idle for 3 days are deleted.
+A new workspace starts empty on the setup screen. Inside a workspace the server's `.env` PayPal keys are never used, so a visitor is either in demo mode or on their own sandbox. Background jobs run once per recently used workspace. Unlock and receipt links are opened by clients who don't have the owner's cookie, so the shared database keeps a small index from token to workspace. New workspaces are rate limited per address, and workspaces idle for 3 days are deleted.
 
 ## Reminders
 
