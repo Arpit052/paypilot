@@ -54,7 +54,8 @@ export function applySettings() {
     source.value = envPaypal.mode === 'mock' ? 'none' : 'env';
   }
   const b = kvGet('settings:business') || {};
-  config.businessName = b.businessName || envBusiness.businessName;
+  // a visitor's private copy starts with no name; the server's BUSINESS_NAME is only the demo's default
+  config.businessName = b.businessName || (currentSpace() ? '' : envBusiness.businessName);
   config.defaultTaxPercent = b.defaultTaxPercent ?? envBusiness.defaultTaxPercent;
   config.lateFeePercent = b.lateFeePercent ?? envBusiness.lateFeePercent;
   config.lateFeeAfterDays = b.lateFeeAfterDays ?? envBusiness.lateFeeAfterDays;

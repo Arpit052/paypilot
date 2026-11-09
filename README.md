@@ -180,7 +180,7 @@ All of these are optional. [.env.example](.env.example) lists them with comments
 npm test
 ```
 
-The suite contains 127 end-to-end tests. They run PayPal as a local twin and use a scripted AI, so they need no keys. They cover approvals and duplicate protection, webhooks arriving twice or out of order, PayPal errors and timeouts, exact cents, the budget model's properties, aging/DSO/concentration against hand-worked numbers, CSV injection, pay-to-unlock, and visitor isolation. GitHub Actions runs them on every push. [docs/TESTING.md](docs/TESTING.md) describes what was tested and what was fixed.
+The suite contains 128 end-to-end tests. They run PayPal as a local twin and use a scripted AI, so they need no keys. They cover approvals and duplicate protection, webhooks arriving twice or out of order, PayPal errors and timeouts, exact cents, the budget model's properties, aging/DSO/concentration against hand-worked numbers, CSV injection, pay-to-unlock, and visitor isolation. GitHub Actions runs them on every push. [docs/TESTING.md](docs/TESTING.md) describes what was tested and what was fixed.
 
 ## Security and privacy
 

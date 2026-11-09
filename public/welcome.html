@@ -29,7 +29,7 @@
       <h2>Set up PayPilot</h2>
       <p class="sub">Connect your PayPal sandbox app, or look around with demo data first.</p>
       <p class="space-hint hidden" id="spaceHint">This is a public demo, so you get your own private copy. Anything you add, including sandbox keys, stays in it and is deleted after 3 days without use.</p>
-      <form id="connect" autocomplete="off">
+      <form id="connect" autocomplete="off" novalidate>
         <fieldset class="acct" id="acct">
           <legend>How will you use PayPilot?</legend>
           <label class="acct-opt"><input type="radio" name="acct" value="freelancer" checked><span><b>Freelancer or independent</b><em>You do the work yourself. Write invoices in a sentence, let reminders chase late payers, and check what you can afford.</em></span></label>
@@ -37,7 +37,7 @@
         </fieldset>
         <label for="biz">Business name</label>
         <input id="biz" type="text" maxlength="100" placeholder="e.g. Ortiz Design Studio" required>
-        <p class="hint">Shown on every invoice your clients receive.</p>
+        <p class="hint">Shown on every invoice your clients receive. Needed to connect PayPal; for the demo you can leave it empty and a sample name is used.</p>
         <label for="btype" id="btypeLabel">What do you do?</label>
         <div id="descWrap" class="hidden">
           <textarea id="bdesc" rows="2" maxlength="200" placeholder="e.g. Commercial cleaning and window washing for offices and clinics in Austin"></textarea>
@@ -131,6 +131,7 @@
   $('connect').addEventListener('submit', async (e) => {
     e.preventDefault();
     $('err').textContent = '';
+    if (!$('biz').value.trim()) { $('err').textContent = 'Add your business name. It appears on every invoice your clients receive.'; $('biz').focus(); return; }
     if (!$('cid').value.trim() || !$('sec').value.trim()) { $('err').textContent = 'Paste your PayPal Client ID and Secret, or choose demo data below.'; return; }
     if (!passOk()) return;
     $('go').disabled = true;

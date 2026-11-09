@@ -380,7 +380,7 @@ export function createApp() {
     if (!/^[A-Za-z0-9_-]{20,128}$/.test(clientId)) throw httpError(400, 'That Client ID looks incomplete. Copy it again from developer.paypal.com.');
     if (!/^[A-Za-z0-9_-]{20,128}$/.test(clientSecret)) throw httpError(400, 'That Secret looks incomplete. Click "Show" next to Secret on developer.paypal.com and copy it again.');
     const bizName = String(req.body?.businessName || '').trim();
-    if (!bizName && !config.businessName) throw httpError(400, 'Add your business name first. It appears on your invoices.');
+    if (!bizName && !config.businessName) throw httpError(400, 'Add your business name first. It appears on every invoice your clients receive.');
     const check = await verifyCredentials(clientId, clientSecret);
     if (!check.ok) throw httpError(400, check.error);
     connectPaypal({ clientId, clientSecret });
@@ -413,7 +413,8 @@ export function createApp() {
     res.json({ ok: true, removedDemoInvoices: removed, imported: imp.imported, settings: publicSettings() });
   });
   api.post('/settings/paypal/demo', async (req, res) => {
-    const bizName = String(req.body?.businessName || '').trim() || (config.businessName ? '' : 'Ortiz Design Studio');
+    // the demo works without a name: it gets a sample firm name
+    const bizName = String(req.body?.businessName || '').trim() || (config.businessName ? '' : process.env.BUSINESS_NAME || 'Ortiz Design Studio');
     if (bizName) saveBusinessSettings({ businessName: bizName });
     await describeBusiness(req.body || {}, { preset: true, demo: true });
     // a shared public demo never sets a passcode (one visitor could lock their copy and forget it)

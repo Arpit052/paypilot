@@ -110,3 +110,19 @@ test("a client's unlock link finds the right workspace without the owner's cooki
   assert.equal(page.data.paid, false);
   assert.equal(page.headers.get('set-cookie'), null, 'no workspace is made for the client');
 });
+
+test('business name: blank on a fresh copy, required to connect PayPal, optional for the demo', async () => {
+  const D = visitor();
+  await D('/app');
+  assert.equal((await D('/api/settings')).data.business.businessName, '', "the server's BUSINESS_NAME is not pre-filled");
+  const noName = await D('/api/settings/paypal/connect', { businessName: '', clientId: 'A' + 'q'.repeat(79), clientSecret: 'E' + 'r'.repeat(79), accountType: 'freelancer' });
+  assert.equal(noName.status, 400);
+  assert.match(noName.data.error, /business name/i);
+  const demo = await D('/api/settings/paypal/demo', { businessName: '', accountType: 'freelancer', businessType: 'graphic_designer' });
+  assert.equal(demo.status, 200);
+  assert.equal((await D('/api/config')).data.businessName, 'Ortiz Design Studio', 'the demo gets a sample firm name');
+  const E = visitor();
+  await E('/app');
+  await E('/api/settings/paypal/demo', { businessName: 'Harbor Lane Bakery', accountType: 'freelancer', businessType: 'graphic_designer' });
+  assert.equal((await E('/api/config')).data.businessName, 'Harbor Lane Bakery', 'a typed name wins');
+});
