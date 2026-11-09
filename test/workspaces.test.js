@@ -126,3 +126,21 @@ test('business name: blank on a fresh copy, required to connect PayPal, optional
   await E('/api/settings/paypal/demo', { businessName: 'Harbor Lane Bakery', accountType: 'freelancer', businessType: 'graphic_designer' });
   assert.equal((await E('/api/config')).data.businessName, 'Harbor Lane Bakery', 'a typed name wins');
 });
+
+test('a registered business must say what it sells before connecting PayPal', async () => {
+  const D = visitor();
+  await D('/app');
+  const keys = { clientId: 'A' + 'q'.repeat(79), clientSecret: 'E' + 'r'.repeat(79) };
+  const noDesc = await D('/api/settings/paypal/connect', { businessName: 'Brightline Facility Care', accountType: 'business', businessDescription: '  ', ...keys });
+  assert.equal(noDesc.status, 400);
+  assert.match(noDesc.data.error, /what your business sells/i);
+  const noTrade = await D('/api/settings/paypal/connect', { businessName: 'Ana Ortiz', accountType: 'freelancer', businessType: 'other', businessTypeOther: '', ...keys });
+  assert.equal(noTrade.status, 400);
+  assert.match(noTrade.data.error, /what you do/i);
+  // the demo still works without a description
+  const demo = await D('/api/settings/paypal/demo', { businessName: '', accountType: 'business', businessDescription: '' });
+  assert.equal(demo.status, 200);
+  // and a business can't blank its description later in Settings
+  const blank = await D('/api/settings/business', { businessDescription: '' });
+  assert.equal(blank.status, 400);
+});

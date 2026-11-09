@@ -846,7 +846,11 @@ body.shell main { max-width: none; padding: 26px 34px 60px; }
 body.shell main > * { max-width: 1280px; margin-left: auto; margin-right: auto; }
 body.shell main.workspace { max-width: none; }
 
-.sidebar { position: fixed; z-index: 40; top: 0; left: 0; bottom: 0; width: var(--sbw); display: flex; flex-direction: column; gap: 4px; padding: 14px 12px; background: #0b0b0d; border-right: 1px solid var(--glass-line); transition: width .2s ease, transform .25s ease; overflow: hidden; }
+.sidebar { position: fixed; z-index: 40; top: 0; left: 0; bottom: 0; width: var(--sbw); display: flex; flex-direction: column; gap: 4px; padding: 14px 12px; background: #0b0b0d; border-right: 1px solid var(--glass-line); transition: width .2s ease, transform .25s ease; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2a2a30 transparent; }
+.sidebar > * { flex-shrink: 0; }
+.sidebar > .sb-fill { flex: 1 0 8px; }
+.sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-thumb { background: #2a2a30; border-radius: 3px; }
 .sb-top { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 10px; }
 .sidebar .brand { gap: 10px; min-width: 0; }
 .sidebar .brand svg { width: 30px; height: 30px; filter: none; }
@@ -890,7 +894,7 @@ body.sb-collapsed .sb-card-h { margin: 0; }
 body.sb-collapsed .sb-card-h i { display: none; }
 body.sb-collapsed .sb-badge { position: absolute; top: 2px; right: 6px; min-width: 16px; height: 16px; font-size: 10px; padding: 0 4px; }
 body.sb-collapsed [data-tip]:hover::after { content: attr(data-tip); position: fixed; left: 74px; margin-top: 0; padding: 5px 9px; border-radius: 7px; background: #fafafa; color: #09090b; font-size: 12px; font-weight: 700; white-space: nowrap; z-index: 60; pointer-events: none; }
-body.sb-collapsed .sidebar { overflow: visible; }
+body.sb-collapsed .sidebar { overflow-x: hidden; overflow-y: auto; }
 
 /* top bar */
 body.shell .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 14px; padding: 10px 34px; background: rgba(9, 9, 11, 0.82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--glass-line); }

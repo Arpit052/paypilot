@@ -95,7 +95,7 @@
     const biz = acct() === 'business';
     $('btypeLabel').textContent = biz ? 'What does the business sell, and to whom?' : 'What do you do?';
     $('btypeLabel').htmlFor = biz ? 'bdesc' : 'btype';
-    $('btypeHint').textContent = biz ? 'In your own words. The AI reads it to group your sales, suggest invoice lines and write in your terms. Businesses start on Net 30 with matter-of-fact reminders.' : 'Sets sensible payment terms, reminder style and invoice shortcuts. The demo loads sample work for this profession.';
+    $('btypeHint').textContent = biz ? 'Required to connect PayPal. In your own words; the AI reads it to group your sales, suggest invoice lines and write in your terms. Businesses start on Net 30 with matter-of-fact reminders.' : 'Sets sensible payment terms, reminder style and invoice shortcuts. The demo loads sample work for this profession.';
     $('descWrap').classList.toggle('hidden', !biz);
     $('btype').classList.toggle('hidden', biz);
     $('btypeOther').classList.toggle('hidden', biz || $('btype').value !== 'other');
@@ -132,6 +132,8 @@
     e.preventDefault();
     $('err').textContent = '';
     if (!$('biz').value.trim()) { $('err').textContent = 'Add your business name. It appears on every invoice your clients receive.'; $('biz').focus(); return; }
+    if (acct() === 'business' && $('bdesc').value.trim().length < 3) { $('err').textContent = 'Describe what your business sells, and to whom. PayPilot uses it to group your sales and write invoices in your terms.'; $('bdesc').focus(); return; }
+    if (acct() !== 'business' && $('btype').value === 'other' && !$('btypeOther').value.trim()) { $('err').textContent = 'Tell us what you do, in a few words.'; $('btypeOther').focus(); return; }
     if (!$('cid').value.trim() || !$('sec').value.trim()) { $('err').textContent = 'Paste your PayPal Client ID and Secret, or choose demo data below.'; return; }
     if (!passOk()) return;
     $('go').disabled = true;

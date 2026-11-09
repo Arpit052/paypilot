@@ -381,6 +381,10 @@ export function createApp() {
     if (!/^[A-Za-z0-9_-]{20,128}$/.test(clientSecret)) throw httpError(400, 'That Secret looks incomplete. Click "Show" next to Secret on developer.paypal.com and copy it again.');
     const bizName = String(req.body?.businessName || '').trim();
     if (!bizName && !config.businessName) throw httpError(400, 'Add your business name first. It appears on every invoice your clients receive.');
+    const acctType = String(req.body?.accountType || config.accountType || 'freelancer');
+    const desc = String(req.body?.businessDescription || '').trim() || (config.businessDescription || '').trim();
+    if (acctType === 'business' && desc.length < 3) throw httpError(400, 'Describe what your business sells, and to whom. PayPilot uses it to group your sales and write invoices in your terms.');
+    if (acctType !== 'business' && req.body?.businessType === 'other' && !String(req.body?.businessTypeOther || '').trim()) throw httpError(400, 'Tell us what you do, in a few words.');
     const check = await verifyCredentials(clientId, clientSecret);
     if (!check.ok) throw httpError(400, check.error);
     connectPaypal({ clientId, clientSecret });
@@ -450,6 +454,9 @@ export function createApp() {
   api.post('/settings/business', async (req, res) => {
     const body = req.body || {};
     if (body.businessDescription !== undefined) {
+      if ((body.accountType || config.accountType) === 'business' && String(body.businessDescription).trim().length < 3) {
+        throw httpError(400, 'Describe what your business sells, and to whom. A business needs this to group its sales.');
+      }
       await describeBusiness({ ...body, accountType: body.accountType || config.accountType });
       const { businessDescription, businessType, businessTypeOther, ...rest } = body;
       return res.json({ business: saveBusinessSettings(rest), profile: activeProfile() });
