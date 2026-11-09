@@ -236,6 +236,8 @@ function classify(e) {
  */
 async function geminiComplete(args) {
   const models = [config.llm.geminiModel, ...config.llm.geminiFallbacks.filter((m) => m !== config.llm.geminiModel)];
+  // quick structured jobs (reading a business description) go to the light models first
+  if (args.fast) models.sort((a, b) => Number(/lite/.test(b)) - Number(/lite/.test(a)));
   let waited = false;
   for (;;) {
     let lastErr = null;

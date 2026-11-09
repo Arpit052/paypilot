@@ -16,6 +16,7 @@ import { isOpen, isPaid, clientStats } from './analytics.js';
 import { retainerOffers } from './offers.js';
 import { complete, llmAvailable } from './llm.js';
 import { normalType, professionLabel } from './business.js';
+import { profileAreaOf, hasProfileAreas } from './bizprofile.js';
 import { INDUSTRIES, learnLabels, learnedAreas, industrySource } from './labels.js';
 
 const r2 = (n) => cents(n);
@@ -128,7 +129,10 @@ const BY_PROFESSION = {
 };
 
 export function areaOf(name, profession = normalType(config.businessType), learned = null) {
-  for (const [area, re] of [...(BY_PROFESSION[profession] || []), ...AREAS]) if (re.test(name || '')) return area;
+  // a business that described itself: its own kinds of work come first
+  const own = profileAreaOf(name);
+  if (own) return own;
+  for (const [area, re] of [...(hasProfileAreas() ? [] : BY_PROFESSION[profession] || []), ...AREAS]) if (re.test(name || '')) return area;
   return learned?.get(name) || 'Other work';
 }
 const isRecurringArea = (name) => /retainer|ongoing|management|packages/i.test(name);
@@ -585,7 +589,7 @@ const PLAN_KEY = 'growth:plan';
 export function bookFingerprint() {
   const parts = listInvoices().map((i) => `${i.id}:${i.status}:${i.total}:${i.paidDate || ''}`).sort();
   parts.push(...listClients().map((c) => `${c.id}:${c.industry || ''}`).sort());
-  parts.push(`${config.accountType}:${config.businessType}`);
+  parts.push(`${config.accountType}:${config.businessType}:${config.businessDescription || ""}`);
   let h = 2166136261;
   for (const ch of parts.join('|')) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
   return (h >>> 0).toString(36);

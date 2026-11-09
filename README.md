@@ -67,6 +67,7 @@ PayPilot doesn't care what work you do, only how you get paid. On the first scre
 | Feature | How it works |
 |---|---|
 | **Two ways to use it** | Setup asks whether you're a **freelancer** or a **registered business**. Both get every feature, under the same names. Freelancers get **getting paid** first: the dashboard opens on who owes you, which reminder is due, and a "bill a client in one sentence" box. Businesses get **analysis** first: money owed by age (receivables aging), days sales outstanding, repeat customers and the top three places to grow, with Growth and Analytics higher in the menu and Net 30 terms by default. Switch anytime in Settings; the data is the same. |
+| **A business in its own words** | Freelancers pick a profession. A business instead writes what it sells, in one sentence ("Commercial cleaning and window washing for offices and clinics in Austin"). The AI reads it into a profile: a short label, who usually pays, its own kinds of work (used to group sales on the Growth page), invoice shortcuts with realistic prices, and what repeat work is called ("monthly cleaning contract"). The demo then loads sample invoices written for that business. If the AI is slow or offline, simple rules split the sentence into kinds of work, the app opens anyway, and the AI's version is swapped in when it lands. |
 | **A clean start** | A real (PayPal-connected) account starts empty. Tick "Add a few sample invoices" to try things; every sample row is tracked, and **Settings → Data → Remove sample data** deletes exactly those, keeping anything you created. Demo mode loads the full sample book. |
 
 **Track, as a business**
@@ -265,7 +266,7 @@ Data is stored in SQLite at `data/paypilot.db`. Set `DATA_DIR` to a persistent d
 
 ## Tests
 
-A full judge-style QA pass (24 bugs found and fixed, 77 → 113 tests) is written up in [docs/QA-REPORT.md](docs/QA-REPORT.md). To check the live PayPal sandbox with your own keys: `npm run sandbox-check`.
+A full judge-style QA pass (24 bugs found and fixed, 77 → 113 tests; 118 now) is written up in [docs/QA-REPORT.md](docs/QA-REPORT.md). To check the live PayPal sandbox with your own keys: `npm run sandbox-check`.
 
 
 ```bash

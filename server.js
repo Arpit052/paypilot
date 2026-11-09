@@ -23,7 +23,7 @@ import { moneyBrief } from './src/brief.js';
 import { startScheduler, runJobs, lastRun } from './src/scheduler.js';
 import { invoiceTotals, topCustomers, paymentsInMonth, invoicesCsv } from './src/analytics.js';
 import { createAction } from './src/actions.js';
-import { eventStream } from './src/notify.js';
+import { eventStream, notify } from './src/notify.js';
 import { listNotifications, unreadNotificationCount, markNotificationsRead, deleteInvoice, deleteClient, kvGet, kvSet, kvDel } from './src/db.js';
 import { applySettings, setupDone, publicSettings, connectPaypal, useDemoMode, disconnectPaypal, saveBusinessSettings } from './src/settings.js';
 import { verifyCredentials } from './src/paypal.js';
@@ -38,6 +38,7 @@ import { markIndustryByOwner } from './src/labels.js';
 import { setClientIndustry } from './src/db.js';
 import { receiptPathFor, listReceipts, markReceiptSent, receiptView, documentFor, ensureReceipt } from './src/receipts.js';
 import { businessTypeList, typeOf, BUSINESS_TYPES, normalType, professionLabel } from './src/business.js';
+import { interpretBusiness, writeDemoWork, activeType, activeProfile, ruleProfile } from './src/bizprofile.js';
 
 const httpError = (status, message) => Object.assign(new Error(message), { status });
 const startedAt = Date.now();
@@ -111,6 +112,55 @@ function welcomeGate(req, res, next) {
   const isPage = req.path === '/' || req.path.endsWith('.html') || !path.extname(req.path);
   if (isPage && !setupDone()) return res.redirect(302, '/welcome');
   next();
+}
+
+/**
+ * Save "what you do" from onboarding or Settings. Freelancers pick a profession; a business
+ * describes what it sells in its own words, and the AI reads that into a profile (label, kinds of
+ * work, shortcuts, demo work). The profile's label becomes the name the rest of the app uses.
+ */
+async function describeBusiness(body, { preset = false, waitMs = Number(process.env.BUSINESS_AI_WAIT_MS || 9000), demo = false } = {}) {
+  const acct = ['freelancer', 'business'].includes(body.accountType) ? body.accountType : null;
+  const desc = String(body.businessDescription || '').trim();
+  const base = acct ? { accountType: acct, teamSize: acct === 'business' ? body.teamSize || '' : '' } : {};
+  if (acct === 'business' && desc) {
+    saveBusinessSettings({ ...base, businessDescription: desc, businessType: 'other', businessTypeOther: ruleProfile(desc).label.slice(0, 40), applyPreset: preset });
+    const useLabel = (p) => p && config.businessDescription === p.source && saveBusinessSettings({ businessType: 'other', businessTypeOther: p.label.slice(0, 40) });
+    // the AI can take a while: wait a few seconds, then carry on with the rule-based reading
+    // and let the AI finish in the background (sample work is redone when it lands)
+    const job = interpretBusiness(desc).then(async (p) => {
+      useLabel(p);
+      if (demo && p?.by === 'ai') await writeDemoWork();
+      return p;
+    });
+    let timer;
+    const done = await Promise.race([job.then(() => true), new Promise((r) => (timer = setTimeout(() => r(false), waitMs)))]);
+    clearTimeout(timer);
+    useLabel(activeProfile());
+    if (!done) job.then(() => (demo ? refreshSampleForBusiness() : null)).catch(() => {});
+    return;
+  }
+  if (acct === 'business' && body.businessDescription !== undefined) {
+    // emptied: back to the generic business wording
+    saveBusinessSettings({ ...base, businessDescription: '', businessType: 'other', businessTypeOther: '', applyPreset: preset });
+    await interpretBusiness('');
+    return;
+  }
+  if (BUSINESS_TYPES[body.businessType]) {
+    saveBusinessSettings({ ...base, businessType: body.businessType, businessTypeOther: body.businessTypeOther || '', applyPreset: preset, ...(acct === 'freelancer' ? { businessDescription: '' } : {}) });
+  } else if (acct) saveBusinessSettings({ ...base, applyPreset: preset });
+}
+
+/** Demo book still untouched and the AI just wrote sample work for this business: swap it in. */
+function refreshSampleForBusiness() {
+  const p = activeProfile();
+  if (!isMock() || !p?.demo) return;
+  const info = sampleInfo();
+  if (!info.count || listInvoices().length !== info.count) return; // the owner has added their own work
+  removeSample();
+  seedSample();
+  noteDueDates();
+  notify({ kind: 'import', title: 'Sample invoices now fit your business', body: `The AI wrote sample work for a ${p.label.toLowerCase()}. Open Invoices to see it.`, link: '/invoices' });
 }
 
 function securityHeaders(req, res, next) {
@@ -272,8 +322,8 @@ export function createApp() {
       lateFeeAfterDays: config.lateFeeAfterDays,
       businessType: normalType(config.businessType),
       businessTypeLabel: professionLabel(config.businessType, config.businessTypeOther),
-      typeItems: typeOf(config.businessType).items.map(([name, price]) => ({ name, price })),
-      retainerWord: typeOf(config.businessType).retainer,
+      typeItems: activeType().items.map(([name, price]) => ({ name, price })),
+      retainerWord: activeType().retainer,
       demoPersona: kvGet('demo:persona') || null,
     })
   );
@@ -292,7 +342,7 @@ export function createApp() {
     if (!check.ok) throw httpError(400, check.error);
     connectPaypal({ clientId, clientSecret });
     if (bizName) saveBusinessSettings({ businessName: bizName });
-    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true, ...(['freelancer', 'business'].includes(req.body?.accountType) ? { accountType: req.body.accountType, teamSize: req.body.teamSize || '' } : {}) });
+    await describeBusiness(req.body || {}, { preset: true });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
@@ -318,10 +368,10 @@ export function createApp() {
     logActivity('paypal_connected', 'Connected to PayPal sandbox');
     res.json({ ok: true, removedDemoInvoices: removed, imported: imp.imported, settings: publicSettings() });
   });
-  api.post('/settings/paypal/demo', (req, res) => {
+  api.post('/settings/paypal/demo', async (req, res) => {
     const bizName = String(req.body?.businessName || '').trim() || (config.businessName ? '' : 'Ortiz Design Studio');
     if (bizName) saveBusinessSettings({ businessName: bizName });
-    if (BUSINESS_TYPES[req.body?.businessType]) saveBusinessSettings({ businessType: req.body.businessType, businessTypeOther: req.body.businessTypeOther || '', applyPreset: true, ...(['freelancer', 'business'].includes(req.body?.accountType) ? { accountType: req.body.accountType, teamSize: req.body.teamSize || '' } : {}) });
+    await describeBusiness(req.body || {}, { preset: true, demo: true });
     if (!config.appPassword && !security()?.hash && String(req.body?.passcode || '').length >= 4) {
       setPasscode(String(req.body.passcode));
       res.set('Set-Cookie', sessionCookie(req));
@@ -351,7 +401,20 @@ export function createApp() {
     res.set('Set-Cookie', sessionCookie(req)); // stay signed in on this device
     res.json({ ok: true, loginEnabled: true });
   });
-  api.post('/settings/business', (req, res) => res.json({ business: saveBusinessSettings(req.body || {}) }));
+  api.post('/settings/business', async (req, res) => {
+    const body = req.body || {};
+    if (body.businessDescription !== undefined) {
+      await describeBusiness({ ...body, accountType: body.accountType || config.accountType });
+      const { businessDescription, businessType, businessTypeOther, ...rest } = body;
+      return res.json({ business: saveBusinessSettings(rest), profile: activeProfile() });
+    }
+    res.json({ business: saveBusinessSettings(body) });
+  });
+  // a business says what it sells in its own words; the AI turns that into its profile
+  api.post('/business/interpret', async (req, res) => {
+    const p = await interpretBusiness(String(req.body?.text || config.businessDescription || ''), { force: Boolean(req.body?.force) });
+    res.json({ profile: p });
+  });
   // try the current writing style on a real open invoice (nothing is saved or sent)
   api.post('/settings/preview-reminder', async (req, res) => {
     const today = isoDate();
@@ -747,7 +810,7 @@ export function createApp() {
   api.post('/budget/estimate', (req, res) => res.json(estimateBudget(req.body || {})));
 
   // ---- retainer offers ----
-  api.get('/offers', (req, res) => res.json({ offers: retainerOffers(), word: typeOf(config.businessType).retainer }));
+  api.get('/offers', (req, res) => res.json({ offers: retainerOffers(), word: activeType().retainer }));
   api.post('/offers/:clientId/draft', async (req, res) => res.json({ draft: await draftOffer(req.params.clientId, { refresh: Boolean(req.body?.refresh) }) }));
   api.post('/offers/:clientId/offered', (req, res) => {
     markOffered(req.params.clientId);

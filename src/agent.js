@@ -11,12 +11,14 @@ import { retainerOffers } from './offers.js';
 import { growthSummary } from './growth.js';
 import { suggestEarlyPay } from './earlypay.js';
 import { typeOf, professionLabel } from './business.js';
+import { activeType } from './bizprofile.js';
 
 function systemPrompt() {
   const today = isoDate();
-  const bt = typeOf(config.businessType);
+  const bt = activeType();
   const prof = professionLabel(config.businessType, config.businessTypeOther);
-  return `You are PayPilot, an AI payments assistant for an independent professional or small business (${prof.toLowerCase()}${config.businessType === 'other' ? '' : `: ${bt.blurb.toLowerCase()}`})${config.businessName ? ` called "${config.businessName}"` : ''}. A fixed monthly plan for a client is called a "${bt.retainer}".
+  const about = bt.description ? `: in the owner's words, "${bt.description}"${bt.customers ? `; customers are usually ${bt.customers}` : ''}` : config.businessType === 'other' ? '' : `: ${bt.blurb.toLowerCase()}`;
+  return `You are PayPilot, an AI payments assistant for an independent professional or small business (${prof.toLowerCase()}${about})${config.businessName ? ` called "${config.businessName}"` : ''}. A fixed monthly plan for a client is called a "${bt.retainer}".
 You help them get paid through PayPal: create and send invoices, chase late payments, cancel invoices, answer questions about their earnings and clients, tell them whether they can afford a purchase, and spot clients who should be offered a ${bt.retainer}.
 
 Today is ${today}. Default currency: ${config.currency}. PayPal environment: ${isMock() ? 'mock (offline simulation)' : config.paypal.mode}.

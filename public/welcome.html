@@ -38,6 +38,9 @@
         <input id="biz" type="text" maxlength="100" placeholder="e.g. Ortiz Design Studio" required>
         <p class="hint">Shown on every invoice your clients receive.</p>
         <label for="btype" id="btypeLabel">What do you do?</label>
+        <div id="descWrap" class="hidden">
+          <textarea id="bdesc" rows="2" maxlength="200" placeholder="e.g. Commercial cleaning and window washing for offices and clinics in Austin"></textarea>
+        </div>
         <select id="btype">
           <option value="web_developer">Web Developer · website development, API integration</option>
           <option value="graphic_designer" selected>Graphic Designer · brand identity, UI/UX design</option>
@@ -87,8 +90,12 @@
   const acct = () => document.querySelector('input[name=acct]:checked').value;
   document.querySelectorAll('input[name=acct]').forEach((r) => r.addEventListener('change', () => {
     const biz = acct() === 'business';
-    $('btypeLabel').textContent = biz ? 'What does the business sell?' : 'What do you do?';
-    $('btypeHint').textContent = biz ? 'Groups your work and sets the words the AI uses. Businesses start on Net 30 terms with matter-of-fact reminders; change it anytime.' : 'Sets sensible payment terms, reminder style and invoice shortcuts. The demo loads sample work for this profession.';
+    $('btypeLabel').textContent = biz ? 'What does the business sell, and to whom?' : 'What do you do?';
+    $('btypeLabel').htmlFor = biz ? 'bdesc' : 'btype';
+    $('btypeHint').textContent = biz ? 'In your own words. The AI reads it to group your sales, suggest invoice lines and write in your terms. Businesses start on Net 30 with matter-of-fact reminders.' : 'Sets sensible payment terms, reminder style and invoice shortcuts. The demo loads sample work for this profession.';
+    $('descWrap').classList.toggle('hidden', !biz);
+    $('btype').classList.toggle('hidden', biz);
+    $('btypeOther').classList.toggle('hidden', biz || $('btype').value !== 'other');
     $('teamWrap').classList.toggle('hidden', !biz);
   }));
   $('btype').addEventListener('change', () => {
@@ -119,7 +126,7 @@
     $('go').disabled = true;
     $('go').textContent = 'Checking with PayPal…';
     try {
-      const r = await post('/api/settings/paypal/connect', { businessName: $('biz').value, accountType: acct(), teamSize: acct() === 'business' ? $('team').value : '', businessType: $('btype').value, businessTypeOther: $('btypeOther').value, clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked, passcode: $('pass').value });
+      const r = await post('/api/settings/paypal/connect', { businessName: $('biz').value, accountType: acct(), teamSize: acct() === 'business' ? $('team').value : '', businessType: $('btype').value, businessTypeOther: $('btypeOther').value, businessDescription: acct() === 'business' ? $('bdesc').value.trim() : '', clientId: $('cid').value, clientSecret: $('sec').value, sampleHistory: $('sample').checked, passcode: $('pass').value });
       $('card').innerHTML = `<div class="ok"><div class="tick"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div><h2>Connected to PayPal</h2><p class="sub">Sandbox keys verified${r.imported ? `, ${r.imported} invoice${r.imported > 1 ? 's' : ''} imported` : ''}. Invoices you approve now go out through PayPal.</p><a class="btn wide" href="/dashboard">Open PayPilot</a></div>`;
     } catch (err) {
       $('err').textContent = err.message;
@@ -132,12 +139,15 @@
     $('err').textContent = '';
     if (!passOk()) return;
     $('demo').disabled = true;
+    const label = $('demo').textContent;
+    if (acct() === 'business' && $('bdesc').value.trim()) $('demo').textContent = 'Reading your business description…';
     try {
-      await post('/api/settings/paypal/demo', { businessName: $('biz').value, accountType: acct(), teamSize: acct() === 'business' ? $('team').value : '', businessType: $('btype').value, businessTypeOther: $('btypeOther').value, passcode: $('pass').value });
+      await post('/api/settings/paypal/demo', { businessName: $('biz').value, accountType: acct(), teamSize: acct() === 'business' ? $('team').value : '', businessType: $('btype').value, businessTypeOther: $('btypeOther').value, businessDescription: acct() === 'business' ? $('bdesc').value.trim() : '', passcode: $('pass').value });
       location.href = '/dashboard';
     } catch (err) {
       $('err').textContent = err.message;
       $('demo').disabled = false;
+      $('demo').textContent = label;
     }
   });
 </script>

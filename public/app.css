@@ -2034,3 +2034,18 @@ a.cv-btn { display: block; text-decoration: none; transition: background .15s; }
 }
 /* phone: big money figures shrink to fit instead of wrapping a digit onto its own line */
 @media (max-width: 640px) { .fig .v { font-size: clamp(20px, 6.4vw, 28px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } }
+.auth-card textarea { width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--glass-line-2); background: #0e0e10; color: var(--ink); font-size: 14px; line-height: 1.45; resize: vertical; min-height: 64px; box-sizing: border-box; }
+.auth-card textarea:focus { outline: none; border-color: #52525b; box-shadow: 0 0 0 3px rgba(161, 161, 170, 0.12); }
+.auth-card textarea::placeholder { color: var(--ink-3); }
+/* Settings: a business's own description and what the AI read from it */
+#bizDesc { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--glass-line-2); background: #0e0e10; color: var(--ink); font-size: 14px; line-height: 1.45; resize: vertical; min-height: 64px; }
+#bizDesc:focus { outline: none; border-color: #52525b; }
+.bp-read { margin-top: 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--glass-line); background: #0c0c0e; }
+.bp-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; color: var(--ink-3); }
+.bp-top b { color: var(--ink); font-weight: 600; font-size: 14px; }
+.bp-top em { font-style: normal; }
+.bp-read dl { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 12px 0 10px; }
+.bp-read dt { font-size: 11.5px; color: var(--ink-3); margin-bottom: 5px; }
+.bp-read dd { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.bp-read dd span { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #18181b; border: 1px solid #26262b; color: var(--ink-2); }
+.bp-read p { margin: 0; }

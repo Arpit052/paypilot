@@ -77,6 +77,13 @@ $('acctSave').onclick = async () => {
 
 // ---------------- what you do ----------------
 function renderTypes() {
+  // a business says what it sells in its own words; the AI reads it (no list of professions)
+  const biz = (S.business.accountType || 'freelancer') === 'business';
+  $('btSelect').classList.toggle('hidden', biz);
+  $('btSelect').disabled = biz;
+  $('btLabel').firstChild.textContent = biz ? 'What the business sells' : 'What you do';
+  $('btLabel').htmlFor = biz ? 'bizDesc' : 'btSelect';
+  if (biz) return renderProfile();
   const cur = S.business.businessType || 'graphic_designer';
   $('btSelect').innerHTML = TYPES.map((t) => `<option value="${t.key}" ${t.key === cur ? 'selected' : ''}>${esc(t.label)}${t.key === 'other' ? '' : ` · ${esc(t.blurb)}`}</option>`).join('');
   showPreset();
@@ -99,10 +106,24 @@ function showPreset() {
 }
 $('btSelect').addEventListener('change', showPreset);
 
+function renderProfile() {
+  const p = S.business.profile;
+  const by = p?.by === 'ai' ? 'The AI read this as' : 'Read as';
+  $('btPreset').innerHTML = `<textarea id="bizDesc" name="businessDescription" rows="2" maxlength="200" placeholder="e.g. Commercial cleaning and window washing for offices and clinics in Austin">${esc(S.business.businessDescription || '')}</textarea>
+    ${p
+      ? `<div class="bp-read"><div class="bp-top"><span>${by}</span><b>${esc(p.label)}</b>${p.customers ? `<em>for ${esc(p.customers.charAt(0).toLowerCase() + p.customers.slice(1))}</em>` : ''}</div>
+      <dl><div><dt>Kinds of work</dt><dd>${p.areas.map((a) => `<span>${esc(a.name)}</span>`).join('')}</dd></div>
+      <div><dt>Invoice shortcuts</dt><dd>${p.items.map((i) => `<span>${esc(i.name)} · ${esc(money(i.price, cfg.currency))}</span>`).join('')}</dd></div>
+      <div><dt>Repeat work is called</dt><dd><span>${esc(p.retainer)}</span></dd></div></dl>
+      <p class="muted small">Used to group sales on the Growth page, suggest invoice lines, and in everything the AI writes. Change the sentence and save to update it.</p></div>`
+      : '<p class="muted small" style="margin:8px 0 0">Describe it in a sentence and save. The AI works out your kinds of work, invoice shortcuts and wording from it.</p>'}`;
+}
+
 // ---------------- generic section save ----------------
 function collect(form) {
   const body = {};
   form.querySelectorAll('input[name], select[name], textarea[name]').forEach((el) => {
+    if (el.disabled) return;
     if (el.type === 'radio') {
       if (el.checked) body[el.name] = el.value;
       return;
@@ -120,8 +141,11 @@ document.querySelectorAll('form[data-sec]').forEach((form) => {
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true;
     try {
-      await api('/api/settings/business', { body: collect(form) });
+      const body = collect(form);
+      if (body.businessDescription !== undefined && body.businessDescription.trim() !== (S.business.businessDescription || '')) btn.textContent = 'Reading…';
+      await api('/api/settings/business', { body });
       S = await api('/api/settings');
+      if (body.businessDescription !== undefined) renderTypes();
       ok.textContent = 'Saved';
       ok.classList.remove('err');
       form.classList.remove('dirty');
@@ -131,6 +155,7 @@ document.querySelectorAll('form[data-sec]').forEach((form) => {
       ok.classList.add('err');
     } finally {
       btn.disabled = false;
+      btn.textContent = 'Save changes';
     }
   });
   form.addEventListener('input', () => form.classList.add('dirty'));

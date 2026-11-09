@@ -94,8 +94,8 @@ const WORK = {
 };
 
 /** The demo clients and their habits for one profession (null for the hand-made design studio). */
-export function personaFor(profession) {
-  const w = WORK[profession];
+export function personaFor(profession, work = null) {
+  const w = work || WORK[profession];
   if (!w) return null;
   const R = Object.fromEntries(ROSTER.map((c) => [c.key, c]));
   return [

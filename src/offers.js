@@ -14,6 +14,7 @@ import { isPaid, clientStats } from './analytics.js';
 import { complete, llmAvailable } from './llm.js';
 import { cleanText } from './actions.js';
 import { typeOf, professionLabel } from './business.js';
+import { activeType } from './bizprofile.js';
 
 const LOOKBACK = 180; // days of history we learn from
 const MONTH = 30.44;
@@ -101,7 +102,7 @@ function discountFor(p) {
 export function retainerOffers(today = isoDate()) {
   const onPlan = new Set(listSchedules().filter((s) => s.active).map((s) => s.clientId));
   const st = state();
-  const word = typeOf(config.businessType).retainer;
+  const word = activeType().retainer;
   const planPayers = onPlan.size ? avgLate(onPlan) : null;
   const out = [];
   for (const c of listClients()) {

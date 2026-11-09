@@ -7,6 +7,7 @@
 // Historical invoices are marked source:"seed" (shown as "demo", never sent to PayPal).
 // In demo mode we also add open/overdue invoices so follow-ups can be shown straight away.
 import { config, isoDate, addDays } from './config.js';
+import { activeProfile, profileDemoWork } from './bizprofile.js';
 import { upsertClient, logActivity, insertInvoice, transaction, kvSet, insertSchedule, listInvoices, updateInvoice } from './db.js';
 import { ensureReceipt } from './receipts.js';
 import { listClients } from './db.js';
@@ -92,12 +93,15 @@ function markBankPayer(clientId) {
 }
 
 export function seedDemo(profession = normalType(config.businessType)) {
-  const persona = personaFor(profession);
+  // a business that described itself gets sample work the AI wrote for it
+  const own = activeProfile();
+  const work = own && (own.demo || own.preset === 'other') ? profileDemoWork() : null;
+  const persona = work ? personaFor(null, work) : personaFor(own ? own.preset : profession);
   transaction(() => (persona ? seedPersona(persona) : seedInner()));
   const bank = (persona ? persona.find((c) => c.key === 'william') : CLIENTS.find((c) => c.key === 'marcus'))?.email;
   const row = bank && listClientsByEmail(bank);
   if (row) markBankPayer(row.id);
-  kvSet('demo:persona', persona ? profession : 'graphic_designer');
+  kvSet('demo:persona', work ? 'business' : persona ? profession : 'graphic_designer');
   logActivity('seed', 'Demo history loaded');
 }
 

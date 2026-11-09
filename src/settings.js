@@ -6,6 +6,7 @@
 import { config } from './config.js';
 import { kvGet, kvSet } from './db.js';
 import { BUSINESS_TYPES, normalType } from './business.js';
+import { activeProfile } from './bizprofile.js';
 
 const SANDBOX_URL = 'https://api-m.sandbox.paypal.com';
 // What .env said at start-up, so "Disconnect" can fall back to it.
@@ -27,10 +28,11 @@ const envBusiness = {
   notify: { payment: true, overdue: true, due: true, approval: true, import: true },
   businessType: 'graphic_designer',
   businessTypeOther: '',
+  businessDescription: '',
   accountType: 'freelancer',
   teamSize: '',
 };
-const PREF_KEYS = ['accountType', 'teamSize', 'businessType', 'businessTypeOther', 'currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
+const PREF_KEYS = ['accountType', 'teamSize', 'businessType', 'businessTypeOther', 'businessDescription', 'currency', 'ownerName', 'businessEmail', 'website', 'defaultTermsDays', 'defaultNote', 'reminderStyle', 'signOff', 'aiInstructions', 'notify'];
 const envChoseMode = Boolean(process.env.PAYPAL_MODE);
 
 let paypalSource = 'env';
@@ -96,6 +98,7 @@ export function publicSettings() {
       lateFeePercent: config.lateFeePercent,
       lateFeeAfterDays: config.lateFeeAfterDays,
       ...Object.fromEntries(PREF_KEYS.map((k) => [k, config[k]])),
+      profile: activeProfile(),
     },
     setupDone: setupDone(),
     hiddenClients: (kvGet('hidden:emails') || []).length,
@@ -146,6 +149,8 @@ export function saveBusinessSettings(input = {}) {
     }
   }
   if (input.teamSize !== undefined) next.teamSize = String(input.teamSize || '').trim().slice(0, 20);
+  // businesses describe what they sell in their own words; the AI reads it (src/bizprofile.js)
+  if (input.businessDescription !== undefined) next.businessDescription = String(input.businessDescription || '').replace(/\s+/g, ' ').trim().slice(0, 200);
   if (input.businessTypeOther !== undefined) next.businessTypeOther = String(input.businessTypeOther || '').trim().slice(0, 40);
   if (input.businessType !== undefined) {
     if (!BUSINESS_TYPES[input.businessType]) throw httpErr('Unknown profession');
