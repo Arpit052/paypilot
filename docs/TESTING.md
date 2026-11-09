@@ -104,29 +104,29 @@ Every bug got a failing test first, then the fix, then a full run of the suite.
 
 | # | Sev | Bug | Root cause | Fix | Commit |
 |---|---|---|---|---|---|
-| B1 | P1 | Passcode could be brute-forced | no limit on /api/login | 10 failures/min per IP → 429 + Retry-After | 0f28835 |
-| B5 | P1 | Any visitor could disconnect or wipe the shared copy; a restart emptied it | no shared-demo mode; disk is ephemeral | `HOSTED_DEMO=1` locks 7 actions; `SEED_SAMPLE_ON_BOOT=1` | 0f28835 |
-| B8 | P1 | Cross-site forms could create invoices | no Origin check on writes | refuse writes whose Origin host ≠ Host | 0f28835 |
-| B9 | P1 | "Payment received" shown twice | the poll used an invoice object read before its await | applyStatus re-reads from the DB | 82c504d |
-| B10 | P1 | Paid or cancelled invoice reopened by a late event | any status change was accepted | transition rules: only refunds move a settled invoice | 82c504d |
-| B11 | P1 | A hung PayPal hung the page and the scheduler | fetch had no deadline | 20 s timeout on token and API calls | 82c504d |
-| B2 | P2 | Seed-script samples couldn't be removed | `seedDemo()` doesn't record ids | the script uses `seedSample()` | 0f28835 |
-| B3 | P2 | Mock invoice endpoint live on real accounts | missing `isMock()` guard | guard added | 0f28835 |
-| B4 | P2 | Demo needed a business name | server and UI required it | default name | 0f28835 |
-| B12 | P2 | No retry on 429/503 or an expired token | single-shot API call | reads retry; writes retry only with a request id; 401 → new token | 82c504d |
-| B13 | P2 | Budget chance could move the wrong way | the RNG seed included the user's inputs | common random numbers (seed from the book only) | 82c504d |
-| B14 | P2 | 1.005 rounded to 1.00 | `Math.round(x*100)/100` | `cents()`: half away from zero with precision fix | 82c504d |
-| B15 | P2 | Infinity / 1e400 accepted | `> 0` check passes Infinity | `Number.isFinite` + per-line cap | 82c504d |
-| B16 | P2 | CSV formula injection | cells not neutralised | prefix `'` on `= + - @` text cells | 7fde22a |
-| B17 | P2 | Work link reached the checkout before payment | invoiceRow included delivery.url | stripped from the client-facing payload | 7fde22a |
-| B18 | P2 | Raw AI errors shown to users | message passed through | `friendlyAiError()` + right status | 7fde22a |
-| B19 | P2 | Pages scrolled sideways on phones | tables and grids with fixed min widths | tables scroll inside their box; `min(…,100%)` | b2b821a |
-| B24 | P2 | Muted text below AA contrast | #71717a on near-black | #8a8a93 (5.7:1) | 0a4f405 |
-| B23 | P2 | Unverifiable landing statistic | no primary source | replaced with QuickBooks 47%; every stat linked | 52b4b3c |
-| B6/B7 | P3 | Render needed a Node version; README steps were outdated | – | NODE_VERSION, .node-version, health check, README rewrite | 0f28835 |
-| B20 | P3 | KPI digit wrapped on phones | fixed 27 px font | clamp() + nowrap | b2b821a |
-| B21 | P3 | /client-view fetched invoice "null" | redirect didn't stop the script | stop after replace() | b2b821a |
-| B22 | P3 | Empty book said "Spread out", "Best month $0" | labels computed from zero data | show "—" and the reason | b2b821a |
+| B1 | P1 | Passcode could be brute-forced | no limit on /api/login | 10 failures/min per IP → 429 + Retry-After | af5f138 |
+| B5 | P1 | Any visitor could disconnect or wipe the shared copy; a restart emptied it | no shared-demo mode; disk is ephemeral | `HOSTED_DEMO=1` locks 7 actions; `SEED_SAMPLE_ON_BOOT=1` | af5f138 |
+| B8 | P1 | Cross-site forms could create invoices | no Origin check on writes | refuse writes whose Origin host ≠ Host | af5f138 |
+| B9 | P1 | "Payment received" shown twice | the poll used an invoice object read before its await | applyStatus re-reads from the DB | 14e7c41 |
+| B10 | P1 | Paid or cancelled invoice reopened by a late event | any status change was accepted | transition rules: only refunds move a settled invoice | 14e7c41 |
+| B11 | P1 | A hung PayPal hung the page and the scheduler | fetch had no deadline | 20 s timeout on token and API calls | 14e7c41 |
+| B2 | P2 | Seed-script samples couldn't be removed | `seedDemo()` doesn't record ids | the script uses `seedSample()` | af5f138 |
+| B3 | P2 | Mock invoice endpoint live on real accounts | missing `isMock()` guard | guard added | af5f138 |
+| B4 | P2 | Demo needed a business name | server and UI required it | default name | af5f138 |
+| B12 | P2 | No retry on 429/503 or an expired token | single-shot API call | reads retry; writes retry only with a request id; 401 → new token | 14e7c41 |
+| B13 | P2 | Budget chance could move the wrong way | the RNG seed included the user's inputs | common random numbers (seed from the book only) | 14e7c41 |
+| B14 | P2 | 1.005 rounded to 1.00 | `Math.round(x*100)/100` | `cents()`: half away from zero with precision fix | 14e7c41 |
+| B15 | P2 | Infinity / 1e400 accepted | `> 0` check passes Infinity | `Number.isFinite` + per-line cap | 14e7c41 |
+| B16 | P2 | CSV formula injection | cells not neutralised | prefix `'` on `= + - @` text cells | bb72cf7 |
+| B17 | P2 | Work link reached the checkout before payment | invoiceRow included delivery.url | stripped from the client-facing payload | bb72cf7 |
+| B18 | P2 | Raw AI errors shown to users | message passed through | `friendlyAiError()` + right status | bb72cf7 |
+| B19 | P2 | Pages scrolled sideways on phones | tables and grids with fixed min widths | tables scroll inside their box; `min(…,100%)` | 447f1ca |
+| B24 | P2 | Muted text below AA contrast | #71717a on near-black | #8a8a93 (5.7:1) | a0a0047 |
+| B23 | P2 | Unverifiable landing statistic | no primary source | replaced with QuickBooks 47%; every stat linked | 7fb688f |
+| B6/B7 | P3 | Render needed a Node version; README steps were outdated | – | NODE_VERSION, .node-version, health check, README rewrite | af5f138 |
+| B20 | P3 | KPI digit wrapped on phones | fixed 27 px font | clamp() + nowrap | 447f1ca |
+| B21 | P3 | /client-view fetched invoice "null" | redirect didn't stop the script | stop after replace() | 447f1ca |
+| B22 | P3 | Empty book said "Spread out", "Best month $0" | labels computed from zero data | show "—" and the reason | 447f1ca |
 
 ---
 
