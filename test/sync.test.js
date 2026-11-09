@@ -1,4 +1,4 @@
-// Phase 2: PayPal status updates arriving twice, late, or at the same time as a poll.
+// PayPal status updates arriving twice, late, or at the same time as a poll.
 // A payment must produce exactly one "Payment received" and a paid invoice must never go back to unpaid.
 import test from 'node:test';
 import assert from 'node:assert/strict';

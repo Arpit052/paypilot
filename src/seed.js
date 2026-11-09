@@ -60,7 +60,8 @@ const HISTORY = [
 
 // Paid inside the current month, so "Earned this month" is never empty (e.g. on the 1st).
 const THIS_MONTH = [
-  ['priya', [RETAINER]],
+  // a one-off job on top of the retainer, paid on time
+  ['priya', [['Settings and billing screens', 1, 480]]],
   ['ben', [['Wedding invitation suite', 1, 460], ['Envelope addressing', 120, 1.5]]],
 ];
 
@@ -71,7 +72,7 @@ const OPEN = [
   // pays two days late, every time
   { key: 'marcus', work: [['Retail shelf display design', 1, 387.5]], issue: -33 },
   // reliable retainer client
-  { key: 'priya', work: [RETAINER], issue: -2 },
+  { key: 'priya', work: [RETAINER], issue: -8 }, // this month's retainer, about 30 days after the last one
   // pays in parts: half already paid
   { key: 'dani', work: [['Social content pack', 12, 32.5]], issue: -9, status: 'PARTIALLY_PAID', deposit: 195 },
 ];

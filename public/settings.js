@@ -41,7 +41,7 @@ function fill() {
   }
 }
 
-// shared copy for judges: the server refuses these, so the buttons say so up front
+// shared public copy: the server refuses these, so the buttons say so up front
 function lockShared(only) {
   const note = '<p class="muted small" style="margin:6px 0 0">This is a shared demo, so this is locked. Run PayPilot on your own computer to change it.</p>';
   for (const id of only || ['ppActions', 'ppForm', 'sampleBtn', 'resetBtn', 'secSave', 'secRemove']) {

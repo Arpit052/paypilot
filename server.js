@@ -927,7 +927,7 @@ export function createApp() {
 }
 
 export function start(port = config.port) {
-  // a hosted copy on a free plan loses its disk on restart: reload the sample history so judges never see an empty book
+  // a hosted copy on a free plan loses its disk on restart: reload the sample history so visitors never see an empty book
   if (spacesEnabled()) {
     const n = sweepSpaces();
     console.log(`  Visitor workspaces on: each visitor gets a private copy${n ? ` (${n} old ones removed)` : ''}`);

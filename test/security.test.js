@@ -1,5 +1,5 @@
-// Bugs found while testing the app the way a hackathon judge would. Each test was written to
-// fail first, then the fix made it pass. Run: npm test
+// Setup and security checks: login limits, same-origin writes, sample data, the one-click demo
+// and pay-to-unlock. Each test was written to fail first, then the fix made it pass. Run: npm test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'paypilot-judge-'));
+process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'paypilot-security-'));
 process.env.PAYPAL_MODE = 'mock';
 process.env.LLM_PROVIDER = 'none';
 process.env.DEFAULT_CURRENCY = 'USD';

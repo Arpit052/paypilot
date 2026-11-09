@@ -1,4 +1,4 @@
-// A shared, hosted copy for judges (HOSTED_DEMO=1 on Render): real PayPal sandbox mode, sample
+// A shared, hosted copy (HOSTED_DEMO=1 on Render): real PayPal sandbox mode, sample
 // history on boot, and nobody can disconnect PayPal or wipe data for everyone else.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -38,11 +38,11 @@ test('B3: the simulated-payment endpoints do not exist outside demo mode', async
 test('B5: hosted demo boots with sample history and skips the setup screen', async () => {
   assert.equal((await call('/app')).data.includes?.('welcome') ? 'welcome' : 'ok', 'ok');
   const { invoices } = (await call('/api/invoices')).data;
-  assert.ok(invoices.length > 10, 'judges see a full book straight away');
+  assert.ok(invoices.length > 10, 'visitors see a full book straight away');
   assert.ok(invoices.every((i) => !String(i.paypalId || '').startsWith('INV2-MOCK-')), 'no simulated open invoices on a real account');
 });
 
-test('B5: hosted demo blocks changes that would affect every judge', async () => {
+test('B5: hosted demo blocks changes that would affect every visitor', async () => {
   for (const [p, body] of [
     ['/api/settings/paypal/disconnect', {}],
     ['/api/settings/paypal/demo', {}],

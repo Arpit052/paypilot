@@ -30,7 +30,6 @@ export function clientStats(clientId, today = isoDate()) {
   const invs = listInvoices({ clientId });
   const paid = invs.filter((i) => isPaid(i) && i.paidDate);
   const delays = paid.map((i) => Math.max(0, daysBetween(i.dueDate, i.paidDate)));
-  // whole days, rounded up (3.2 days late -> 4 days late)
   // whole days, rounded up (3.2 -> 4); under one day on average counts as on time
   const avgRaw = delays.length ? delays.reduce((a, b) => a + b, 0) / delays.length : null;
   const avgDaysLate = avgRaw === null ? null : avgRaw < 1 ? 0 : Math.ceil(avgRaw - 1e-9);

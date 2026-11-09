@@ -1,4 +1,4 @@
-// Phase 3: how PayPilot behaves when PayPal misbehaves. A local fake PayPal answers with
+// how PayPilot behaves when PayPal misbehaves. A local fake PayPal answers with
 // 401 / 422 / 429 / 500 or hangs, and we check retries, timeouts and the message the user sees.
 import test from 'node:test';
 import assert from 'node:assert/strict';

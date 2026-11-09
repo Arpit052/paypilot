@@ -1,4 +1,4 @@
-// Phase 7/9: exports a user opens in Excel or Google Sheets must not run formulas from client data.
+// exports a user opens in Excel or Google Sheets must not run formulas from client data.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

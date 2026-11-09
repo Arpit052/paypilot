@@ -1,7 +1,16 @@
+# secrets: keys live in .env (copy .env.example)
 .env
+.env.*
+!.env.example
+
+# local data: the app's database and visitor copies
 data/
-node_modules/
-.DS_Store
 *.db
 *.db-*
+
+# dependencies and system files
+node_modules/
+.DS_Store
+Thumbs.db
+*.log
 /tmp/

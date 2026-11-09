@@ -1,4 +1,4 @@
-// Phase 6: budget properties a judge will poke at by nudging one number at a time.
+// Budget properties: nudging one number at a time must move the answer the right way.
 // More cash never lowers the chance; a higher price, tax, fees or a bigger buffer never raise it.
 import test from 'node:test';
 import assert from 'node:assert/strict';

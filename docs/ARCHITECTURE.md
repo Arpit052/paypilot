@@ -45,7 +45,7 @@ The Growth page reads the last 12 months of invoices and reports:
 - **Segments.** For each client: median gap between invoices (their cadence), days since the last one, yearly value, and average days late. Rules turn these into Champions, Loyal, Valuable but slow, Slipping away (quiet for more than half a cycle past their usual cadence), New, One-off and Gone quiet.
 - **Client map.** Yearly value against average days late, split at the median value and at 7 days late (the same line the segments use).
 - **Industries.** Clients carry an `industry` field. Per sector: billed, value per client, on-time rate, days to pay, and a trend over the last 3 full calendar months against the 3 before. The score is 60% value per client and 40% on-time rate, so it can be explained in one sentence.
-- **Work areas.** Line items are grouped by profession-specific keyword rules (a web developer's "Integrations and APIs" or a designer's "Print and packaging"), with a general list as fallback. Retainers are labelled "On a plan" rather than trending, because they move with the plan, not with demand.
+- **Work areas.** Line items are grouped by profession-specific keyword rules (a web developer's "Integrations and APIs" or a designer's "Print and packaging"), with a general list as fallback. A business that described itself uses its own kinds of work instead (see below). Retainers are labelled "On a plan" rather than trending, because they move with the plan, not with demand.
 - **Concentration and DSO.** Herfindahl index over client shares (bands from US merger guidelines: under 1,500 spread out, over 2,500 concentrated), and days sales outstanding now and 90 days ago, rebuilt from invoice and payment dates.
 - **Learning labels** (`src/labels.js`). Clients without an industry are labelled from the company name, the email domain (including run-together words like *kumarexports*) and the work billed; anything still unclear goes to the AI in one batch, which picks from the standard list or names a new sector. Line items the work-area rules can't place are grouped the same way. Labels are saved, marked as automatic, and never override one the owner set. A failed AI call backs off for 15 minutes.
 - **Up-front payers.** A client whose median payment is a week or more before the due date is marked as paying up front and is never counted as slow.
@@ -57,6 +57,21 @@ The 90-day plan is cached against a fingerprint of the book (every invoice's sta
 ## Accounts and sample data
 
 `accountType` (freelancer or business) keeps every feature and every name the same; it changes the order of the menu, the dashboard's first block (freelancer: what to collect and from whom; business: receivables aging, DSO, repeat customers, where to grow) and the default terms. The data model is the same. Sample data is loaded through `src/sample.js`, which records the exact invoices, clients and schedules it created, so **Remove sample data** deletes only those (a sample client you have since billed for real is kept). A PayPal-connected account starts empty unless the owner asks for samples.
+
+## A business in its own words (src/bizprofile.js)
+
+A freelancer picks a profession. A business writes one sentence about what it sells and to whom. The AI reads that into a profile: a short label, who usually pays, three to six kinds of work, each with keywords, four typical invoice lines with prices, and the word for repeat work. A second AI call writes sample invoices for the demo. The light Gemini models answer in about a second; onboarding waits at most 9 seconds and otherwise continues with a rule-based reading that splits the sentence into its parts. When the AI's answer lands later, the profile is replaced, and in demo mode an untouched sample book is rebuilt with it. Invoice lines are matched to the business's kinds of work by keyword score: longer, more specific keywords win, so "Medical clinic deep clean" goes to deep cleaning, not to whichever area mentions "clean" first.
+
+## Visitor workspaces (src/context.js, src/workspace.js)
+
+The public demo must let any number of people click everything, and some of them connect their own PayPal sandbox, without seeing each other. With `VISITOR_WORKSPACES=1` each visitor gets a random 128-bit id in an HttpOnly cookie and a folder `DATA_DIR/spaces/<id>/` with their own SQLite file.
+
+Rather than passing a workspace through every function, the request runs inside Node's `AsyncLocalStorage`. Three small hooks make the rest of the code workspace-aware without changes:
+- `sql()` opens the current workspace's database;
+- `config` is a proxy that stores run-time settings (business name, PayPal keys, preferences) on the workspace instead of the shared object;
+- `perSpace()` gives module state its own copy per workspace. That covers sync cursors, the Autopilot run lock, the brief cache, chat sessions and the open notification streams.
+
+Inside a workspace the server's `.env` PayPal keys are never used, so a visitor is in demo mode until they connect their own sandbox. Background jobs run once per recently used workspace. Unlock and receipt links are opened by clients who don't have the owner's cookie, so the shared database keeps a small index from token to workspace. New workspaces are rate limited per address, and workspaces idle for 3 days are deleted.
 
 ## Reminders
 
@@ -86,12 +101,22 @@ PayPal webhooks (signature verified with PayPal's verify API) and a 2-minute pol
 
 SQLite tables are created on start and extended with additive migrations (`ALTER TABLE … ADD COLUMN`), so an old database keeps working after an update. Small settings and per-feature state live in a `kv` table. Seeding and multi-row writes run in transactions.
 
+## PayPal reliability
+
+- Every call has a 20-second deadline.
+- Reads are retried on 429, 5xx and network errors, up to 3 tries with backoff and `Retry-After`.
+- Writes are retried only on 429/503 and only when they carry a `PayPal-Request-Id`. A write that got a 500 or timed out may have gone through, so it is not retried blindly.
+- A 401 mid-session gets one fresh token.
+- Status changes follow fixed rules: a paid or cancelled invoice only moves on a refund, so a late `UPDATED` event can't reopen it. `applyStatus` re-reads the invoice first, so a poll and a webhook arriving together notify once.
+
 ## Security
 
 - Optional passcode: scrypt hash, HMAC-signed session cookie, timing-safe comparison, rotating the secret signs everyone out.
 - Security headers (Content-Security-Policy, same-origin framing, no sniffing), JSON body limit, `X-Request-Id` on every response and in error logs.
 - Secrets come from `.env` or the Settings page and are never sent to the browser.
+- Writes from another site are refused: a browser's `Origin` must match the host. Wrong passcodes are limited to 10 a minute per address.
+- CSV exports prefix cells that start with `= + - @` so spreadsheets treat them as text.
 
 ## Tests
 
-`npm test` runs the Node test runner over the whole stack: PayPal in mock mode (an in-process twin of the Invoicing API) and the AI through a scripted stub, so CI needs no secrets. The suite covers approval idempotency, webhooks, the budget model's sanity, retainers, receipts, client view, growth and routing.
+`npm test` runs the Node test runner over the whole stack: PayPal in mock mode (an in-process twin of the Invoicing API) and the AI through a scripted stub, so CI needs no secrets. The suite covers approval idempotency, webhooks, the budget model's sanity, retainers, receipts, client view, growth and routing. [TESTING.md](TESTING.md) lists every file and what it checks.

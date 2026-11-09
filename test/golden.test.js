@@ -1,4 +1,4 @@
-// Phase 5: a small hand-checked book. Every number here was worked out on paper first.
+// a small hand-checked book. Every number here was worked out on paper first.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

@@ -1,4 +1,4 @@
-// Phase 3: the approval rule and money precision.
+// the approval rule and money precision.
 // Nothing reaches PayPal until a person approves; the server re-checks every edit; cents are exact.
 import test from 'node:test';
 import assert from 'node:assert/strict';

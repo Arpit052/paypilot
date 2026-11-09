@@ -1,42 +1,66 @@
-# PayPilot: judge-style QA report
+# Testing
 
-Tested the way a hackathon judge would, phase by phase (0 setup → 11 report). Every bug got a failing test first, then the fix, then a full-suite run and its own commit. No test was weakened.
+## Automated tests
 
-**Result:** 24 bugs found and fixed (6 × P1, 13 × P2, 5 × P3; 0 × P0). Tests went from **77 to 113**, all passing. `npm audit`: 0 vulnerabilities.
+```bash
+npm test
+```
 
-Not covered here: the 3-minute video (deferred), and live PayPal sandbox calls (no sandbox keys in this workspace). Run `npm run sandbox-check` with your keys to cover the sandbox part.
+There are 124 tests in `test/`, run with Node's built-in test runner. Each file starts the real server on a random port and calls it over HTTP. PayPal runs as a local twin of the Invoicing API, and the AI is a scripted stub, so the suite needs no keys or network. GitHub Actions runs it on Node 22 and 24 on every push.
 
----
+| File | What it checks |
+|---|---|
+| `e2e.test.js` | Chat → draft → edit → approve → PayPal → paid; validation; follow-ups and their tone; dashboard maths |
+| `features.test.js`, `business.test.js`, `learning.test.js` | Budget, retainers, receipts, pay to unlock, early-pay, client view, growth, professions, account types |
+| `money.test.js`, `budget-property.test.js` | The budget model: repeatable, ordered percentiles, and every input moves the answer the right way |
+| `golden.test.js` | Aging buckets at their exact edges, DSO and concentration against hand-worked numbers |
+| `approval.test.js` | Prompt injection, four approvals at once, edits re-checked on the server, exact cents, AI outages |
+| `sync.test.js` | Webhooks arriving twice, late, or at the same time as a poll |
+| `paypal-errors.test.js` | A fake PayPal returning 401/422/429/500 or hanging: retries, timeouts, readable errors |
+| `security.test.js`, `auth.test.js` | Passcode limits, same-origin writes, sign-in, sample data, pay-to-unlock |
+| `exports.test.js` | CSV exports can't run spreadsheet formulas |
+| `hosted.test.js`, `workspaces.test.js` | The public demo: locked shared mode, private workspaces, no key leaks between visitors |
+| `bizprofile.test.js` | A business's own description read into a profile, with and without AI |
 
-## 1. Scorecard (1–10)
+## Live sandbox check
 
-| Criterion | Score | Why | What adds +2 |
-|---|---|---|---|
-| Most Impactful | 8 | It tackles a real, sourced problem (56% of US small businesses are owed $17.5k). It covers the whole money loop: bill, chase, receipt, forecast, tax. Freelancer and business modes share one product. | One real user quote or pilot result in the demo, plus a forecast backtest ("our 8-in-10 range caught 81% of real payments"). |
-| Best Use of PayPal + AI | 8 | Real Invoicing v2 for create, send, remind, cancel and mark paid. Every write carries a PayPal-Request-Id. Webhooks are verified, with polling as a fallback. Gemini tools are grounded in each client's PayPal history. | Show the sandbox payer paying live in the video, and run `sandbox-check` on screen. |
-| Best Use of Agentic Commerce | 8 | The agent plans and drafts. Autopilot chases on a schedule. Nothing moves money without approval: one atomic claim per approval, and prompt injection is tested. | Show one full unattended Autopilot cycle in the demo: overdue, then a drafted reminder, then one approval, then sent, then paid. |
-| Most Creative | 7 | The budget question "can I afford it?" is answered with 4,000 simulated futures of who pays when. Pay-to-unlock final files and per-client habits are not standard invoicing features. | Lead the demo with the budget verdict naming the one invoice that decides it. |
-| Best Demo Delivery | 6 (video not made yet) | The app is demo-ready. The hosted copy is locked so judges can't break it, and sample data loads on boot. No video exists yet. | A tight 3-minute script that shows one story end to end, with no dead time on the free-tier cold start. |
-| Technical quality | 8 | 113 tests and CI. Exact cents, safe retries, idempotent writes, and status transitions that can't regress. CSRF protection, a rate-limited login and CSV injection guards. | Publish this report and the test count in the README. Add a backtest test. |
-| Design / UX | 8 | Calm black UI. Clean at 1440, 768 and 375 px. Muted text now meets WCAG AA. Empty states explain what will appear. | A keyboard-only pass and visible focus rings on every control. |
+```bash
+npm run sandbox-check
+```
 
----
+This runs against the real PayPal sandbox with your keys. It checks the Invoicing permission, the total of a draft to the cent, `PayPal-Request-Id` de-duplication, and that a forged webhook is rejected. It cleans up after itself.
 
-## 2. Test results
+## Manual testing
+
+Before submission the app was tested end to end, phase by phase:
+1. setup and first run
+2. PayPal integration and errors
+3. the approval rule
+4. AI tools
+5. numbers
+6. budget and tax
+7. exports and pay-to-unlock
+8. every page at 1440, 768 and 375 px
+9. performance with 1,000 invoices and 200 clients
+10. security and accessibility
+
+Every bug got a failing test first, then the fix, then a full run of the suite.
+
+## Checks run
 
 | ID | Phase | Feature | Steps | Expected | Actual | Result | Sev | Evidence |
 |---|---|---|---|---|---|---|---|---|
 | T01 | 0 | Fresh clone | `git clone`, `npm ci`, `npm start` with no .env | starts, clear log | starts in 1.5 s; log says no .env | PASS | – | manual run |
 | T02 | 0 | Secrets | scan git history and .gitignore | no keys committed | clean; .env, data/ and *.db ignored | PASS | – | `git log -p` scan |
 | T03 | 0 | Bad keys | connect with fake or swapped keys | rejected, nothing saved | PayPal rejects them; clear message | PASS | – | manual run |
-| T04 | 0 | One-click demo | welcome → Try demo with no business name | opens | blocked by a "business name" error | FAIL→FIXED | P2 | judge.test B4 |
-| T05 | 0 | Seed script | `npm run seed`, then Remove sample data | samples removable | samples were untracked | FAIL→FIXED | P2 | judge.test B2 |
-| T06 | 1 | Login | 12 wrong passcodes in a minute | blocked | unlimited guesses | FAIL→FIXED | P1 | judge.test B1 |
-| T07 | 1 | CSRF | POST /api/invoices with Origin evil.example | 403 | accepted | FAIL→FIXED | P1 | judge.test B8 |
-| T08 | 1 | Hosted demo | a judge clicks Disconnect / Reset / Remove | blocked for everyone | anyone could wipe the shared copy | FAIL→FIXED | P1 | hosted.test B5 |
+| T04 | 0 | One-click demo | welcome → Try demo with no business name | opens | blocked by a "business name" error | FAIL→FIXED | P2 | security.test B4 |
+| T05 | 0 | Seed script | `npm run seed`, then Remove sample data | samples removable | samples were untracked | FAIL→FIXED | P2 | security.test B2 |
+| T06 | 1 | Login | 12 wrong passcodes in a minute | blocked | unlimited guesses | FAIL→FIXED | P1 | security.test B1 |
+| T07 | 1 | CSRF | POST /api/invoices with Origin evil.example | 403 | accepted | FAIL→FIXED | P1 | security.test B8 |
+| T08 | 1 | Hosted demo | a visitor clicks Disconnect / Reset / Remove | blocked for everyone | anyone could wipe the shared copy | FAIL→FIXED | P1 | hosted.test B5 |
 | T09 | 1 | Hosted restart | Render free tier restarts (disk wiped) | sample book is back | empty app | FAIL→FIXED | P1 | hosted.test B5 |
 | T10 | 1 | Mock endpoints | /api/mock/* on a real account | 400 | /mock/invoice answered | FAIL→FIXED | P2 | hosted.test B3 |
-| T11 | 1 | XSS | `<img onerror>` in business, client and item names; open every page | no script runs | no dialogs on 14 pages | PASS | – | Playwright run |
+| T11 | 1 | XSS | `<img onerror>` in business, client and item names; open every page | no script runs | no script ran on any of 14 pages | PASS | – | Playwright run |
 | T12 | 2 | Duplicate webhook | PAID event sent twice | 1 notification | 1 | PASS | – | sync.test |
 | T13 | 2 | Poll + webhook race | poll reads invoice, webhook pays it, poll applies | 1 notification | 2 notifications | FAIL→FIXED | P1 | sync.test |
 | T14 | 2 | Out-of-order event | UPDATED/SENT arrives after PAID | stays PAID | went back to SENT | FAIL→FIXED | P1 | sync.test |
@@ -61,8 +85,8 @@ Not covered here: the 3-minute video (deferred), and live PayPal sandbox calls (
 | T33 | 6 | Budget repeatable | same inputs twice | same answer | same | PASS | – | money.test |
 | T34 | 6 | Tax rules | 1099-K, 1099-NEC, SS wage base 2026 | match IRS/SSA | match; sources now cited | PASS | – | web check + tax page |
 | T35 | 7 | CSV injection | client named `=HYPERLINK(...)`, export | stays text | formula | FAIL→FIXED | P2 | exports.test |
-| T36 | 7 | Pay-to-unlock | read the unlock page and practice checkout before paying | no work link | checkout leaked it | FAIL→FIXED | P2 | judge.test B17 |
-| T37 | 7 | Unlock after pay | pay, then reopen the unlock page | link shown | shown | PASS | – | judge.test B17 |
+| T36 | 7 | Pay-to-unlock | read the unlock page and practice checkout before paying | no work link | checkout leaked it | FAIL→FIXED | P2 | security.test B17 |
+| T37 | 7 | Unlock after pay | pay, then reopen the unlock page | link shown | shown | PASS | – | security.test B17 |
 | T38 | 8 | Click-through | 16 pages × 3 widths, demo and empty account | 0 errors, 0 5xx | /client-view called /api/invoices/null | FAIL→FIXED | P3 | Playwright run |
 | T39 | 8 | Phone layout | 375 px, measure horizontal overflow | 0 px | dashboard 89, tax 107, client view 89 | FAIL→FIXED | P2 | Playwright run |
 | T40 | 8 | Phone KPI | "Expected in 30 days" at 375 px | one line | last digit wrapped | FAIL→FIXED | P3 | screenshot |
@@ -75,12 +99,13 @@ Not covered here: the 3-minute video (deferred), and live PayPal sandbox calls (
 
 ---
 
-## 3. Bugs, by severity
+
+## Bugs found and fixed
 
 | # | Sev | Bug | Root cause | Fix | Commit |
 |---|---|---|---|---|---|
 | B1 | P1 | Passcode could be brute-forced | no limit on /api/login | 10 failures/min per IP → 429 + Retry-After | 0f28835 |
-| B5 | P1 | Any judge could disconnect or wipe the shared copy; a restart emptied it | no shared-demo mode; disk is ephemeral | `HOSTED_DEMO=1` locks 7 actions; `SEED_SAMPLE_ON_BOOT=1` | 0f28835 |
+| B5 | P1 | Any visitor could disconnect or wipe the shared copy; a restart emptied it | no shared-demo mode; disk is ephemeral | `HOSTED_DEMO=1` locks 7 actions; `SEED_SAMPLE_ON_BOOT=1` | 0f28835 |
 | B8 | P1 | Cross-site forms could create invoices | no Origin check on writes | refuse writes whose Origin host ≠ Host | 0f28835 |
 | B9 | P1 | "Payment received" shown twice | the poll used an invoice object read before its await | applyStatus re-reads from the DB | 82c504d |
 | B10 | P1 | Paid or cancelled invoice reopened by a late event | any status change was accepted | transition rules: only refunds move a settled invoice | 82c504d |
@@ -105,43 +130,13 @@ Not covered here: the 3-minute video (deferred), and live PayPal sandbox calls (
 
 ---
 
-## 4. New tests
 
-**Before: 77. After: 113 (+36), all passing.** New files:
+## Performance
 
-| File | Tests | Covers |
-|---|---|---|
-| test/judge.test.js | 5 | login limit, CSRF, seed script, one-click demo, pay-to-unlock leak |
-| test/hosted.test.js | 4 | shared-demo lock, boot seeding, mock endpoints off, forged webhook |
-| test/sync.test.js | 6 | duplicate, racing and out-of-order webhooks; refunds; cancelled stays cancelled |
-| test/paypal-errors.test.js | 5 | 429/503 retry, timeout, token refresh, write-retry rules, readable errors |
-| test/approval.test.js | 7 | prompt injection, concurrent approve, server-side edit checks, cents, AI failure |
-| test/budget-property.test.js | 3 | monotonic in price, cash, tax, fees, buffer and spending (300+ combinations) |
-| test/golden.test.js | 4 | aging edges, DSO, HHI, empty book, per-line tax |
-| test/exports.test.js | 2 | CSV formula injection in invoices.csv and tax.csv |
+With 1,000 invoices and 200 clients, every API answers in under 0.9 s and every page loads in under 1.3 s.
 
-Plus `npm run sandbox-check`: a script you run with your own keys. It checks the keys and the Invoicing scope, creates a draft and confirms the total to the cent, confirms PayPal-Request-Id idempotency, confirms a forged webhook is rejected, then deletes the draft.
+## Known limits
 
----
-
-## 5. Remaining risks, and how to keep them out of the demo
-
-| Risk | Keep it out of the demo |
-|---|---|
-| Live sandbox not run from here (no keys) | Run `npm run sandbox-check` before recording; all checks must pass. |
-| Render free tier sleeps (~50 s first load) | Open the link 2 minutes before; add an UptimeRobot ping to `/api/health` during judging, or use Starter for the judging week. |
-| Gemini free-tier quota | Record on a fresh key; the app now shows a calm message, but don't hit it on camera. |
-| Webhooks need a public URL + PAYPAL_WEBHOOK_ID | On Render set the webhook; locally rely on the 2-minute poll or press the refresh button on the dashboard. |
-| "8 in 10" ranges aren't backtested yet | Say "likely range", not "80% accurate", in the video. |
-| Partial payments: aging uses the full total | Use sample invoices without deposits when showing aging. |
-| Shared hosted copy: judges see each other's drafts | Expected for a demo; the lock stops anything destructive. |
-
----
-
-## 6. Top 5 changes to win, by impact per hour
-
-1. **Record the 3-minute video around one story** (~3 h). Marcus is late → AI drafts a firm reminder with the pay link → approve → sandbox pays → "Payment received" + files unlocked → Budget says "yes, from Nov 24". This is the biggest lever on Best Demo.
-2. **Deploy to Render with the blueprint and run sandbox-check on it** (~1 h). A working link plus green checks is proof for Best Use of PayPal.
-3. **Put the proof in the README's first screen** (~30 min). Show "113 tests, 0 audit issues, every PayPal write idempotent, nothing sends without approval", with a link to this report.
-4. **Show the agentic loop happening by itself** (~1 h). Set `DEMO_TIME_OFFSET_DAYS` so an invoice goes overdue on camera, and let Autopilot draft the reminder unprompted.
-5. **Backtest the payment-date range** (~2 h). Hold out each client's latest paid invoice and report the coverage on the Budget page ("caught X of Y"). This turns a claim into evidence for Most Impactful.
+- The payment-date range ("likely between Nov 12 and 18") isn't yet backtested against held-out payments.
+- Receivables aging uses each invoice's full total; partial payments aren't subtracted.
+- Webhooks need a public URL and `PAYPAL_WEBHOOK_ID`. Without them, payments show up within 2 minutes through polling.
