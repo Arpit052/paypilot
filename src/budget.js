@@ -15,8 +15,8 @@
 //  2. What we already know. An unpaid invoice hasn't been paid *yet*, so we only keep delays
 //     that land today or later (conditional sampling). If the client has never been this late,
 //     the extra wait is drawn from an exponential tail fitted to their late payments.
-//  3. Will it be paid at all? Each invoice is collected with probability from a Beta(19, 1)
-//     prior (95%) updated with the client's paid invoices. Once an invoice is later than the
+//  3. Will it be paid at all? Each invoice is collected with probability from a Beta(49, 1)
+//     prior (98%) updated with the client's paid invoices. Once an invoice is later than the
 //     client has ever been, that chance halves for every 60 days past it (a stated assumption).
 //  4. Retainers. Scheduled invoices up to D are added, with the same timing model.
 //  5. Optional: likely new work. Repeat clients send new work at their usual rate (a Poisson

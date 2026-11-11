@@ -6,7 +6,8 @@ Built for the *Build What's Next with PayPal and AI* hackathon (2026).
 
 ![PayPilot dashboard](docs/screenshots/dashboard.png)
 
-- **Try it:** https://paypilot-app.azurewebsites.net. Every visitor gets a private copy. Click *Try the demo* for sample data, or connect your own PayPal sandbox.
+- **Watch the demo (2:40):** https://youtu.be/Bzp4Qd1dVu0
+- **Try it:** https://paypilot-app.azurewebsites.net. Every visitor gets a private copy. Click *Explore with demo data* for sample data, or connect your own PayPal sandbox.
 - **Run it yourself:** [three commands](#run-it-on-your-computer).
 - **How it's built:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). A file-by-file tour is in [docs/CODE-WALKTHROUGH.md](docs/CODE-WALKTHROUGH.md).
 
